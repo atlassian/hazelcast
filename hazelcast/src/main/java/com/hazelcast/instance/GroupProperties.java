@@ -54,6 +54,7 @@ public class GroupProperties {
      */
     public static final String PROP_PARTITION_OPERATION_THREAD_COUNT = "hazelcast.operation.thread.count";
     public static final String PROP_GENERIC_OPERATION_THREAD_COUNT = "hazelcast.operation.generic.thread.count";
+    public static final String PROP_RESPONSE_THREAD_COUNT = "hazelcast.response.thread.count";
     public static final String PROP_EVENT_THREAD_COUNT = "hazelcast.event.thread.count";
     public static final String PROP_EVENT_QUEUE_CAPACITY = "hazelcast.event.queue.capacity";
     public static final String PROP_EVENT_QUEUE_TIMEOUT_MILLIS = "hazelcast.event.queue.timeout.millis";
@@ -138,6 +139,8 @@ public class GroupProperties {
     public final GroupProperty PARTITION_OPERATION_THREAD_COUNT;
 
     public final GroupProperty GENERIC_OPERATION_THREAD_COUNT;
+
+    public final GroupProperty RESPONSE_THREAD_COUNT;
 
     public final GroupProperty EVENT_THREAD_COUNT;
 
@@ -284,6 +287,7 @@ public class GroupProperties {
         //-1 means that the value is worked out dynamically.
         PARTITION_OPERATION_THREAD_COUNT = new GroupProperty(config, PROP_PARTITION_OPERATION_THREAD_COUNT, "-1");
         GENERIC_OPERATION_THREAD_COUNT = new GroupProperty(config, PROP_GENERIC_OPERATION_THREAD_COUNT, "-1");
+        RESPONSE_THREAD_COUNT = new GroupProperty(config, PROP_RESPONSE_THREAD_COUNT, "-1");
         EVENT_THREAD_COUNT = new GroupProperty(config, PROP_EVENT_THREAD_COUNT, "5");
         EVENT_QUEUE_CAPACITY = new GroupProperty(config, PROP_EVENT_QUEUE_CAPACITY, "1000000");
         EVENT_QUEUE_TIMEOUT_MILLIS = new GroupProperty(config, PROP_EVENT_QUEUE_TIMEOUT_MILLIS, "250");

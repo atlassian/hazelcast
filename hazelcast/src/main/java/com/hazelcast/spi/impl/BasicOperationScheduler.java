@@ -79,7 +79,8 @@ public final class BasicOperationScheduler {
     private final BlockingQueue genericWorkQueue = new LinkedBlockingQueue();
     private final ConcurrentLinkedQueue genericPriorityWorkQueue = new ConcurrentLinkedQueue();
 
-    private final ResponseThread responseThread;
+    private final ResponseThread[] responseThreads;
+    private final BlockingQueue<Packet> responseWorkQueue = new LinkedBlockingQueue<Packet>();
 
     private volatile boolean shutdown;
 
@@ -111,8 +112,8 @@ public final class BasicOperationScheduler {
         this.partitionOperationThreads = new OperationThread[getPartitionOperationThreadCount()];
         initOperationThreads(partitionOperationThreads, new PartitionOperationThreadFactory());
 
-        this.responseThread = new ResponseThread();
-        responseThread.start();
+        this.responseThreads = new ResponseThread[getResponseThreadCount()];
+        initResponseThreads(responseThreads, new ResponseThreadFactory());
 
         logger.info("Starting with " + genericOperationThreads.length + " generic operation threads and "
                 + partitionOperationThreads.length + " partition operation threads.");
@@ -127,6 +128,15 @@ public final class BasicOperationScheduler {
         }
     }
 
+    @edu.umd.cs.findbugs.annotations.SuppressWarnings({ "NP_NONNULL_PARAM_VIOLATION" })
+    private static void initResponseThreads(ResponseThread[] responseThreads, ThreadFactory threadFactory) {
+        for (int threadId = 0; threadId < responseThreads.length; threadId++) {
+            ResponseThread responseThread = (ResponseThread) threadFactory.newThread(null);
+            responseThreads[threadId] = responseThread;
+            responseThread.start();
+        }
+    }
+
     private int getGenericOperationThreadCount() {
         int threadCount = node.getGroupProperties().GENERIC_OPERATION_THREAD_COUNT.getInteger();
         if (threadCount <= 0) {
@@ -138,6 +148,15 @@ public final class BasicOperationScheduler {
 
     private int getPartitionOperationThreadCount() {
         int threadCount = node.getGroupProperties().PARTITION_OPERATION_THREAD_COUNT.getInteger();
+        if (threadCount <= 0) {
+            int coreSize = Runtime.getRuntime().availableProcessors();
+            threadCount = coreSize * 2;
+        }
+        return threadCount;
+    }
+
+    private int getResponseThreadCount() {
+        int threadCount = node.getGroupProperties().RESPONSE_THREAD_COUNT.getInteger();
         if (threadCount <= 0) {
             int coreSize = Runtime.getRuntime().availableProcessors();
             threadCount = coreSize * 2;
@@ -234,7 +253,7 @@ public final class BasicOperationScheduler {
     }
 
     public int getResponseQueueSize() {
-        return responseThread.workQueue.size();
+        return responseWorkQueue.size();
     }
 
     public void execute(Operation op) {
@@ -271,8 +290,8 @@ public final class BasicOperationScheduler {
     public void execute(Packet packet) {
         try {
             if (packet.isHeaderSet(Packet.HEADER_RESPONSE)) {
-                //it is an response packet.
-                responseThread.workQueue.add(packet);
+                //it is a response packet.
+                responseWorkQueue.add(packet);
             } else {
                 //it is an must be an operation packet
                 int partitionId = packet.getPartitionId();
@@ -311,7 +330,7 @@ public final class BasicOperationScheduler {
     }
 
     private void offerWork(Queue queue, Object task) {
-        //in 3.3 we are going to apply backpressure on overload and then we are going to do something
+        //in 3.4 we are going to apply backpressure on overload and then we are going to do something
         //with the return values of the offer methods.
         //Currently the queues are all unbound, so this can't happen anyway.
 
@@ -380,6 +399,18 @@ public final class BasicOperationScheduler {
             LinkedBlockingQueue workQueue = new LinkedBlockingQueue();
             ConcurrentLinkedQueue priorityWorkQueue = new ConcurrentLinkedQueue();
             OperationThread thread = new OperationThread(threadName, true, threadId, workQueue, priorityWorkQueue);
+            threadId++;
+            return thread;
+        }
+    }
+
+    private class ResponseThreadFactory implements ThreadFactory {
+        private int threadId;
+
+        @Override
+        public Thread newThread(Runnable ignore) {
+            String threadName = node.getThreadPoolNamePrefix("response") + threadId;
+            ResponseThread thread = new ResponseThread(threadName);
             threadId++;
             return thread;
         }
@@ -459,10 +490,8 @@ public final class BasicOperationScheduler {
     }
 
     private class ResponseThread extends Thread {
-        private final BlockingQueue<Packet> workQueue = new LinkedBlockingQueue<Packet>();
-
-        public ResponseThread() {
-            super(node.threadGroup, node.getThreadNamePrefix("response"));
+        public ResponseThread(String threadName) {
+            super(node.threadGroup, threadName);
             setContextClassLoader(node.getConfigClassLoader());
         }
 
@@ -480,7 +509,7 @@ public final class BasicOperationScheduler {
             for (;;) {
                 Object task;
                 try {
-                    task = workQueue.take();
+                    task = responseWorkQueue.take();
                 } catch (InterruptedException e) {
                     if (shutdown) {
                         return;

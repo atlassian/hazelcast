@@ -43,6 +43,7 @@ Property Name | Default Value | Type | Description
 `hazelcast.io.thread.count` | 3 | int | Number of input and output threads.
 `hazelcast.operation.thread.count` | -1 | int | Number of partition based operation handler threads. `-1` means CPU core count x 2.
 `hazelcast.operation.generic.thread.count` | -1 | int | Number of generic operation handler threads. `-1` means CPU core count x 2.
+`hazelcast.response.thread.count` | -1 | int | Number of response handler threads. `-1` means CPU core count x 2.
 `hazelcast.event.thread.count` | 5 | int | Number of event handler threads.
 `hazelcast.event.queue.capacity` | 1000000 | int | Capacity of internal event queue.
 `hazelcast.event.queue.timeout.millis` | 250 | int | Timeout to enqueue events to event queue.
