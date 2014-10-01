@@ -14,10 +14,7 @@
   ~ limitations under the License.
   -->
 
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
-                      http://maven.apache.org/maven-v4_0_0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0                       http://maven.apache.org/maven-v4_0_0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.hazelcast</groupId>
@@ -239,12 +236,11 @@
                     <runOrder>failedfirst</runOrder>
 
                     <!-- 1C means 1 process per cpu core -->
-                    <!-- forkCount>1C</forkCount>
+                    <forkCount>1C</forkCount>
                     <reuseForks>true</reuseForks>
-
                     <threadCount>1</threadCount>
                     <perCoreThreadCount>true</perCoreThreadCount>
-                    <parallel>methods</parallel -->
+                    <parallel>methods</parallel>
                     <!-- JaCoCo will use the argLine set here. Test profiles override it. -->
                     <argLine>
                         -Xms128m -Xmx1G -XX:MaxPermSize=128M
@@ -644,21 +640,6 @@
             </properties>
             <build>
                 <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-gpg-plugin</artifactId>
-                        <version>${maven.gpg.plugin.version}</version>
-                        <executions>
-                            <execution>
-                                <id>sign-artifacts</id>
-                                <phase>verify</phase>
-                                <goals>
-                                    <goal>sign</goal>
-                                </goals>
-                            </execution>
-                        </executions>
-                    </plugin>
-
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-javadoc-plugin</artifactId>
