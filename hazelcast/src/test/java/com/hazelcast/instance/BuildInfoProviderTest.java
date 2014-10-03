@@ -20,7 +20,7 @@ public class BuildInfoProviderTest {
 
     // major.minor.patch-RC-SNAPSHOT
     private static final Pattern VERSION_PATTERN
-            = Pattern.compile("^[\\d]+\\.[\\d]+(\\.[\\d]+)?(\\-[\\w]+)?(\\-SNAPSHOT)?$");
+            = Pattern.compile("^[\\d]+\\.[\\d]+(\\.[\\d]+)?(\\-[\\w]+)?(\\-[\\d]+)?(\\-SNAPSHOT)?$");
 
     @Test
     public void testPattern() {
@@ -32,6 +32,7 @@ public class BuildInfoProviderTest {
         assertTrue(VERSION_PATTERN.matcher("3.1.1-RC").matches());
         assertTrue(VERSION_PATTERN.matcher("3.1.1-SNAPSHOT").matches());
         assertTrue(VERSION_PATTERN.matcher("3.1.1-RC1-SNAPSHOT").matches());
+        assertTrue(VERSION_PATTERN.matcher("3.3.2-atlassian-2-SNAPSHOT").matches());
 
         assertFalse(VERSION_PATTERN.matcher("${project.version}").matches());
         assertFalse(VERSION_PATTERN.matcher("project.version").matches());
