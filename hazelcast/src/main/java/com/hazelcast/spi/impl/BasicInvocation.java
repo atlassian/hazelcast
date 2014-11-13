@@ -84,6 +84,11 @@ abstract class BasicInvocation implements ResponseHandler, Runnable {
      */
     static final Object INTERRUPTED_RESPONSE = new InternalResponse("Invocation::INTERRUPTED_RESPONSE");
 
+    /**
+     * A response indicating that the operation execution was cancelled
+     */
+    static final Object CANCELLED_RESPONSE = new InternalResponse("Invocation::CANCELLED_RESPONSE");
+
     private static final int TEN_FACTOR = 10;
     private static final int NINETY_NINE_COUNT = 99;
     private static final int INVOKE_COUNT_FIVE = 5;
@@ -429,7 +434,11 @@ abstract class BasicInvocation implements ResponseHandler, Runnable {
     private void handleRetryResponse() {
         if (invocationFuture.interrupted) {
             invocationFuture.set(INTERRUPTED_RESPONSE);
-        } else {
+        } else if (invocationFuture.isCancelled()) {
+            if (logger.isFinestEnabled()) {
+                logger.finest("Cancelling invocation: " + toString());
+            }
+        } else if (!invocationFuture.isDone()) {
             invocationFuture.set(WAIT_RESPONSE);
             final ExecutionService ex = nodeEngine.getExecutionService();
             // fast retry for the first few invocations

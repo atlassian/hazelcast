@@ -11,12 +11,7 @@ import com.hazelcast.spi.TraceableOperation;
 import com.hazelcast.util.Clock;
 import com.hazelcast.util.ExceptionUtil;
 
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Future;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.*;
 
 import static com.hazelcast.util.ExceptionUtil.fixRemoteStackTrace;
 import static com.hazelcast.util.ValidationUtil.isNotNull;
@@ -306,6 +301,10 @@ final class BasicInvocationFuture<E> implements InternalCompletableFuture<E> {
             throw (InterruptedException) response;
         }
 
+        if (response instanceof CancellationException) {
+            throw (CancellationException) response;
+        }
+
         if (response instanceof Error) {
             throw (Error) response;
         }
@@ -325,6 +324,10 @@ final class BasicInvocationFuture<E> implements InternalCompletableFuture<E> {
 
         if (unresolvedResponse == BasicInvocation.INTERRUPTED_RESPONSE) {
             return new InterruptedException("Call " + basicInvocation + " was interrupted");
+        }
+
+        if (unresolvedResponse == BasicInvocation.CANCELLED_RESPONSE) {
+            return new CancellationException("Call " + basicInvocation + " was interrupted");
         }
 
         Object response = unresolvedResponse;
@@ -365,17 +368,19 @@ final class BasicInvocationFuture<E> implements InternalCompletableFuture<E> {
 
     @Override
     public boolean cancel(boolean mayInterruptIfRunning) {
-        return false;
+        set(BasicInvocation.CANCELLED_RESPONSE);
+        return isCancelled();
     }
 
     @Override
     public boolean isCancelled() {
-        return false;
+        return response == BasicInvocation.CANCELLED_RESPONSE;
     }
 
     @Override
     public boolean isDone() {
-        return response != null;
+        Object response = this.response;
+        return response != null && response != BasicInvocation.WAIT_RESPONSE;
     }
 
     private boolean isOperationExecuting(Address target) {
