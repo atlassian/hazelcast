@@ -123,5 +123,19 @@ public interface OperationService {
 
     String getRemoteOperationStats();
 
+    long getAndClearExecutedRemoteOperationCount();
+
+    long getAndClearRemoteOperationSerializationTime();
+
+    long getAndResetWorstRemoteOperationSerializationTime();
+
+    long getAndClearRemoteOperationBytes();
+
     String getResponseStats();
+
+    long getAndClearResponsesProcessed();
+
+    long getAndClearResponseDeserializationTime();
+
+    long getAndResetWorstResponseDeserializationTime();
 }

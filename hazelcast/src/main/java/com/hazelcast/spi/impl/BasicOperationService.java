@@ -118,14 +118,14 @@ final class BasicOperationService implements InternalOperationService {
     private final ConcurrentMap<Long, BasicInvocation> invocations;
     final BasicOperationScheduler scheduler;
     private final AtomicLong executedOperationsCount = new AtomicLong();
-    private boolean doCountRemoteOperations = false;
+    private boolean doCountRemoteOperations;
     private final AtomicLong processedOperationsCount = new AtomicLong();
     private final AtomicLong processedOperationsLatency = new AtomicLong();
     private final AtomicLong worstProcessedOperationLatency = new AtomicLong();
     private final AtomicLong executedRemoteOperationsCount = new AtomicLong();
-    private final AtomicLong serializationTime = new AtomicLong();
-    private final AtomicLong worstSerializationTime = new AtomicLong();
-    private String worstOperation = null;
+    private final AtomicLong remoteOperationSerializationTime = new AtomicLong();
+    private final AtomicLong worstRemoteOperationSerializationTime = new AtomicLong();
+    private String worstOperation;
     private final AtomicLong remoteOperationBytes = new AtomicLong();
     private final ConcurrentMap<String, Long> executedRemoteOperationsByName;
 
@@ -190,6 +190,30 @@ final class BasicOperationService implements InternalOperationService {
     }
 
     @Override
+    public long getAndClearExecutedRemoteOperationCount() {
+        doCountRemoteOperations = true;
+        return getAndClear(executedRemoteOperationsCount);
+    }
+
+    @Override
+    public long getAndClearRemoteOperationSerializationTime() {
+        doCountRemoteOperations = true;
+        return getAndClear(remoteOperationSerializationTime);
+    }
+
+    @Override
+    public long getAndResetWorstRemoteOperationSerializationTime() {
+        doCountRemoteOperations = true;
+        return getAndReset(worstRemoteOperationSerializationTime);
+    }
+
+    @Override
+    public long getAndClearRemoteOperationBytes() {
+        doCountRemoteOperations = true;
+        return getAndClear(remoteOperationBytes);
+    }
+
+    @Override
     public String getRemoteOperationStats() {
         doCountRemoteOperations = true;     // Only start collecting the stats when somebody asks for them.
         StringBuilder sb = new StringBuilder();
@@ -207,8 +231,8 @@ final class BasicOperationService implements InternalOperationService {
             clearRemoteOperationByName(name, count);
         }
         appendAndClear(sb, remoteOperationBytes, "bytes");
-        appendAndClearNanos(sb, serializationTime, "time");
-        if (appendAndResetNanos(sb, worstSerializationTime, "worst", worstOperation)) {
+        appendAndClearNanos(sb, remoteOperationSerializationTime, "time");
+        if (appendAndResetNanos(sb, worstRemoteOperationSerializationTime, "worst", worstOperation)) {
             worstOperation = null;
         }
 
@@ -235,6 +259,21 @@ final class BasicOperationService implements InternalOperationService {
     @Override
     public String getResponseStats() {
         return responsePacketHandler.getResponseStats();
+    }
+
+    @Override
+    public long getAndClearResponsesProcessed() {
+        return getAndClear(responsePacketHandler.responsesProcessed);
+    }
+
+    @Override
+    public long getAndClearResponseDeserializationTime() {
+        return getAndClear(responsePacketHandler.ResponseDeserializationTime);
+    }
+
+    @Override
+    public long getAndResetWorstResponseDeserializationTime() {
+        return getAndReset(responsePacketHandler.worstResponseDeserializationTime);
     }
 
     @Override
@@ -493,9 +532,8 @@ final class BasicOperationService implements InternalOperationService {
     // Convenience function for dumping a counter and clearing it in a thread safe way.
     // Returns the value of the counter just read.
     private long appendAndClear(StringBuilder sb, AtomicLong counter, String name) {
-        long value = counter.get();
+        long value = getAndClear(counter);
         sb.append(name + "=").append(value).append(", ");
-        counter.addAndGet(-value);
         return value;
     }
 
@@ -508,9 +546,8 @@ final class BasicOperationService implements InternalOperationService {
 
     // Convenience function for dumping a nanosecond counter and clearing it in a thread safe way.
     private void appendAndClearNanos(StringBuilder sb, AtomicLong counter, String name) {
-        long value = counter.get();
+        long value = getAndClear(counter);
         sb.append(name + "=").append(value / 1000000.0).append("ms, ");
-        counter.addAndGet(-value);
     }
 
     // Convenience function for dumping a latch and resetting in a thread safe way.
@@ -589,11 +626,11 @@ final class BasicOperationService implements InternalOperationService {
         String name = getNameOfOperation(op);
         incrementRemoteOperationByName(name);
 
-        serializationTime.addAndGet(time);
-        long worstSerializationTimeValue;
-        for (int i = 0; (worstSerializationTimeValue = worstSerializationTime.longValue()) < time &&
+        remoteOperationSerializationTime.addAndGet(time);
+        long worstRemoteOperationSerializationTimeValue;
+        for (int i = 0; (worstRemoteOperationSerializationTimeValue = worstRemoteOperationSerializationTime.longValue()) < time &&
                 i < STATISTICS_SPIN_MAX; i++) {
-            if (worstSerializationTime.compareAndSet(worstSerializationTimeValue, time)) {
+            if (worstRemoteOperationSerializationTime.compareAndSet(worstRemoteOperationSerializationTimeValue, time)) {
                 worstOperation = name;
                 break;
             }
@@ -618,6 +655,22 @@ final class BasicOperationService implements InternalOperationService {
                 }
             }
         }
+    }
+
+    // Convenience function for reading a counter and clearing it in a thread safe way.
+    // Returns the value of the counter just read.
+    private long getAndClear(AtomicLong counter) {
+        long value = counter.get();
+        if (value != 0L) {
+            counter.addAndGet(-value);
+        }
+        return value;
+    }
+
+    private long getAndReset(AtomicLong latch) {
+        long value = latch.get();
+        latch.compareAndSet(value, 0L);
+        return value;
     }
 
     // Convenience function for incrementing a counter in the `executedRemoteOperationsByName` ConcurrentHashMap in a
@@ -768,16 +821,16 @@ final class BasicOperationService implements InternalOperationService {
      */
     private final class ResponsePacketHandler {
         // Temporary members for diagnostic purposes - see STASHDEV-7788
-        private AtomicLong deserializationTime = new AtomicLong(0L);
+        private AtomicLong ResponseDeserializationTime = new AtomicLong(0L);
         private AtomicLong responsesProcessed = new AtomicLong(0L);
-        private AtomicLong worstDeserializationTime = new AtomicLong(0L);
-        private Response worstResponse = null;
+        private AtomicLong worstResponseDeserializationTime = new AtomicLong(0L);
+        private Response worstResponse;
 
         public String getResponseStats() {
             StringBuilder sb = new StringBuilder();
             appendAndClear(sb, responsesProcessed, "processed");
-            appendAndClearNanos(sb, deserializationTime, "time");
-            if (appendAndResetNanos(sb, worstDeserializationTime, "worst", worstResponse)) {
+            appendAndClearNanos(sb, ResponseDeserializationTime, "time");
+            if (appendAndResetNanos(sb, worstResponseDeserializationTime, "worst", worstResponse)) {
                 worstResponse = null;
             }
             return sb.toString();
@@ -795,11 +848,11 @@ final class BasicOperationService implements InternalOperationService {
                 // Temporary code for diagnostic purposes - see STASHDEV-7788
                 final long time = System.nanoTime() - startTime;
                 responsesProcessed.incrementAndGet();
-                deserializationTime.addAndGet(time);
-                long worstDeserializationTimeValue;
-                for (int i = 0; (worstDeserializationTimeValue = worstDeserializationTime.longValue()) < time &&
+                ResponseDeserializationTime.addAndGet(time);
+                long worstResponseDeserializationTimeValue;
+                for (int i = 0; (worstResponseDeserializationTimeValue = worstResponseDeserializationTime.longValue()) < time &&
                         i < STATISTICS_SPIN_MAX; i++) {
-                    if (worstDeserializationTime.compareAndSet(worstDeserializationTimeValue, time)) {
+                    if (worstResponseDeserializationTime.compareAndSet(worstResponseDeserializationTimeValue, time)) {
                         worstResponse = response;
                     }
                 }

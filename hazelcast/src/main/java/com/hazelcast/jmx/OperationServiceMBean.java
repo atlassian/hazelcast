@@ -72,6 +72,30 @@ public class OperationServiceMBean extends HazelcastMBean<OperationService> {
         return managedObject.getExecutedOperationCount();
     }
 
+    @ManagedAnnotation("executedRemoteOperationCount")
+    @ManagedDescription("The number of executed remote operations")
+    public long getExecutedRemoteOperationCount() {
+        return managedObject.getAndClearExecutedRemoteOperationCount();
+    }
+
+    @ManagedAnnotation("remoteOperationSerializationTime")
+    @ManagedDescription("The time (in nanoseconds) spent serializing remote operations")
+    public long getRemoteOperationSerializationTime() {
+        return managedObject.getAndClearRemoteOperationSerializationTime();
+    }
+
+    @ManagedAnnotation("worstRemoteOperationSerializationTime")
+    @ManagedDescription("The time (in nanoseconds) spent serializing the single worst remote operation")
+    public long getWorstRemoteOperationSerializationTime() {
+        return managedObject.getAndResetWorstRemoteOperationSerializationTime();
+    }
+
+    @ManagedAnnotation("remoteOperationBytes")
+    @ManagedDescription("The number of bytes sent in remote operations")
+    public long getRemoteOperationBytes() {
+        return managedObject.getAndClearRemoteOperationBytes();
+    }
+
     @ManagedAnnotation("operationThreadCount")
     @ManagedDescription("Number of threads executing operations")
     public long getOperationThreadCount() {
@@ -82,5 +106,23 @@ public class OperationServiceMBean extends HazelcastMBean<OperationService> {
     @ManagedDescription("Number of threads processing responses")
     public long getResponseThreadCount() {
         return managedObject.getResponseThreadCount();
+    }
+
+    @ManagedAnnotation("responsesProcessed")
+    @ManagedDescription("The number responses processed")
+    public long getResponsesProcessed() {
+        return managedObject.getAndClearResponsesProcessed();
+    }
+
+    @ManagedAnnotation("responseDeserializationTime")
+    @ManagedDescription("The time (in nanoseconds) spent deserializing responses")
+    public long getResponseDeserializationTime() {
+        return managedObject.getAndClearResponseDeserializationTime();
+    }
+
+    @ManagedAnnotation("worstResponseDeserializationTime")
+    @ManagedDescription("The time (in nanoseconds) spent deserializing the single worst response")
+    public long getWorstResponseDeserializationTime() {
+        return managedObject.getAndResetWorstResponseDeserializationTime();
     }
 }
