@@ -173,6 +173,7 @@ public class PartitionServiceProxy implements com.hazelcast.core.PartitionServic
         }
 
         if (!nodeActive()) {
+            logger.finest("Node is not active. No need to drain partitions");
             return true;
         }
         return partitionService.drain(timeout, timeunit);

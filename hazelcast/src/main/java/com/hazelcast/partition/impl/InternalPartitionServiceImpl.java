@@ -1356,12 +1356,19 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
         Collection<MemberImpl> partitionHosts = getPartitionHosts();
         if (partitionHosts.contains(node.getLocalMember()) && partitionHosts.size() == 1) {
             // If local node is the only partition host then there's no node we can drain the partitions to.
+            logger.finest("Cannot drain partitions. There are no other partition hosts in the cluster");
             return false;
         }
 
         boolean isEmpty = checkIsEmpty();
         for (long timeoutInMillis = timeunit.toMillis(timeout); timeoutInMillis > 0 && !isEmpty; isEmpty = checkIsEmpty()) {
             timeoutInMillis = sleepWithBusyWait(timeoutInMillis, DEFAULT_PAUSE_MILLIS);
+        }
+
+        if (isEmpty) {
+            logger.finest("Successfully drained all partitions");
+        } else {
+            logger.warning("Timed out waiting for partitions to be drained");
         }
 
         return isEmpty;
