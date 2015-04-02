@@ -287,7 +287,7 @@ public class GroupProperties {
         //-1 means that the value is worked out dynamically.
         PARTITION_OPERATION_THREAD_COUNT = new GroupProperty(config, PROP_PARTITION_OPERATION_THREAD_COUNT, "-1");
         GENERIC_OPERATION_THREAD_COUNT = new GroupProperty(config, PROP_GENERIC_OPERATION_THREAD_COUNT, "-1");
-        RESPONSE_THREAD_COUNT = new GroupProperty(config, PROP_RESPONSE_THREAD_COUNT, "-1");
+        RESPONSE_THREAD_COUNT = new GroupProperty(config, PROP_RESPONSE_THREAD_COUNT, "1");
         EVENT_THREAD_COUNT = new GroupProperty(config, PROP_EVENT_THREAD_COUNT, "5");
         EVENT_QUEUE_CAPACITY = new GroupProperty(config, PROP_EVENT_QUEUE_CAPACITY, "1000000");
         EVENT_QUEUE_TIMEOUT_MILLIS = new GroupProperty(config, PROP_EVENT_QUEUE_TIMEOUT_MILLIS, "250");

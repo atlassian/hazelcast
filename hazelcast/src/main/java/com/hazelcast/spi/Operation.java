@@ -52,6 +52,7 @@ public abstract class Operation implements DataSerializable, RemotePropagatable<
     private long waitTimeout = -1;
     private String callerUuid;
     private String executorName;
+    private boolean interrupted = false;
 
     // injected
     private transient NodeEngine nodeEngine;
@@ -124,6 +125,15 @@ public abstract class Operation implements DataSerializable, RemotePropagatable<
     // Accessed using OperationAccessor
     final Operation setCallId(long callId) {
         this.callId = callId;
+        return this;
+    }
+
+    public boolean getInterrupted() {
+        return interrupted;
+    }
+
+    public final Operation setInterrupted(boolean interrupted) {
+        this.interrupted = interrupted;
         return this;
     }
 

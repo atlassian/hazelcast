@@ -220,7 +220,7 @@ public class BasicOperationServiceTest extends HazelcastTestSupport {
         assertTrueEventually(new AssertTask() {
             @Override
             public void run() {
-                assertEquals("invocations should be empty", 0, operationService.invocations.size());
+                assertEquals("invocations should be empty", 0, operationService.getRemoteOperationsCount());
              }
         });
     }

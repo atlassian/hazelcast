@@ -140,27 +140,20 @@ public class InvocationTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void testWaitingIndefinitely() throws InterruptedException {
+    public void testWaitingWithExplicitTimeout() throws InterruptedException {
         final Config config = new Config();
-        config.setProperty(GroupProperties.PROP_OPERATION_CALL_TIMEOUT_MILLIS, "2000");
 
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(2);
         final HazelcastInstance[] instances = factory.newInstances(config);
 
-        // need to warm-up partitions,
-        // since waiting for lock backup can take up to 5 seconds
-        // and that may cause OperationTimeoutException with "No response for 4000 ms" error.
-        warmUpPartitions(instances);
-
-        instances[0].getLock("testWaitingIndefinitely").lock();
+        instances[0].getLock("testWaitingWithExplicitTimeout").lock();
 
 
         final CountDownLatch latch = new CountDownLatch(1);
         new Thread() {
             public void run() {
                 try {
-                    // because max timeout=2000 we get timeout exception which we should not
-                    instances[1].getLock("testWaitingIndefinitely").lock();
+                    assertFalse(instances[1].getLock("testWaitingWithExplicitTimeout").tryLock(2000, TimeUnit.MILLISECONDS));
                     latch.countDown();
                 } catch (Exception ignored) {
                 }
@@ -168,10 +161,10 @@ public class InvocationTest extends HazelcastTestSupport {
         }.start();
 
 
-        // wait for enough time which is greater than max-timeout (2000)
+        // wait for enough time which is greater than 2000
         Thread.sleep(10000);
 
-        instances[0].getLock("testWaitingIndefinitely").unlock();
+        instances[0].getLock("testWaitingWithExplicitTimeout").unlock();
 
         assertTrue(latch.await(5, TimeUnit.SECONDS));
     }

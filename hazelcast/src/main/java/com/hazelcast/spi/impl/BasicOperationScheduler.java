@@ -19,6 +19,7 @@ package com.hazelcast.spi.impl;
 import com.hazelcast.core.PartitionAware;
 import com.hazelcast.instance.Node;
 import com.hazelcast.logging.ILogger;
+import com.hazelcast.nio.Address;
 import com.hazelcast.nio.NIOThread;
 import com.hazelcast.nio.Packet;
 import com.hazelcast.spi.ExecutionService;
@@ -27,14 +28,9 @@ import com.hazelcast.spi.PartitionAwareOperation;
 import com.hazelcast.spi.UrgentSystemOperation;
 import com.hazelcast.util.executor.HazelcastManagedThread;
 
+import java.util.Map;
 import java.util.Queue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 import static com.hazelcast.instance.OutOfMemoryErrorDispatcher.onOutOfMemory;
 
@@ -64,6 +60,12 @@ public final class BasicOperationScheduler {
 
     public static final int TERMINATION_TIMEOUT_SECONDS = 3;
 
+    private static final int CONCURRENCY_LEVEL = 16;
+    private static final int CORE_SIZE_CHECK = 8;
+    private static final int CORE_SIZE_FACTOR = 4;
+    private static final int INITIAL_CAPACITY = 1000;
+    private static final float LOAD_FACTOR = 0.75f;
+
     //all operations for specific partitions will be executed on these threads, .e.g map.put(key,value).
     final OperationThread[] partitionOperationThreads;
 
@@ -81,6 +83,8 @@ public final class BasicOperationScheduler {
 
     private final ResponseThread[] responseThreads;
     private final BlockingQueue<Packet> responseWorkQueue = new LinkedBlockingQueue<Packet>();
+
+    private final Map<RemoteCallKey, RemoteCallKey> executingCalls;
 
     private volatile boolean shutdown;
 
@@ -105,6 +109,12 @@ public final class BasicOperationScheduler {
         this.logger = node.getLogger(BasicOperationScheduler.class);
         this.node = node;
         this.dispatcher = dispatcher;
+
+        int coreSize = Runtime.getRuntime().availableProcessors();
+        boolean reallyMultiCore = coreSize >= CORE_SIZE_CHECK;
+        int concurrencyLevel = reallyMultiCore ? coreSize * CORE_SIZE_FACTOR : CONCURRENCY_LEVEL;
+        this.executingCalls =
+                new ConcurrentHashMap<RemoteCallKey, RemoteCallKey>(INITIAL_CAPACITY, LOAD_FACTOR, concurrencyLevel);
 
         this.genericOperationThreads = new OperationThread[getGenericOperationThreadCount()];
         initOperationThreads(genericOperationThreads, new GenericOperationThreadFactory());
@@ -135,6 +145,25 @@ public final class BasicOperationScheduler {
             ResponseThread responseThread = (ResponseThread) threadFactory.newThread(null);
             responseThreads[threadId] = responseThread;
             responseThread.start();
+        }
+    }
+
+    public void afterCallExecution(Operation op) {
+        if (op.getCallId() != 0 && op.returnsResponse()) {
+            RemoteCallKey callKey = new RemoteCallKey(op);
+            if (callKey != null) {
+                executingCalls.remove(callKey);
+            }
+        }
+    }
+
+    private void beforeCallExecution(Operation op) {
+        if (op.getCallId() != 0 && op.returnsResponse()) {
+            RemoteCallKey callKey = new RemoteCallKey(op);
+            RemoteCallKey current = executingCalls.put(callKey, callKey);
+            if (current != null) {
+                logger.warning("Duplicate Call record! -> " + callKey + " / " + current + " == " + op.getClass().getName());
+            }
         }
     }
 
@@ -230,6 +259,10 @@ public final class BasicOperationScheduler {
         return true;
     }
 
+    public boolean isOperationExecuting(Address callerAddress, String callerUuid, long operationCallId) {
+        return executingCalls.containsKey(new RemoteCallKey(callerAddress, callerUuid, operationCallId));
+    }
+
     public int getOperationExecutorQueueSize() {
         int size = 0;
 
@@ -255,6 +288,10 @@ public final class BasicOperationScheduler {
 
     public int getResponseQueueSize() {
         return responseWorkQueue.size();
+    }
+
+    public int getRunningOperationsCount() {
+        return executingCalls.size();
     }
 
     public void execute(Operation op) {
@@ -309,6 +346,11 @@ public final class BasicOperationScheduler {
     private void execute(Object task, int partitionId, boolean priority) {
         if (task == null) {
             throw new NullPointerException();
+        }
+
+        if (task instanceof Operation) {
+            Operation op = (Operation)task;
+            beforeCallExecution(op);
         }
 
         BlockingQueue workQueue;

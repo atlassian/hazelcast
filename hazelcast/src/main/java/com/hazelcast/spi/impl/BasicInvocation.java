@@ -192,8 +192,7 @@ abstract class BasicInvocation implements ResponseHandler, Runnable {
                 /*
                  * final long minTimeout = Math.min(defaultCallTimeout, MIN_TIMEOUT);
                  * long callTimeout = Math.min(waitTimeoutMillis, defaultCallTimeout);
-                 * callTimeout = Math.max(a, minTimeout);
-                 * return callTimeout;
+                 * return Math.max(callTimeout, minTimeout);
                  *
                  * Below two lines are shortened version of above*
                  * using min(max(x,y),z)=max(min(x,z),min(y,z))

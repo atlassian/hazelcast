@@ -116,11 +116,7 @@ abstract class QueueProxySupport extends AbstractDistributedObject<QueueService>
 
     Object pollInternal(long timeout) throws InterruptedException {
         PollOperation operation = new PollOperation(name, timeout);
-        try {
-            return invokeAndGet(operation);
-        } catch (Throwable throwable) {
-            throw ExceptionUtil.rethrowAllowInterrupted(throwable);
-        }
+        return invokeAndGetThrowsInterruptedException(operation);
     }
 
     boolean removeInternal(Data data) {
@@ -167,12 +163,20 @@ abstract class QueueProxySupport extends AbstractDistributedObject<QueueService>
     }
 
     private <T> T invokeAndGet(QueueOperation operation) {
+        try {
+            return invokeAndGetThrowsInterruptedException(operation);
+        } catch (Throwable throwable) {
+            throw ExceptionUtil.rethrow(throwable);
+        }
+    }
+
+    private <T> T invokeAndGetThrowsInterruptedException(QueueOperation operation) throws InterruptedException {
         final NodeEngine nodeEngine = getNodeEngine();
         try {
             Future f = invoke(operation);
             return (T) nodeEngine.toObject(f.get());
         } catch (Throwable throwable) {
-            throw ExceptionUtil.rethrow(throwable);
+            throw ExceptionUtil.rethrowAllowInterrupted(throwable);
         }
     }
 

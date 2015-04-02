@@ -214,6 +214,8 @@ final class BasicInvocationFuture<E> implements InternalCompletableFuture<E> {
                 }
             } catch (InterruptedException e) {
                 interrupted = true;
+                basicInvocation.op.setInterrupted(true);
+                return e;
             }
 
             if (!interrupted && longPolling) {
