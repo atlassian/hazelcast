@@ -19,6 +19,7 @@ package com.hazelcast.config;
 import com.hazelcast.config.matcher.MatchingPointConfigPatternMatcher;
 import com.hazelcast.core.HazelcastException;
 import com.hazelcast.core.ManagedContext;
+import com.hazelcast.instance.Capability;
 import com.hazelcast.instance.HazelcastProperty;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.logging.Logger;
@@ -26,6 +27,7 @@ import com.hazelcast.logging.Logger;
 import java.io.File;
 import java.net.URL;
 import java.util.Collection;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -42,8 +44,8 @@ import static java.text.MessageFormat.format;
 
 /**
  * Contains all the configuration to start a {@link com.hazelcast.core.HazelcastInstance}. A Config
- * can be created programmatically, but can also be configured using XML, see {@link com.hazelcast.config.XmlConfigBuilder}.
- * <p/>
+ * can be created programmatically, but can also be configured using XML, see {@link XmlConfigBuilder}.
+ * <p>
  * Config instances can be shared between threads, but should not be modified after they are used to
  * create HazelcastInstances.
  */
@@ -127,6 +129,8 @@ public class Config {
 
     private boolean liteMember;
 
+    private Set<Capability> capabilities = EnumSet.allOf(Capability.class);
+
     public Config() {
     }
 
@@ -147,12 +151,12 @@ public class Config {
     /**
      * Sets the class-loader to be used during de-serialization
      * and as context class-loader of Hazelcast internal threads.
-     * <p/>
-     * <p/>
+     * <p>
+     * <p>
      * If not set (or set to null); thread context class-loader
      * will be used in required places.
-     * <p/>
-     * <p/>
+     * <p>
+     * <p>
      * Default value is null.
      *
      * @param classLoader class-loader to be used during de-serialization
@@ -250,6 +254,26 @@ public class Config {
     public Config setInstanceName(String instanceName) {
         this.instanceName = instanceName;
         return this;
+    }
+
+    /**
+     * Sets the initial capabilities the Hazelcast instance should have in the cluster. These capabilities can later be
+     * updated using {@link com.hazelcast.core.Member#updateCapabilities(java.util.Set)}
+     *
+     * @param capabilities The capabilities to set in the instance.
+     * @return This config instance.
+     * @since 3.4
+     */
+    public Config setCapabilities(Set<Capability> capabilities) {
+        this.capabilities = capabilities;
+        return this;
+    }
+
+    /**
+     * @return the initial set of capabilities an instance must have when joining the cluster.
+     */
+    public Set<Capability> getCapabilities() {
+        return capabilities;
     }
 
     public GroupConfig getGroupConfig() {

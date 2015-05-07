@@ -162,4 +162,10 @@ public final class PartitionServiceProxy implements PartitionService {
         }
     }
 
+    @Override
+    public boolean drain(long timeout, TimeUnit timeunit) {
+        // Clients  cannot own partitions so there's nothing to drain.
+        return true;
+    }
+
 }

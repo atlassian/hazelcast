@@ -19,10 +19,15 @@ package com.hazelcast.instance;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.HazelcastInstanceAware;
 import com.hazelcast.core.Member;
+import com.hazelcast.internal.cluster.ClusterService;
 import com.hazelcast.internal.cluster.impl.ClusterDataSerializerHook;
 import com.hazelcast.internal.cluster.impl.operations.MemberAttributeChangedOperation;
+import com.hazelcast.internal.cluster.impl.operations.MemberCapabilityUpdateRequestOperation;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Address;
+import com.hazelcast.nio.IOUtil;
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.OperationService;
@@ -30,7 +35,12 @@ import com.hazelcast.spi.annotation.PrivateApi;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.util.ExceptionUtil;
 
+import java.io.IOException;
+import java.util.Collections;
+import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 import static com.hazelcast.cluster.MemberAttributeOperationType.PUT;
 import static com.hazelcast.cluster.MemberAttributeOperationType.REMOVE;
@@ -42,6 +52,7 @@ public final class MemberImpl extends AbstractMember implements Member, Hazelcas
     private boolean localMember;
     private volatile HazelcastInstanceImpl instance;
     private volatile ILogger logger;
+    private volatile Set<Capability> capabilities;
 
     public MemberImpl() {
     }
@@ -60,19 +71,45 @@ public final class MemberImpl extends AbstractMember implements Member, Hazelcas
 
     public MemberImpl(Address address, boolean localMember, String uuid, HazelcastInstanceImpl instance,
                       Map<String, Object> attributes, boolean liteMember) {
+        this(address, localMember, uuid, instance, null, attributes, liteMember);
+    }
+
+    public MemberImpl(Address address, boolean localMember, String uuid, HazelcastInstanceImpl instance,
+                      Set<Capability> capabilities, Map<String, Object> attributes, boolean liteMember) {
         super(address, uuid, attributes, liteMember);
         this.localMember = localMember;
         this.instance = instance;
+
+        this.capabilities = capabilities == null ? Collections.unmodifiableSet(EnumSet.noneOf(Capability.class)) :
+                Collections.unmodifiableSet(EnumSet.copyOf(capabilities));
     }
 
     public MemberImpl(MemberImpl member) {
-        super(member);
-        this.localMember = member.localMember;
+        this(member.address, member.localMember(), member.uuid, member.instance, member.capabilities, member.attributes, member.liteMember);
     }
 
     @Override
     protected ILogger getLogger() {
         return logger;
+    }
+
+    public Set<Capability> getCapabilities() {
+        return capabilities;
+    }
+
+    public boolean setCapabilities(Set<Capability> capabilities) {
+        if (this.capabilities.equals(capabilities)) {
+            return false;
+        }
+
+        this.capabilities = EnumSet.copyOf(capabilities);
+
+        return true;
+    }
+
+    @Override
+    public void updateCapabilities(Set<Capability> capabilities) {
+        invokeOnMaster(new MemberCapabilityUpdateRequestOperation(getUuid(), capabilities));
     }
 
     @Override
@@ -207,6 +244,29 @@ public final class MemberImpl extends AbstractMember implements Member, Hazelcas
         }
     }
 
+    private void invokeOnMaster(Operation operation) {
+        ClusterService clusterService = instance.node.clusterService;
+        Address masterAddress = clusterService.getMasterAddress();
+        MemberImpl masterMember = clusterService.getMember(masterAddress);
+        invokeOn(operation, masterMember);
+    }
+
+    private void invokeOn(Operation operation, MemberImpl member) {
+        NodeEngineImpl nodeEngine = instance.node.nodeEngine;
+        OperationService os = nodeEngine.getOperationService();
+        String uuid = nodeEngine.getLocalMember().getUuid();
+        operation.setCallerUuid(uuid).setNodeEngine(nodeEngine);
+        try {
+            if (member.localMember()) {
+                os.executeOperation(operation);
+            } else {
+                os.send(operation, member.getAddress());
+            }
+        } catch (Throwable t) {
+            throw ExceptionUtil.rethrow(t);
+        }
+    }
+
     private void invokeOnAllMembers(Operation operation) {
         NodeEngineImpl nodeEngine = instance.node.nodeEngine;
         OperationService os = nodeEngine.getOperationService();
@@ -225,6 +285,37 @@ public final class MemberImpl extends AbstractMember implements Member, Hazelcas
         }
     }
 
+    @Override
+    public void readData(ObjectDataInput in) throws IOException {
+        address = new Address();
+        address.readData(in);
+        uuid = in.readUTF();
+        liteMember = in.readBoolean();
+        capabilities = Capability.readCapabilities(in);
+
+        int size = in.readInt();
+        for (int i = 0; i < size; i++) {
+            String key = in.readUTF();
+            Object value = IOUtil.readAttributeValue(in);
+            attributes.put(key, value);
+        }
+    }
+
+    @Override
+    public void writeData(ObjectDataOutput out) throws IOException {
+        address.writeData(out);
+        out.writeUTF(uuid);
+        out.writeBoolean(liteMember);
+        Capability.writeCapabilities(out, getCapabilities());
+
+        Map<String, Object> attributes = new HashMap<String, Object>(this.attributes);
+        out.writeInt(attributes.size());
+        for (Map.Entry<String, Object> entry : attributes.entrySet()) {
+            out.writeUTF(entry.getKey());
+            IOUtil.writeAttributeValue(entry.getValue(), out);
+        }
+    }
+
     public int getFactoryId() {
         return ClusterDataSerializerHook.F_ID;
     }
@@ -232,5 +323,9 @@ public final class MemberImpl extends AbstractMember implements Member, Hazelcas
     @Override
     public int getId() {
         return ClusterDataSerializerHook.MEMBER;
+    }
+
+    public boolean hasCapability(Capability capability) {
+        return capabilities.contains(capability);
     }
 }

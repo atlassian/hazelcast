@@ -12,9 +12,13 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
+import static com.hazelcast.instance.Capability.PARTITION_HOST;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -25,6 +29,7 @@ import static org.junit.Assert.assertTrue;
 @Category({QuickTest.class, ParallelTest.class})
 public class MemberImplTest extends HazelcastTestSupport {
 
+    private static final String MEMBER_UUID = UUID.randomUUID().toString();
     private static HazelcastInstanceImpl hazelcastInstance;
     private static Address address;
 
@@ -236,6 +241,26 @@ public class MemberImplTest extends HazelcastTestSupport {
     public void testSetAttribute_onRemoteMember() {
         MemberImpl member = new MemberImpl(address, false);
         member.setStringAttribute("remoteMemberSet", "wontWork");
+    }
+
+    @Test
+    public void testMemberCapability() throws Exception {
+        MemberImpl allCapabilitiesMember = createMember(EnumSet.allOf(Capability.class));
+
+        for (Capability capability : Capability.values()) {
+            assertTrue(allCapabilitiesMember.hasCapability(capability));
+        }
+
+        MemberImpl partitionHostMember = createMember(EnumSet.of(PARTITION_HOST));
+        assertTrue(partitionHostMember.hasCapability(PARTITION_HOST));
+
+        MemberImpl noCapabilityMember = createMember(EnumSet.noneOf(Capability.class));
+        assertFalse(noCapabilityMember.hasCapability(PARTITION_HOST));
+    }
+
+
+    private MemberImpl createMember(Set<Capability> capabilities) throws Exception {
+        return new MemberImpl(new Address("10.0.0.1", 5701), true, MEMBER_UUID, null, capabilities, null, false);
     }
 
     private static void assertBasicMemberImplFields(MemberImpl member) {

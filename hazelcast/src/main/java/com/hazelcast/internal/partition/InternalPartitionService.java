@@ -70,9 +70,13 @@ public interface InternalPartitionService extends IPartitionService {
 
     void memberAdded(MemberImpl newMember);
 
+    void memberCapabilityUpdate(MemberImpl updatedMember);
+
     void memberRemoved(MemberImpl deadMember);
 
     boolean prepareToSafeShutdown(long timeout, TimeUnit seconds);
+
+    boolean drain(long timeout, TimeUnit timeunit);
 
     InternalPartition[] getInternalPartitions();
 

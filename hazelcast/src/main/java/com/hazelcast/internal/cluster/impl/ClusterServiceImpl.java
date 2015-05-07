@@ -31,6 +31,9 @@ import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.instance.Node;
 import com.hazelcast.internal.cluster.ClusterService;
 import com.hazelcast.internal.cluster.MemberInfo;
+import com.hazelcast.internal.cluster.impl.operations.MemberCapabilityChangedOperation;
+import com.hazelcast.internal.cluster.impl.operations.MemberCapabilityUpdateException;
+import com.hazelcast.internal.cluster.impl.operations.JoinRequestOperation;
 import com.hazelcast.internal.cluster.impl.operations.MemberInfoUpdateOperation;
 import com.hazelcast.internal.cluster.impl.operations.MemberRemoveOperation;
 import com.hazelcast.internal.cluster.impl.operations.ShutdownNodeOperation;
@@ -38,6 +41,7 @@ import com.hazelcast.internal.cluster.impl.operations.TriggerMemberListPublishOp
 import com.hazelcast.internal.metrics.MetricsRegistry;
 import com.hazelcast.internal.metrics.Probe;
 import com.hazelcast.internal.partition.impl.InternalPartitionServiceImpl;
+import com.hazelcast.instance.Capability;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.Connection;
@@ -80,6 +84,7 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 import static com.hazelcast.cluster.memberselector.MemberSelectors.NON_LOCAL_MEMBER_SELECTOR;
+import static com.hazelcast.instance.Capability.PARTITION_HOST;
 import static com.hazelcast.util.Preconditions.checkNotNull;
 import static java.lang.String.format;
 import static java.util.Collections.unmodifiableMap;
@@ -492,6 +497,65 @@ public class ClusterServiceImpl implements ClusterService, ConnectionListener, M
         return nodeEngine;
     }
 
+    public void updateMemberCapabilities(String uuid, Set<Capability> newCapabilities) {
+        lock.lock();
+        try {
+            MemberImpl member = getMember(uuid);
+            if (member == null) {
+                throw new MemberCapabilityUpdateException(String.format("Could not find member [%s] to update capabilities", uuid));
+            }
+
+            if (node.isMaster()) {
+                doMasterUpdate(member, newCapabilities);
+            } else {
+                member.setCapabilities(newCapabilities);
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private void doMasterUpdate(MemberImpl member, Set<Capability> newCapabilities) {
+        if (canUpdate(newCapabilities)) {
+            boolean wasPartitionHost = member.hasCapability(PARTITION_HOST);
+
+            if (member.setCapabilities(newCapabilities)) {
+                // If node has been added or removed as a partition host then trigger re-partitioning
+                if (wasPartitionHost != member.hasCapability(PARTITION_HOST)) {
+                    node.getPartitionService().memberCapabilityUpdate(member);
+                }
+
+                logger.info(String.format("Updated member [%s] capabilities to [%s]", member, newCapabilities));
+
+                // Let other members know they should update their members
+                notifyCapabilityUpdate(member.getUuid(), newCapabilities);
+            }
+        } else {
+            logger.info(String.format("Cannot update member [%s] capabilities to [%s]", member, newCapabilities));
+        }
+    }
+
+    public boolean sendJoinRequest(Address toAddress, boolean withCredentials) {
+        if (toAddress == null) {
+            toAddress = node.getMasterAddress();
+        }
+        JoinRequestOperation joinRequest = new JoinRequestOperation(node.createJoinRequest(withCredentials));
+        return nodeEngine.getOperationService().send(joinRequest, toAddress);
+    }
+
+    private boolean canUpdate(Set<Capability> newCapabilities) {
+        return newCapabilities.contains(PARTITION_HOST) || getMemberList(PARTITION_HOST).size() > 1;
+    }
+
+    private void notifyCapabilityUpdate(String uuid, Set<Capability> capabilities) {
+        for (MemberImpl member : getMemberImpls()) {
+            if (!member.localMember()) {
+                nodeEngine.getOperationService().send(new MemberCapabilityChangedOperation(uuid, capabilities), member.getAddress());
+            }
+        }
+    }
+
+
     private void setMembers(MemberImpl... members) {
         if (members == null || members.length == 0) {
             return;
@@ -713,6 +777,24 @@ public class ClusterServiceImpl implements ClusterService, ConnectionListener, M
     public Collection<Address> getMemberAddresses() {
         Map<Address, MemberImpl> map = membersMapRef.get();
         return map.keySet();
+    }
+
+    @SuppressWarnings("unchecked")
+    public Collection<MemberImpl> getMemberList(Capability filter) {
+        Collection<MemberImpl> memberList = getMemberImpls();
+        Collection<MemberImpl> filtered = new ArrayList<MemberImpl>(memberList.size());
+        for (MemberImpl member : memberList) {
+            if (member.hasCapability(filter)) {
+                filtered.add(member);
+            }
+        }
+        return filtered;
+    }
+
+    @SuppressWarnings("unchecked")
+    public Collection<MemberImpl> getMemberList(Capability filter, MemberSelector selector) {
+        Collection<MemberImpl> filtered = getMemberList(filter);
+        return new MemberSelectingCollection(filtered, selector);
     }
 
     @SuppressWarnings("unchecked")

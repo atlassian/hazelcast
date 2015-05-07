@@ -16,6 +16,7 @@
 
 package com.hazelcast.internal.cluster;
 
+import com.hazelcast.instance.Capability;
 import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.ObjectDataInput;
@@ -23,9 +24,11 @@ import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.DataSerializable;
 
 import java.io.IOException;
+import java.util.EnumSet;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 public class MemberInfo implements DataSerializable {
 
@@ -33,28 +36,35 @@ public class MemberInfo implements DataSerializable {
     private String uuid;
     private boolean liteMember;
     private Map<String, Object> attributes;
+    private Set<Capability> capabilities;
 
     public MemberInfo() {
     }
 
     public MemberInfo(Address address) {
         this.address = address;
+        capabilities = EnumSet.allOf(Capability.class);
     }
 
     public MemberInfo(Address address, String uuid, Map<String, Object> attributes) {
         this(address, uuid, attributes, false);
     }
 
-    public MemberInfo(Address address, String uuid, Map<String, Object> attributes, boolean liteMember) {
-        this.address = address;
+    public MemberInfo(Address address, String uuid, Set<Capability> capabilities, Map<String, Object> attributes, boolean liteMember) {
+        this(address);
         this.uuid = uuid;
+        this.capabilities = capabilities;
         this.attributes = attributes == null || attributes.isEmpty()
                 ? Collections.<String, Object>emptyMap() : new HashMap<String, Object>(attributes);
         this.liteMember = liteMember;
     }
 
+    public MemberInfo(Address address, String uuid, Map<String, Object> attributes, boolean liteMember) {
+        this(address, uuid, EnumSet.allOf(Capability.class), attributes, liteMember);
+    }
+
     public MemberInfo(MemberImpl member) {
-        this(member.getAddress(), member.getUuid(), member.getAttributes(), member.isLiteMember());
+        this(member.getAddress(), member.getUuid(), member.getCapabilities(), member.getAttributes(), member.isLiteMember());
     }
 
     public Address getAddress() {
@@ -73,6 +83,10 @@ public class MemberInfo implements DataSerializable {
         return liteMember;
     }
 
+    public Set<Capability> getCapabilities() {
+        return capabilities;
+    }
+
     @Override
     public void readData(ObjectDataInput in) throws IOException {
         address = new Address();
@@ -81,6 +95,7 @@ public class MemberInfo implements DataSerializable {
             uuid = in.readUTF();
         }
         liteMember = in.readBoolean();
+        capabilities = Capability.readCapabilities(in);
         int size = in.readInt();
         if (size > 0) {
             attributes = new HashMap<String, Object>();
@@ -101,6 +116,7 @@ public class MemberInfo implements DataSerializable {
             out.writeUTF(uuid);
         }
         out.writeBoolean(liteMember);
+        Capability.writeCapabilities(out, capabilities);
         out.writeInt(attributes == null ? 0 : attributes.size());
         if (attributes != null) {
             for (Map.Entry<String, Object> entry : attributes.entrySet()) {

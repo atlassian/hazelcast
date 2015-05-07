@@ -18,11 +18,13 @@ package com.hazelcast.client.impl;
 
 import com.hazelcast.core.Member;
 import com.hazelcast.instance.AbstractMember;
+import com.hazelcast.instance.Capability;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Address;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Client side specific Member implementation.
@@ -59,6 +61,10 @@ public final class MemberImpl extends AbstractMember implements Member {
     @Override
     public boolean localMember() {
         return false;
+    }
+
+    @Override
+    public void updateCapabilities(Set<Capability> capabilities) {
     }
 
     @Override

@@ -21,8 +21,10 @@ import com.hazelcast.core.HazelcastInstanceNotActiveException;
 import com.hazelcast.core.Member;
 import com.hazelcast.core.MemberLeftException;
 import com.hazelcast.core.MigrationListener;
+import com.hazelcast.instance.Capability;
 import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.instance.Node;
+import com.hazelcast.instance.NodeState;
 import com.hazelcast.internal.cluster.impl.ClusterServiceImpl;
 import com.hazelcast.internal.metrics.MetricsRegistry;
 import com.hazelcast.internal.metrics.Probe;
@@ -65,6 +67,7 @@ import com.hazelcast.util.scheduler.ScheduledEntry;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
@@ -83,6 +86,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
 
 import static com.hazelcast.cluster.memberselector.MemberSelectors.DATA_MEMBER_SELECTOR;
+import static com.hazelcast.instance.Capability.PARTITION_HOST;
 import static com.hazelcast.util.FutureUtil.logAllExceptions;
 import static com.hazelcast.util.FutureUtil.returnWithDeadline;
 import static java.lang.Math.ceil;
@@ -237,6 +241,26 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
             publishPartitionRuntimeState();
         } finally {
             lock.unlock();
+        }
+    }
+
+    @Override
+    public void memberCapabilityUpdate(MemberImpl updatedMember) {
+        if (node.isMaster() && (NodeState.ACTIVE.equals(node.getState()))) {
+            lock.lock();
+            try {
+                partitionStateManager.updateMemberGroupsSize();
+                if (node.isMaster()) {
+                    if (partitionStateManager.isInitialized()) {
+                        final ClusterState clusterState = nodeEngine.getClusterService().getClusterState();
+                        if (clusterState == ClusterState.ACTIVE) {
+                            migrationManager.triggerControlTask();
+                        }
+                    }
+                }
+            } finally {
+                lock.unlock();
+            }
         }
     }
 
@@ -813,6 +837,16 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
         latch.countDown();
     }
 
+    private long sleepWithBusyWait(long timeoutInMillis, long sleep) {
+        try {
+            //noinspection BusyWait
+            Thread.sleep(sleep);
+        } catch (InterruptedException ie) {
+            logger.finest("Busy wait interrupted", ie);
+        }
+        return timeoutInMillis - sleep;
+    }
+
     @Override
     public boolean isMemberStateSafe() {
         return partitionReplicaStateChecker.getPartitionServiceState() == PartitionServiceState.SAFE;
@@ -916,6 +950,34 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
         } finally {
             lock.unlock();
         }
+    }
+
+    @Override
+    public boolean drain(long timeout, TimeUnit timeunit) {
+        MemberImpl localMember = node.localMember;
+        if (localMember.hasCapability(PARTITION_HOST)) {
+            Set<Capability> capabilities = EnumSet.copyOf(localMember.getCapabilities());
+            capabilities.remove(PARTITION_HOST);
+
+            localMember.updateCapabilities(capabilities);
+        }
+
+        return awaitEmpty(timeout, timeunit);
+    }
+
+    private boolean awaitEmpty(long timeout, TimeUnit timeunit) {
+        Collection<MemberImpl> partitionHosts = partitionStateManager.getPartitionHosts();
+        if (partitionHosts.contains(node.getLocalMember()) && partitionHosts.size() == 1) {
+            // If local node is the only partition host then there's no node we can drain the partitions to.
+            return false;
+        }
+
+        boolean isEmpty = partitionStateManager.checkIsEmpty();
+        for (long timeoutInMillis = timeunit.toMillis(timeout); timeoutInMillis > 0 && !isEmpty; isEmpty = partitionStateManager.checkIsEmpty()) {
+            timeoutInMillis = sleepWithBusyWait(timeoutInMillis, 1000L);
+        }
+
+        return isEmpty;
     }
 
     @Override
