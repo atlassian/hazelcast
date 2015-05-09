@@ -645,17 +645,7 @@
                         <artifactId>maven-javadoc-plugin</artifactId>
                         <version>${maven.javadoc.plugin.version}</version>
                         <configuration>
-                            <javaApiLinks>
-                                <property>
-                                    <name>api_1.6</name>
-                                    <value>http://download.oracle.com/javase/1.6.0/docs/api/</value>
-                                </property>
-                                <property>
-                                    <name>api_1.7</name>
-                                    <value>http://download.oracle.com/javase/1.7.0/docs/api/</value>
-                                </property>
-                            </javaApiLinks>
-                            <maxmemory>1024</maxmemory>
+                            <skip>true</skip>
                         </configuration>
                         <executions>
                             <execution>
