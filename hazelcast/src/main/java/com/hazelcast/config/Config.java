@@ -262,7 +262,7 @@ public class Config {
      *
      * @param capabilities The capabilities to set in the instance.
      * @return This config instance.
-     * @since 3.4
+     * @since 3.6
      */
     public Config setCapabilities(Set<Capability> capabilities) {
         this.capabilities = capabilities;
