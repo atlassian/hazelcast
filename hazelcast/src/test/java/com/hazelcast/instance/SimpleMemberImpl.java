@@ -62,6 +62,11 @@ public class SimpleMemberImpl implements Member {
     }
 
     @Override
+    public boolean hasCapability(Capability capability) {
+        return true;
+    }
+
+    @Override
     public void updateCapabilities(Set<Capability> capabilities) {
 
     }

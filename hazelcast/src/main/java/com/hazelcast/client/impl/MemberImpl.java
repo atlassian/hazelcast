@@ -64,6 +64,11 @@ public final class MemberImpl extends AbstractMember implements Member {
     }
 
     @Override
+    public boolean hasCapability(Capability capability) {
+        return false;
+    }
+
+    @Override
     public void updateCapabilities(Set<Capability> capabilities) {
     }
 
