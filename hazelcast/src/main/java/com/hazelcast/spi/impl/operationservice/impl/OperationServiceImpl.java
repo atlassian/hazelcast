@@ -107,6 +107,8 @@ public final class OperationServiceImpl implements InternalOperationService, Met
     @Probe(name = "completedCount", level = MANDATORY)
     final AtomicLong completedOperationsCount = new AtomicLong();
 
+    final AtomicLong executedRemoteOperationsCount = new AtomicLong();
+
     @Probe(name = "operationTimeoutCount", level = MANDATORY)
     final MwCounter operationTimeoutCount = MwCounter.newMwCounter();
 
@@ -214,6 +216,11 @@ public final class OperationServiceImpl implements InternalOperationService, Met
     @Override
     public long getExecutedOperationCount() {
         return completedOperationsCount.get();
+    }
+
+    @Override
+    public long getExecutedRemoteOperationCount() {
+        return executedRemoteOperationsCount.get();
     }
 
     @Override
@@ -402,6 +409,7 @@ public final class OperationServiceImpl implements InternalOperationService, Met
         if (thisAddress.equals(target)) {
             throw new IllegalArgumentException("Target is this node! -> " + target + ", op: " + op);
         }
+        executedRemoteOperationsCount.incrementAndGet();
 
         byte[] bytes = serializationService.toBytes(op);
         int partitionId = op.getPartitionId();

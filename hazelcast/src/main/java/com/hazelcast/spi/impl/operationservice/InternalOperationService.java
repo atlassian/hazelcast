@@ -58,6 +58,8 @@ public interface InternalOperationService extends OperationService {
      */
     long getExecutedOperationCount();
 
+    long getExecutedRemoteOperationCount();
+
     /**
      * Returns the number of partition threads.
      *
