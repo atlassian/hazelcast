@@ -25,7 +25,7 @@
     <parent>
         <groupId>com.hazelcast</groupId>
         <artifactId>hazelcast-root</artifactId>
-        <version>3.5.2-atlassian-37</version>
+        <version>3.5.2-atlassian-38-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
