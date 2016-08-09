@@ -26,6 +26,8 @@ abstract class AbstractRecordWithStats<V> extends AbstractRecord<V> {
     protected RecordStatistics recordStatistics;
 
     protected AbstractRecordWithStats() {
+        super();
+        this.recordStatistics = new RecordStatistics();
     }
 
     protected AbstractRecordWithStats(Data key) {
@@ -38,7 +40,7 @@ abstract class AbstractRecordWithStats<V> extends AbstractRecord<V> {
     }
 
     public final void setStatistics(RecordStatistics recordStatistics) {
-        this.recordStatistics = recordStatistics;
+        this.recordStatistics = recordStatistics == null ? new RecordStatistics() : recordStatistics;
     }
 
     public final void onAccess() {
