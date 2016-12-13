@@ -71,7 +71,7 @@ public final class MemberImpl extends AbstractMember implements Member, Hazelcas
 
     public MemberImpl(Address address, boolean localMember, String uuid, HazelcastInstanceImpl instance,
                       Map<String, Object> attributes, boolean liteMember) {
-        this(address, localMember, uuid, instance, null, attributes, liteMember);
+        this(address, localMember, uuid, instance, EnumSet.allOf(Capability.class), attributes, liteMember);
     }
 
     public MemberImpl(Address address, boolean localMember, String uuid, HazelcastInstanceImpl instance,
