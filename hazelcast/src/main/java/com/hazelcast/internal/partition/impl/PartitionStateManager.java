@@ -24,6 +24,7 @@ import com.hazelcast.core.MemberSelector;
 import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.instance.Node;
 import com.hazelcast.internal.cluster.impl.ClusterServiceImpl;
+import com.hazelcast.internal.cluster.impl.MemberSelectingCollection;
 import com.hazelcast.internal.metrics.Probe;
 import com.hazelcast.internal.partition.InternalPartition;
 import com.hazelcast.internal.partition.PartitionListener;
@@ -34,6 +35,7 @@ import com.hazelcast.partition.membergroup.MemberGroup;
 import com.hazelcast.partition.membergroup.MemberGroupFactory;
 import com.hazelcast.partition.membergroup.MemberGroupFactoryFactory;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -125,11 +127,11 @@ public class PartitionStateManager {
     }
 
     private Collection<MemberImpl> getPartitionHosts(MemberSelector selector) {
-        Collection<MemberImpl> members = node.getClusterService().getMemberList(PARTITION_HOST, selector);
+        Collection<MemberImpl> members = new ArrayList<MemberImpl>(node.getClusterService().getMemberList(PARTITION_HOST, selector));
         if (members.isEmpty()) {
             members.add(node.getClusterService().getMember(node.getMasterAddress()));
         }
-        return members;
+        return new MemberSelectingCollection<MemberImpl>(members, selector);
     }
 
     boolean checkIsEmpty() {

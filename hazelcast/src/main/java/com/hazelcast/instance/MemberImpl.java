@@ -80,8 +80,9 @@ public final class MemberImpl extends AbstractMember implements Member, Hazelcas
         this.localMember = localMember;
         this.instance = instance;
 
-        this.capabilities = capabilities == null ? Collections.unmodifiableSet(EnumSet.noneOf(Capability.class)) :
-                Collections.unmodifiableSet(EnumSet.copyOf(capabilities));
+        this.capabilities = (capabilities == null || capabilities.isEmpty())
+                ? Collections.unmodifiableSet(EnumSet.noneOf(Capability.class))
+                : Collections.unmodifiableSet(EnumSet.copyOf(capabilities));
     }
 
     public MemberImpl(MemberImpl member) {
