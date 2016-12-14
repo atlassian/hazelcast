@@ -134,16 +134,6 @@ public class PartitionStateManager {
         return new MemberSelectingCollection<MemberImpl>(members, selector);
     }
 
-    boolean checkIsEmpty() {
-        Address localAddress = node.localMember.getAddress();
-        for (int i = 0; i < partitionCount; i++) {
-            if (localAddress.equals(partitions[i].getOwnerOrNull())) {
-                return false;
-            }
-        }
-        return true;
-    }
-
     boolean initializePartitionAssignments(Set<Address> excludedAddresses) {
         ClusterState clusterState = node.getClusterService().getClusterState();
         if (clusterState != ClusterState.ACTIVE) {
