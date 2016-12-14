@@ -193,22 +193,6 @@ public class PartitionServiceProxy implements PartitionService {
         return partitionService.getPartitionReplicaStateChecker().triggerAndWaitForReplicaSync(timeout, unit);
     }
 
-    public boolean drain(long timeout, TimeUnit timeunit) {
-        if (timeunit == null) {
-            throw new NullPointerException();
-        }
-
-        if (timeout < 1L) {
-            throw new IllegalArgumentException();
-        }
-
-        if (!nodeActive()) {
-            return true;
-        }
-        return partitionService.drain(timeout, timeunit);
-    }
-
-
     private boolean nodeActive() {
         return nodeEngine.getNode().getState() != NodeState.SHUT_DOWN;
     }

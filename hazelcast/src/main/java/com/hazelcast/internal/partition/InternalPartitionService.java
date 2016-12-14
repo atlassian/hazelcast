@@ -76,8 +76,6 @@ public interface InternalPartitionService extends IPartitionService {
 
     boolean prepareToSafeShutdown(long timeout, TimeUnit seconds);
 
-    boolean drain(long timeout, TimeUnit timeunit);
-
     InternalPartition[] getInternalPartitions();
 
     void firstArrangement();

@@ -837,16 +837,6 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
         latch.countDown();
     }
 
-    private long sleepWithBusyWait(long timeoutInMillis, long sleep) {
-        try {
-            //noinspection BusyWait
-            Thread.sleep(sleep);
-        } catch (InterruptedException ie) {
-            logger.finest("Busy wait interrupted", ie);
-        }
-        return timeoutInMillis - sleep;
-    }
-
     @Override
     public boolean isMemberStateSafe() {
         return partitionReplicaStateChecker.getPartitionServiceState() == PartitionServiceState.SAFE;
@@ -950,34 +940,6 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
         } finally {
             lock.unlock();
         }
-    }
-
-    @Override
-    public boolean drain(long timeout, TimeUnit timeunit) {
-        MemberImpl localMember = node.localMember;
-        if (localMember.hasCapability(PARTITION_HOST)) {
-            Set<Capability> capabilities = EnumSet.copyOf(localMember.getCapabilities());
-            capabilities.remove(PARTITION_HOST);
-
-            localMember.updateCapabilities(capabilities);
-        }
-
-        return awaitEmpty(timeout, timeunit);
-    }
-
-    private boolean awaitEmpty(long timeout, TimeUnit timeunit) {
-        Collection<MemberImpl> partitionHosts = partitionStateManager.getPartitionHosts();
-        if (partitionHosts.contains(node.getLocalMember()) && partitionHosts.size() == 1) {
-            // If local node is the only partition host then there's no node we can drain the partitions to.
-            return false;
-        }
-
-        boolean isEmpty = partitionStateManager.checkIsEmpty();
-        for (long timeoutInMillis = timeunit.toMillis(timeout); timeoutInMillis > 0 && !isEmpty; isEmpty = partitionStateManager.checkIsEmpty()) {
-            timeoutInMillis = sleepWithBusyWait(timeoutInMillis, 1000L);
-        }
-
-        return isEmpty;
     }
 
     @Override
