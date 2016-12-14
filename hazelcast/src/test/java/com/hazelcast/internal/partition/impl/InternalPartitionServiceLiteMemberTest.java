@@ -47,7 +47,7 @@ import static org.junit.Assert.fail;
 @Category({QuickTest.class, ParallelTest.class})
 public class InternalPartitionServiceLiteMemberTest extends HazelcastTestSupport {
 
-    private final Config liteMemberConfig = new Config().setLiteMember(true).setCapabilities(EnumSet.noneOf(Capability.class));
+    private final Config liteMemberConfig = new Config().setLiteMember(true);
 
     /**
      * PARTITION ASSIGNMENT

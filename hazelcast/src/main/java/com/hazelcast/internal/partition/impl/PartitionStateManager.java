@@ -111,24 +111,16 @@ public class PartitionStateManager {
     }
 
     private Collection<MemberGroup> createMemberGroups() {
-        return memberGroupFactory.createMemberGroups(getPartitionHosts());
-    }
-
-    public Collection<MemberImpl> getPartitionHosts() {
-        // Even though the Master's ClusterServiceImpl prevents a node from dropping the PARTITION_HOST Capability if
-        // there is no other node which can host partitions, at any point in time a node can simply close
-        // the connection and no longer be available. If that's the case the Master will have no choice but to
-        // host the partitions.
-        Collection<MemberImpl> members = node.getClusterService().getMemberList(PARTITION_HOST);
-        if (members.isEmpty()) {
-            members.add(node.getClusterService().getMember(node.getMasterAddress()));
-        }
-        return members;
+        return memberGroupFactory.createMemberGroups(getPartitionHosts(DATA_MEMBER_SELECTOR));
     }
 
     private Collection<MemberImpl> getPartitionHosts(MemberSelector selector) {
         Collection<MemberImpl> members = new ArrayList<MemberImpl>(node.getClusterService().getMemberList(PARTITION_HOST, selector));
         if (members.isEmpty()) {
+            // Even though the Master's ClusterServiceImpl prevents a node from dropping the PARTITION_HOST Capability if
+            // there is no other node which can host partitions, at any point in time a node can simply close
+            // the connection and no longer be available. If that's the case the Master will have no choice but to
+            // host the partitions.
             members.add(node.getClusterService().getMember(node.getMasterAddress()));
         }
         return new MemberSelectingCollection<MemberImpl>(members, selector);
