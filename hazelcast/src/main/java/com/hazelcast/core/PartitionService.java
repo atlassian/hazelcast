@@ -166,5 +166,4 @@ public interface PartitionService {
      * @since 3.3
      */
     boolean forceLocalMemberToBeSafe(long timeout, TimeUnit unit);
-
 }

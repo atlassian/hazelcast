@@ -151,12 +151,12 @@ public class Config {
     /**
      * Sets the class-loader to be used during de-serialization
      * and as context class-loader of Hazelcast internal threads.
-     * <p>
-     * <p>
+     * <p/>
+     * <p/>
      * If not set (or set to null); thread context class-loader
      * will be used in required places.
-     * <p>
-     * <p>
+     * <p/>
+     * <p/>
      * Default value is null.
      *
      * @param classLoader class-loader to be used during de-serialization

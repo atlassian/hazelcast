@@ -19,7 +19,6 @@ package com.hazelcast.internal.partition.impl;
 
 import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.instance.Capability;
 import com.hazelcast.nio.Address;
 import com.hazelcast.partition.NoDataMemberInClusterException;
 import com.hazelcast.test.AssertTask;
@@ -32,7 +31,6 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 
