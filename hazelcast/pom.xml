@@ -14,8 +14,7 @@
   ~ limitations under the License.
   -->
 
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <name>hazelcast</name>
@@ -26,7 +25,7 @@
     <parent>
         <groupId>com.hazelcast</groupId>
         <artifactId>hazelcast-root</artifactId>
-        <version>3.7.4-atlassian-40-SNAPSHOT</version>
+        <version>3.7.4-atlassian-40</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
@@ -189,10 +188,8 @@
                         </goals>
                         <configuration>
                             <target>
-                                <copy file="${basedir}/src/main/resources/hazelcast-default.xml"
-                                      tofile="${basedir}/target/hazelcast.xml"/>
-                                <copy file="${basedir}/src/main/resources/hazelcast-full-example.xml"
-                                      tofile="${basedir}/target/hazelcast-full-example.xml"/>
+                                <copy file="${basedir}/src/main/resources/hazelcast-default.xml" tofile="${basedir}/target/hazelcast.xml" />
+                                <copy file="${basedir}/src/main/resources/hazelcast-full-example.xml" tofile="${basedir}/target/hazelcast-full-example.xml" />
                             </target>
                         </configuration>
                     </execution>
