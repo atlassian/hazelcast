@@ -1249,7 +1249,7 @@ public class MigrationManager {
             try {
                 final int shutdownRequestCount = shutdownRequestedAddresses.size();
                 if (shutdownRequestCount > 0) {
-                    if (shutdownRequestCount == nodeEngine.getClusterService().getSize(DATA_MEMBER_SELECTOR)) {
+                    if (allPartitionHostsShuttingDown()) {
                         for (Address address : shutdownRequestedAddresses) {
                             sendShutdownOperation(address);
                         }
@@ -1272,6 +1272,16 @@ public class MigrationManager {
             } finally {
                 partitionServiceLock.unlock();
             }
+        }
+
+        private boolean allPartitionHostsShuttingDown() {
+            Collection<MemberImpl> partitionHosts = partitionStateManager.getPartitionHosts(DATA_MEMBER_SELECTOR);
+            for (MemberImpl partitionHost : partitionHosts) {
+                if (!shutdownRequestedAddresses.contains(partitionHost.getAddress())) {
+                    return false;
+                }
+            }
+            return true;
         }
     }
 

@@ -114,7 +114,7 @@ public class PartitionStateManager {
         return memberGroupFactory.createMemberGroups(getPartitionHosts(DATA_MEMBER_SELECTOR));
     }
 
-    private Collection<MemberImpl> getPartitionHosts(MemberSelector selector) {
+    Collection<MemberImpl> getPartitionHosts(MemberSelector selector) {
         Collection<MemberImpl> members = new ArrayList<MemberImpl>(node.getClusterService().getMemberList(PARTITION_HOST, selector));
         if (members.isEmpty()) {
             // Even though the Master's ClusterServiceImpl prevents a node from dropping the PARTITION_HOST Capability if
