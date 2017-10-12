@@ -47,13 +47,11 @@ public class EvictorImpl implements Evictor {
 
     @Override
     public void evict(RecordStore recordStore, Data excludedKey) {
-        System.out.println("Selecting evictable entity...");
         EntryView evictableEntry = selectEvictableEntry(recordStore, excludedKey);
         if (evictableEntry == null) {
             return;
         }
 
-        System.out.println("Evicting!!!!!");
         evictEntry(recordStore, evictableEntry);
     }
 
@@ -64,8 +62,8 @@ public class EvictorImpl implements Evictor {
         EntryView selected = null;
 
         for (EntryView candidate : samples) {
+            // it doesn't make sense to insert and then immediately delete value
             if (excludedKey != null && getDataKey(candidate).equals(excludedKey)) {
-//                excluded = candidate;
                 continue;
             }
 
@@ -84,7 +82,6 @@ public class EvictorImpl implements Evictor {
     }
 
     private void evictEntry(RecordStore recordStore, EntryView selectedEntry) {
-        System.out.println("Evicting Entry");
         Record record = getRecordFromEntryView(selectedEntry);
         Data key = record.getKey();
 

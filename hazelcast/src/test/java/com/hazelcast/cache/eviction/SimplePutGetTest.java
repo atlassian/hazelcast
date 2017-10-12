@@ -19,14 +19,9 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import java.util.UUID;
-
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 
-/**
- *
- */
 @RunWith(HazelcastSerialClassRunner.class)
 @Category(QuickTest.class)
 public class SimplePutGetTest {
@@ -34,8 +29,7 @@ public class SimplePutGetTest {
 
     @Before
     public void setUp() {
-        Config cfg = new Config();
-        hazelcast = Hazelcast.newHazelcastInstance(cfg);
+        hazelcast = Hazelcast.newHazelcastInstance(new Config());
     }
 
     @After
@@ -45,15 +39,12 @@ public class SimplePutGetTest {
 
     @Test
     public void testPut() throws InterruptedException {
-//        tester.hazelcast.getConfig().addMapConfig(new MapConfig("jjj")
-        hazelcast.getConfig().addMapConfig(new MapConfig("jjj")
-                .setMaxSizeConfig(new MaxSizeConfig(50, MaxSizeConfig.MaxSizePolicy.PER_NODE)) //
+        hazelcast.getConfig().addMapConfig(new MapConfig("test")
+                .setMaxSizeConfig(new MaxSizeConfig(50, MaxSizeConfig.MaxSizePolicy.PER_NODE))
                 .setTimeToLiveSeconds(3600)
                 .setBackupCount(1)
                 .setMaxIdleSeconds(3600)
-                .setEvictionPolicy(EvictionPolicy.LRU) //
-                .setEvictionPercentage(10)
-                .setMinEvictionCheckMillis(100)
+                .setEvictionPolicy(EvictionPolicy.LRU)
                 .setAsyncBackupCount(0)
                 .setInMemoryFormat(InMemoryFormat.BINARY)
                 .setReadBackupData(false)
@@ -64,25 +55,10 @@ public class SimplePutGetTest {
                 .setMapIndexConfigs(Lists.<MapIndexConfig>newArrayList())
                 .setMergePolicy("com.hazelcast.map.merge.PutIfAbsentMapMergePolicy")
         );
-//        final IMap<String, String> bbq = tester.hazelcast.getMap("jjj");
-        final IMap<String, String> bbq = hazelcast.getMap("jjj");
-        bbq.put("one", "two");
-        for(int i = 0; i < 100; i++) {
-            bbq.put(String.valueOf(i), UUID.randomUUID().toString());
-//            Thread.sleep(1000);
-        }
+        final IMap<String, String> map = hazelcast.getMap("test");
 
-        /*System.out.println("NEW MAP");
-        System.out.println("NEW MAP");
-        System.out.println("NEW MAP");
-        System.out.println("NEW MAP");
-        final IMap<String, String> bbq1 = hazelcast.getMap("iii");
-        for(int i = 0; i < 100; i++) {
-            bbq1.put(String.valueOf(i), UUID.randomUUID().toString());
-        }*/
-//        System.out.println(bbq.put("one", "two"));
-//        System.out.println(bbq.put("one", "three"));
-//        Thread.sleep(10000);
-        assertThat(bbq.get("one"), equalTo("two"));
+        map.put("one", "two");
+
+        assertThat(map.get("one"), equalTo("two"));
     }
 }

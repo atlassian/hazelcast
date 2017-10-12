@@ -100,29 +100,17 @@ public class EvictionChecker {
     }
 
     protected boolean checkPerNodeEviction(RecordStore recordStore, MaxSizeConfig maxSizeConfig) {
-        int configuredMaxSize = maxSizeConfig.getSize();
-
-        // QUESTION 1: how it used to be before?
-        // QUESTION 2: what is the logic gehind those changes? how many storages are per partition? Is this one per
-        // partition?
-        // QUESTION 3: is this an error in eviction algorithm?
-//        System.out.println("Record store size is " + recordStore.size());
-//        System.out.println("PartitionId is " + recordStore.getPartitionId());
         Collection<Integer> ownedPartitions = mapServiceContext.getOwnedPartitions();
-//        System.out.println("Owned partitions: " + ownedPartitions.size());
         int totalSize = 0;
-        for(Integer i: ownedPartitions) {
-            PartitionContainer partitionContainer = mapServiceContext.getPartitionContainer(i);
+        for(Integer ownedPartition: ownedPartitions) {
+            PartitionContainer partitionContainer = mapServiceContext.getPartitionContainer(ownedPartition);
             RecordStore store = partitionContainer.getExistingRecordStore(recordStore.getName());
             if(store != null) {
-//                System.out.println("Store " + store.getName());
-//                System.out.println("Store size is " + store.size());
                 totalSize += store.size();
             }
         }
-//        System.out.println("total size is " + totalSize);
 
-        return totalSize > configuredMaxSize;
+        return totalSize > maxSizeConfig.getSize();
     }
 
     /**
