@@ -30,6 +30,7 @@ import com.hazelcast.spi.partition.IPartitionService;
 import com.hazelcast.util.MemoryInfoAccessor;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
@@ -81,7 +82,7 @@ public class EvictionChecker {
 
         switch (maxSizePolicy) {
             case PER_NODE:
-                return checkPerNodeEviction(recordStore);
+                return checkPerNodeEviction(recordStore, maxSizeConfig);
             case PER_PARTITION:
                 int partitionId = recordStore.getPartitionId();
                 return checkPerPartitionEviction(mapName, maxSizeConfig, partitionId);
@@ -98,9 +99,30 @@ public class EvictionChecker {
         }
     }
 
-    protected boolean checkPerNodeEviction(RecordStore recordStore) {
-        double maxExpectedRecordStoreSize = calculatePerNodeMaxRecordStoreSize(recordStore);
-        return recordStore.size() > maxExpectedRecordStoreSize;
+    protected boolean checkPerNodeEviction(RecordStore recordStore, MaxSizeConfig maxSizeConfig) {
+        int configuredMaxSize = maxSizeConfig.getSize();
+
+        // QUESTION 1: how it used to be before?
+        // QUESTION 2: what is the logic gehind those changes? how many storages are per partition? Is this one per
+        // partition?
+        // QUESTION 3: is this an error in eviction algorithm?
+//        System.out.println("Record store size is " + recordStore.size());
+//        System.out.println("PartitionId is " + recordStore.getPartitionId());
+        Collection<Integer> ownedPartitions = mapServiceContext.getOwnedPartitions();
+//        System.out.println("Owned partitions: " + ownedPartitions.size());
+        int totalSize = 0;
+        for(Integer i: ownedPartitions) {
+            PartitionContainer partitionContainer = mapServiceContext.getPartitionContainer(i);
+            RecordStore store = partitionContainer.getExistingRecordStore(recordStore.getName());
+            if(store != null) {
+//                System.out.println("Store " + store.getName());
+//                System.out.println("Store size is " + store.size());
+                totalSize += store.size();
+            }
+        }
+//        System.out.println("total size is " + totalSize);
+
+        return totalSize > configuredMaxSize;
     }
 
     /**

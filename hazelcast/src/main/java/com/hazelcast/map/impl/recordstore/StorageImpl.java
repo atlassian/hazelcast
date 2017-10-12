@@ -67,6 +67,7 @@ public class StorageImpl<R extends Record> implements Storage<Data, R> {
     @Override
     public void put(Data key, R record) {
 
+//        System.out.println("Store.put " + key.toString());
         ((AbstractRecord) record).setKey(key);
 
         R previousRecord = records.put(key, record);
@@ -125,6 +126,7 @@ public class StorageImpl<R extends Record> implements Storage<Data, R> {
 
     @Override
     public void removeRecord(R record) {
+        System.out.println("REMOVING RECORD " + record);
         if (record == null) {
             return;
         }
