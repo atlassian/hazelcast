@@ -104,13 +104,15 @@ public class EvictionChecker {
         int totalSize = 0;
         for(Integer ownedPartition: ownedPartitions) {
             PartitionContainer partitionContainer = mapServiceContext.getPartitionContainer(ownedPartition);
-            RecordStore store = partitionContainer.getExistingRecordStore(recordStore.getName());
-            if(store != null) {
-                totalSize += store.size();
+            if (partitionContainer != null) {
+                RecordStore store = partitionContainer.getExistingRecordStore(recordStore.getName());
+                if(store != null) {
+                    totalSize += store.size();
+                }
             }
         }
 
-        return totalSize > maxSizeConfig.getSize();
+        return totalSize > maxSizeConfig.getSize() * 0.96;
     }
 
     /**
