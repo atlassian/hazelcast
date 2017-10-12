@@ -56,13 +56,14 @@ public class EvictorImpl implements Evictor {
     }
 
     private EntryView selectEvictableEntry(RecordStore recordStore, Data excludedKey) {
+
         Iterable<EntryView> samples = getSamples(recordStore);
         EntryView excluded = null;
         EntryView selected = null;
 
         for (EntryView candidate : samples) {
-            if (excludedKey != null && excluded == null && getDataKey(candidate).equals(excludedKey)) {
-                excluded = candidate;
+            // it doesn't make sense to insert and then immediately delete value
+            if (excludedKey != null && getDataKey(candidate).equals(excludedKey)) {
                 continue;
             }
 

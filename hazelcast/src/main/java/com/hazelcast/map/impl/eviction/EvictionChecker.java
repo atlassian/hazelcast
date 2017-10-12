@@ -30,6 +30,7 @@ import com.hazelcast.spi.partition.IPartitionService;
 import com.hazelcast.util.MemoryInfoAccessor;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
@@ -81,7 +82,7 @@ public class EvictionChecker {
 
         switch (maxSizePolicy) {
             case PER_NODE:
-                return checkPerNodeEviction(recordStore);
+                return checkPerNodeEviction(recordStore, maxSizeConfig);
             case PER_PARTITION:
                 int partitionId = recordStore.getPartitionId();
                 return checkPerPartitionEviction(mapName, maxSizeConfig, partitionId);
@@ -98,9 +99,20 @@ public class EvictionChecker {
         }
     }
 
-    protected boolean checkPerNodeEviction(RecordStore recordStore) {
-        double maxExpectedRecordStoreSize = calculatePerNodeMaxRecordStoreSize(recordStore);
-        return recordStore.size() > maxExpectedRecordStoreSize;
+    protected boolean checkPerNodeEviction(RecordStore recordStore, MaxSizeConfig maxSizeConfig) {
+        Collection<Integer> ownedPartitions = mapServiceContext.getOwnedPartitions();
+        int totalSize = 0;
+        for(Integer ownedPartition: ownedPartitions) {
+            PartitionContainer partitionContainer = mapServiceContext.getPartitionContainer(ownedPartition);
+            if (partitionContainer != null) {
+                RecordStore store = partitionContainer.getExistingRecordStore(recordStore.getName());
+                if(store != null) {
+                    totalSize += store.size();
+                }
+            }
+        }
+
+        return totalSize > maxSizeConfig.getSize() * 0.96;
     }
 
     /**
