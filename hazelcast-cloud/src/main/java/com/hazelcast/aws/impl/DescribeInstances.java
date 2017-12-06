@@ -20,6 +20,8 @@ import com.hazelcast.aws.security.EC2RequestSigner;
 import com.hazelcast.aws.utility.CloudyUtility;
 import com.hazelcast.config.AwsConfig;
 import com.hazelcast.config.InvalidConfigurationException;
+import com.hazelcast.logging.ILogger;
+import com.hazelcast.logging.Logger;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -39,6 +41,8 @@ import static com.hazelcast.aws.impl.Constants.DOC_VERSION;
 import static com.hazelcast.aws.impl.Constants.SIGNATURE_METHOD_V4;
 
 public class DescribeInstances {
+    private final ILogger log = Logger.getLogger(getClass());
+
     private static final String IAM_ROLE_ENDPOINT = "169.254.169.254";
     String timeStamp = getFormattedTimestamp();
     private EC2RequestSigner rs;
@@ -70,8 +74,9 @@ public class DescribeInstances {
 
     private void getKeysFromIamRole() {
         try {
-            String query = "latest/meta-data/iam/security-credentials/" + awsConfig.getIamRole();
+            String query = "/latest/meta-data/iam/security-credentials/" + awsConfig.getIamRole();
             URL url = new URL("http", IAM_ROLE_ENDPOINT, query);
+            log.info("Getting security credentials from: " + url);
             InputStreamReader is = new InputStreamReader(url.openStream(), "UTF-8");
             BufferedReader reader = new BufferedReader(is);
             Map<String, String> map = parseIamRole(reader);
@@ -79,7 +84,7 @@ public class DescribeInstances {
             awsConfig.setSecretKey(map.get("SecretAccessKey"));
             attributes.put("X-Amz-Security-Token", map.get("Token"));
         } catch (IOException io) {
-            throw new InvalidConfigurationException("Invalid Aws Configuration");
+            throw new InvalidConfigurationException("Invalid Aws Configuration", io);
         }
     }
 
