@@ -827,12 +827,12 @@
     <distributionManagement>
         <repository>
             <id>atlassian-3rdparty</id>
-            <url>https://maven.atlassian.com/3rdparty</url>
+            <url>https://packages.atlassian.com/maven/3rdparty</url>
         </repository>
         <snapshotRepository>
             <id>atlassian-3rdparty-snapshot</id>
             <name>Maven2 Snapshot Repository</name>
-            <url>https://maven.atlassian.com/3rdparty-snapshot</url>
+            <url>https://packages.atlassian.com/maven/3rdparty-snapshot</url>
             <uniqueVersion>false</uniqueVersion>
         </snapshotRepository>
     </distributionManagement>
