@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import com.hazelcast.multimap.impl.MultiMapContainer;
 import com.hazelcast.multimap.impl.MultiMapDataSerializerHook;
 import com.hazelcast.spi.BackupOperation;
 
-public class ClearBackupOperation extends MultiMapOperation implements BackupOperation {
+public class ClearBackupOperation extends AbstractMultiMapOperation implements BackupOperation {
 
     public ClearBackupOperation() {
     }
@@ -31,7 +31,7 @@ public class ClearBackupOperation extends MultiMapOperation implements BackupOpe
 
     @Override
     public void run() throws Exception {
-        MultiMapContainer container = getOrCreateContainer();
+        MultiMapContainer container = getOrCreateContainerWithoutAccess();
         container.clear();
         response = true;
     }
@@ -40,5 +40,4 @@ public class ClearBackupOperation extends MultiMapOperation implements BackupOpe
     public int getId() {
         return MultiMapDataSerializerHook.CLEAR_BACKUP;
     }
-
 }

@@ -1,8 +1,25 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.xa;
 
 import com.atomikos.datasource.xa.XID;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.TransactionalMap;
+import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
@@ -30,19 +47,19 @@ import static org.junit.Assert.fail;
 @Category({QuickTest.class, ParallelTest.class})
 public class HazelcastXACompatibilityTest extends HazelcastTestSupport {
 
-    private HazelcastInstance instance, secondInstance;
-    private HazelcastXAResource xaResource, secondXaResource;
+    private HazelcastXAResource xaResource;
+    private HazelcastXAResource secondXaResource;
     private Xid xid;
 
-    private static Xid createXid() throws InterruptedException {
+    private static Xid createXid() {
         return new XID(randomString(), "test");
     }
 
     @Before
-    public void setUp() throws Exception {
+    public void setUp() {
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(2);
-        instance = factory.newHazelcastInstance();
-        secondInstance = factory.newHazelcastInstance();
+        HazelcastInstance instance = factory.newHazelcastInstance();
+        HazelcastInstance secondInstance = factory.newHazelcastInstance();
         xaResource = instance.getXAResource();
         secondXaResource = secondInstance.getXAResource();
         xid = createXid();
@@ -60,6 +77,18 @@ public class HazelcastXACompatibilityTest extends HazelcastTestSupport {
         doSomeWorkWithXa(xaResource);
         performPrepareWithXa(xaResource);
         performCommitWithXa(secondXaResource);
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run() throws Exception {
+                assertRecoversNothing(xaResource);
+            }
+        });
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run() throws Exception {
+                assertRecoversNothing(secondXaResource);
+            }
+        });
     }
 
     @Test
@@ -76,13 +105,8 @@ public class HazelcastXACompatibilityTest extends HazelcastTestSupport {
         assertRecoversXid(xaResource);
     }
 
-    private void assertRecoversXid(XAResource xaResource) throws XAException {
-        Xid[] xids = xaResource.recover(XAResource.TMSTARTRSCAN | XAResource.TMENDRSCAN);
-        assertTrue("" + xids.length, xids.length == 1);
-    }
-
     @Test
-    public void testRecoveryRequiresRollbackOfUnknownXid() throws Exception {
+    public void testRecoveryRequiresRollbackOfUnknownXid() {
         performRollbackWithXa(xaResource);
     }
 
@@ -95,12 +119,13 @@ public class HazelcastXACompatibilityTest extends HazelcastTestSupport {
         xaResource.commit(xid, false);
     }
 
-    private void performRollbackWithXa(XAResource xaResource) throws XAException {
+    private void performRollbackWithXa(XAResource xaResource) {
         try {
             xaResource.rollback(xid);
         } catch (XAException xaerr) {
-            assertTrue("rollback of unknown xid gives unexpected errorCode: " + xaerr.errorCode, ((XAException.XA_RBBASE <= xaerr.errorCode) && (xaerr.errorCode <= XAException.XA_RBEND))
-                    || xaerr.errorCode == XAException.XAER_NOTA);
+            assertTrue("rollback of unknown xid gives unexpected errorCode: " + xaerr.errorCode,
+                    ((XAException.XA_RBBASE <= xaerr.errorCode) && (xaerr.errorCode <= XAException.XA_RBEND))
+                            || xaerr.errorCode == XAException.XAER_NOTA);
         }
     }
 
@@ -221,5 +246,14 @@ public class HazelcastXACompatibilityTest extends HazelcastTestSupport {
         assertOpenEventually(latch, 10);
     }
 
+    private void assertRecoversXid(XAResource xaResource) throws XAException {
+        Xid[] xids = xaResource.recover(XAResource.TMSTARTRSCAN | XAResource.TMENDRSCAN);
+        assertEquals("One Xid was expected when calling recover", 1, xids.length);
+    }
+
+    private void assertRecoversNothing(XAResource xaResource) throws XAException {
+        Xid[] xids = xaResource.recover(XAResource.TMSTARTRSCAN | XAResource.TMENDRSCAN);
+        assertEquals("No prepared transaction should exist", 0, xids.length);
+  }
 
 }

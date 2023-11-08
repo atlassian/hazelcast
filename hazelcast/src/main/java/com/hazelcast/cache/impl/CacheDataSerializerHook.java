@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,14 @@
 package com.hazelcast.cache.impl;
 
 import com.hazelcast.cache.HazelcastExpiryPolicy;
-import com.hazelcast.cache.impl.client.CacheBatchInvalidationMessage;
-import com.hazelcast.cache.impl.client.CacheSingleInvalidationMessage;
 import com.hazelcast.cache.impl.event.CachePartitionLostEventFilter;
+import com.hazelcast.cache.impl.journal.CacheEventJournalReadOperation;
+import com.hazelcast.cache.impl.journal.CacheEventJournalReadResultSetImpl;
+import com.hazelcast.cache.impl.journal.CacheEventJournalSubscribeOperation;
+import com.hazelcast.cache.impl.journal.DeserializingEventJournalCacheEvent;
+import com.hazelcast.cache.impl.journal.InternalEventJournalCacheEvent;
 import com.hazelcast.cache.impl.merge.entry.DefaultCacheEntryView;
+import com.hazelcast.cache.impl.operation.AddCacheConfigOperation;
 import com.hazelcast.cache.impl.operation.CacheBackupEntryProcessorOperation;
 import com.hazelcast.cache.impl.operation.CacheClearBackupOperation;
 import com.hazelcast.cache.impl.operation.CacheClearOperation;
@@ -30,18 +34,23 @@ import com.hazelcast.cache.impl.operation.CacheCreateConfigOperation;
 import com.hazelcast.cache.impl.operation.CacheDestroyOperation;
 import com.hazelcast.cache.impl.operation.CacheEntryIteratorOperation;
 import com.hazelcast.cache.impl.operation.CacheEntryProcessorOperation;
+import com.hazelcast.cache.impl.operation.CacheExpireBatchBackupOperation;
 import com.hazelcast.cache.impl.operation.CacheGetAllOperation;
 import com.hazelcast.cache.impl.operation.CacheGetAllOperationFactory;
 import com.hazelcast.cache.impl.operation.CacheGetAndRemoveOperation;
 import com.hazelcast.cache.impl.operation.CacheGetAndReplaceOperation;
 import com.hazelcast.cache.impl.operation.CacheGetConfigOperation;
+import com.hazelcast.cache.impl.operation.CacheGetInvalidationMetaDataOperation;
 import com.hazelcast.cache.impl.operation.CacheGetOperation;
 import com.hazelcast.cache.impl.operation.CacheKeyIteratorOperation;
+import com.hazelcast.cache.impl.operation.CacheLegacyMergeOperation;
 import com.hazelcast.cache.impl.operation.CacheListenerRegistrationOperation;
 import com.hazelcast.cache.impl.operation.CacheLoadAllOperation;
 import com.hazelcast.cache.impl.operation.CacheLoadAllOperationFactory;
 import com.hazelcast.cache.impl.operation.CacheManagementConfigOperation;
 import com.hazelcast.cache.impl.operation.CacheMergeOperation;
+import com.hazelcast.cache.impl.operation.CacheMergeOperationFactory;
+import com.hazelcast.cache.impl.operation.CacheNearCacheStateHolder;
 import com.hazelcast.cache.impl.operation.CachePutAllBackupOperation;
 import com.hazelcast.cache.impl.operation.CachePutAllOperation;
 import com.hazelcast.cache.impl.operation.CachePutBackupOperation;
@@ -54,11 +63,17 @@ import com.hazelcast.cache.impl.operation.CacheRemoveBackupOperation;
 import com.hazelcast.cache.impl.operation.CacheRemoveOperation;
 import com.hazelcast.cache.impl.operation.CacheReplaceOperation;
 import com.hazelcast.cache.impl.operation.CacheReplicationOperation;
+import com.hazelcast.cache.impl.operation.CacheSetExpiryPolicyBackupOperation;
+import com.hazelcast.cache.impl.operation.CacheSetExpiryPolicyOperation;
 import com.hazelcast.cache.impl.operation.CacheSizeOperation;
 import com.hazelcast.cache.impl.operation.CacheSizeOperationFactory;
-import com.hazelcast.cache.impl.operation.PostJoinCacheOperation;
+import com.hazelcast.cache.impl.operation.OnJoinCacheOperation;
 import com.hazelcast.cache.impl.record.CacheDataRecord;
 import com.hazelcast.cache.impl.record.CacheObjectRecord;
+import com.hazelcast.cache.impl.tenantcontrol.CacheDestroyEventContext;
+import com.hazelcast.client.impl.protocol.task.cache.CacheAssignAndGetUuidsOperation;
+import com.hazelcast.client.impl.protocol.task.cache.CacheAssignAndGetUuidsOperationFactory;
+import com.hazelcast.internal.management.request.GetCacheEntryRequest;
 import com.hazelcast.internal.serialization.DataSerializerHook;
 import com.hazelcast.internal.serialization.impl.ArrayDataSerializableFactory;
 import com.hazelcast.internal.serialization.impl.FactoryIdHelper;
@@ -116,7 +131,7 @@ public final class CacheDataSerializerHook
     public static final short REMOVE_ALL_BACKUP = 35;
     public static final short REMOVE_ALL_FACTORY = 36;
     public static final short PUT_ALL = 37;
-    public static final short MERGE = 38;
+    public static final short LEGACY_MERGE = 38;
     public static final short INVALIDATION_MESSAGE = 39;
     public static final short BATCH_INVALIDATION_MESSAGE = 40;
     public static final short ENTRY_ITERATOR = 41;
@@ -129,7 +144,30 @@ public final class CacheDataSerializerHook
     public static final short CACHE_OBJECT_RECORD = 48;
     public static final short CACHE_PARTITION_EVENT_DATA = 49;
 
-    private static final int LEN = CACHE_PARTITION_EVENT_DATA + 1;
+    public static final short CACHE_INVALIDATION_METADATA = 50;
+    public static final short CACHE_INVALIDATION_METADATA_RESPONSE = 51;
+    public static final short CACHE_ASSIGN_AND_GET_UUIDS = 52;
+    public static final short CACHE_ASSIGN_AND_GET_UUIDS_FACTORY = 53;
+    public static final short CACHE_NEAR_CACHE_STATE_HOLDER = 54;
+    public static final short CACHE_EVENT_LISTENER_ADAPTOR = 55;
+    public static final short EVENT_JOURNAL_SUBSCRIBE_OPERATION = 56;
+    public static final short EVENT_JOURNAL_READ_OPERATION = 57;
+    public static final short EVENT_JOURNAL_DESERIALIZING_CACHE_EVENT = 58;
+    public static final short EVENT_JOURNAL_INTERNAL_CACHE_EVENT = 59;
+    public static final short EVENT_JOURNAL_READ_RESULT_SET = 60;
+    public static final int PRE_JOIN_CACHE_CONFIG = 61;
+    public static final int CACHE_BROWSER_ENTRY_VIEW = 62;
+    public static final int GET_CACHE_ENTRY_VIEW_PROCESSOR = 63;
+
+    public static final int MERGE_FACTORY = 64;
+    public static final int MERGE = 65;
+    public static final int ADD_CACHE_CONFIG_OPERATION = 66;
+    public static final int SET_EXPIRY_POLICY = 67;
+    public static final int SET_EXPIRY_POLICY_BACKUP = 68;
+    public static final int EXPIRE_BATCH_BACKUP = 69;
+    public static final int CACHE_DESTROY_EVENT_CONTEXT = 70;
+
+    private static final int LEN = CACHE_DESTROY_EVENT_CONTEXT + 1;
 
     public int getFactoryId() {
         return F_ID;
@@ -325,19 +363,9 @@ public final class CacheDataSerializerHook
                 return new CachePutAllOperation();
             }
         };
-        constructors[MERGE] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+        constructors[LEGACY_MERGE] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
             public IdentifiedDataSerializable createNew(Integer arg) {
-                return new CacheMergeOperation();
-            }
-        };
-        constructors[INVALIDATION_MESSAGE] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
-            public IdentifiedDataSerializable createNew(Integer arg) {
-                return new CacheSingleInvalidationMessage();
-            }
-        };
-        constructors[BATCH_INVALIDATION_MESSAGE] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
-            public IdentifiedDataSerializable createNew(Integer arg) {
-                return new CacheBatchInvalidationMessage();
+                return new CacheLegacyMergeOperation();
             }
         };
         constructors[ENTRY_ITERATOR] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
@@ -367,7 +395,7 @@ public final class CacheDataSerializerHook
         };
         constructors[CACHE_POST_JOIN] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
             public IdentifiedDataSerializable createNew(Integer arg) {
-                return new PostJoinCacheOperation();
+                return new OnJoinCacheOperation();
             }
         };
         constructors[CACHE_DATA_RECORD] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
@@ -385,6 +413,128 @@ public final class CacheDataSerializerHook
                 return new CachePartitionEventData();
             }
         };
+        constructors[CACHE_INVALIDATION_METADATA] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+            public IdentifiedDataSerializable createNew(Integer arg) {
+                return new CacheGetInvalidationMetaDataOperation();
+            }
+        };
+        constructors[CACHE_INVALIDATION_METADATA_RESPONSE] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+            public IdentifiedDataSerializable createNew(Integer arg) {
+                return new CacheGetInvalidationMetaDataOperation.MetaDataResponse();
+            }
+        };
+        constructors[CACHE_ASSIGN_AND_GET_UUIDS] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+            public IdentifiedDataSerializable createNew(Integer arg) {
+                return new CacheAssignAndGetUuidsOperation();
+            }
+        };
+        constructors[CACHE_ASSIGN_AND_GET_UUIDS_FACTORY] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+            public IdentifiedDataSerializable createNew(Integer arg) {
+                return new CacheAssignAndGetUuidsOperationFactory();
+            }
+        };
+        constructors[CACHE_NEAR_CACHE_STATE_HOLDER] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+            public IdentifiedDataSerializable createNew(Integer arg) {
+                return new CacheNearCacheStateHolder();
+            }
+        };
+        constructors[CACHE_EVENT_LISTENER_ADAPTOR] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+            public IdentifiedDataSerializable createNew(Integer arg) {
+                return new CacheEventListenerAdaptor();
+            }
+        };
+        constructors[EVENT_JOURNAL_SUBSCRIBE_OPERATION] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+            public IdentifiedDataSerializable createNew(Integer arg) {
+                return new CacheEventJournalSubscribeOperation();
+            }
+        };
+        constructors[EVENT_JOURNAL_READ_OPERATION] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+            public IdentifiedDataSerializable createNew(Integer arg) {
+                return new CacheEventJournalReadOperation<Object, Object, Object>();
+            }
+        };
+        constructors[EVENT_JOURNAL_DESERIALIZING_CACHE_EVENT] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+            public IdentifiedDataSerializable createNew(Integer arg) {
+                return new DeserializingEventJournalCacheEvent<Object, Object>();
+            }
+        };
+        constructors[EVENT_JOURNAL_INTERNAL_CACHE_EVENT] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+            public IdentifiedDataSerializable createNew(Integer arg) {
+                return new InternalEventJournalCacheEvent();
+            }
+        };
+        constructors[EVENT_JOURNAL_READ_RESULT_SET] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+            public IdentifiedDataSerializable createNew(Integer arg) {
+                return new CacheEventJournalReadResultSetImpl<Object, Object, Object>();
+            }
+        };
+        constructors[PRE_JOIN_CACHE_CONFIG] =
+                new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+                    @Override
+                    public IdentifiedDataSerializable createNew(Integer arg) {
+                        return new PreJoinCacheConfig();
+                    }
+                };
+        constructors[CACHE_BROWSER_ENTRY_VIEW] =
+                new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+                    @Override
+                    public IdentifiedDataSerializable createNew(Integer arg) {
+                        return new GetCacheEntryRequest.CacheBrowserEntryView();
+                    }
+                };
+        constructors[GET_CACHE_ENTRY_VIEW_PROCESSOR] =
+                new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+                    @Override
+                    public IdentifiedDataSerializable createNew(Integer arg) {
+                        return new GetCacheEntryRequest.GetCacheEntryViewEntryProcessor();
+                    }
+                };
+        constructors[MERGE_FACTORY] =
+                new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+                    @Override
+                    public IdentifiedDataSerializable createNew(Integer arg) {
+                        return new CacheMergeOperationFactory();
+                    }
+                };
+        constructors[MERGE] =
+                new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+                    @Override
+                    public IdentifiedDataSerializable createNew(Integer arg) {
+                        return new CacheMergeOperation();
+                    }
+                };
+        constructors[ADD_CACHE_CONFIG_OPERATION] =
+                new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+                    @Override
+                    public IdentifiedDataSerializable createNew(Integer arg) {
+                        return new AddCacheConfigOperation();
+                    }
+                };
+        constructors[SET_EXPIRY_POLICY] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+            @Override
+            public IdentifiedDataSerializable createNew(Integer arg) {
+                return new CacheSetExpiryPolicyOperation();
+            }
+        };
+        constructors[SET_EXPIRY_POLICY_BACKUP] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+            @Override
+            public IdentifiedDataSerializable createNew(Integer arg) {
+                return new CacheSetExpiryPolicyBackupOperation();
+            }
+        };
+        constructors[EXPIRE_BATCH_BACKUP] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+            @Override
+            public IdentifiedDataSerializable createNew(Integer arg) {
+                return new CacheExpireBatchBackupOperation();
+            }
+        };
+        constructors[CACHE_DESTROY_EVENT_CONTEXT] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+            @Override
+            public IdentifiedDataSerializable createNew(Integer arg) {
+                return new CacheDestroyEventContext();
+            }
+        };
+
         return new ArrayDataSerializableFactory(constructors);
     }
 }

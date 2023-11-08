@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.map.impl.mapstore;
 
 import com.hazelcast.config.Config;
@@ -20,7 +36,6 @@ import org.junit.runner.RunWith;
 
 import static com.hazelcast.config.MapStoreConfig.InitialLoadMode.EAGER;
 import static com.hazelcast.config.MapStoreConfig.InitialLoadMode.LAZY;
-import static com.hazelcast.test.TimeConstants.MINUTE;
 import static org.junit.Assert.assertEquals;
 
 @RunWith(HazelcastParallelClassRunner.class)
@@ -37,13 +52,13 @@ public class MapLoaderMultiNodeTest extends HazelcastTestSupport {
     private CountingMapLoader mapLoader;
 
     @Before
-    public void setUp() throws Exception {
+    public void setUp() {
         nodeFactory = createHazelcastInstanceFactory(NODE_COUNT + 2);
         mapLoader = new CountingMapLoader(MAP_STORE_ENTRY_COUNT);
     }
 
-    @Test(timeout = MINUTE)
-    public void testLoads_whenMapLazyAndCheckingSize() throws Exception {
+    @Test
+    public void testLoads_whenMapLazyAndCheckingSize() {
         Config cfg = newConfig(mapName, LAZY);
 
         IMap<Object, Object> map = getMap(mapName, cfg);
@@ -51,8 +66,8 @@ public class MapLoaderMultiNodeTest extends HazelcastTestSupport {
         assertSizeAndLoadCount(map);
     }
 
-    @Test(timeout = MINUTE)
-    public void testLoadsAll_whenMapCreatedInEager() throws Exception {
+    @Test
+    public void testLoadsAll_whenMapCreatedInEager() {
         Config cfg = newConfig(mapName, EAGER);
 
         IMap<Object, Object> map = getMap(mapName, cfg);
@@ -60,8 +75,8 @@ public class MapLoaderMultiNodeTest extends HazelcastTestSupport {
         assertSizeAndLoadCount(map);
     }
 
-    @Test(timeout = MINUTE)
-    public void testLoadsNothing_whenMapCreatedLazy() throws Exception {
+    @Test
+    public void testLoadsNothing_whenMapCreatedLazy() {
         Config cfg = newConfig(mapName, InitialLoadMode.LAZY);
 
         getMap(mapName, cfg);
@@ -69,8 +84,8 @@ public class MapLoaderMultiNodeTest extends HazelcastTestSupport {
         assertEquals(0, mapLoader.getLoadedValueCount());
     }
 
-    @Test(timeout = MINUTE)
-    public void testLoadsMap_whenLazyAndValueRetrieved() throws Exception {
+    @Test
+    public void testLoadsMap_whenLazyAndValueRetrieved() {
         Config cfg = newConfig(mapName, InitialLoadMode.LAZY);
 
         IMap<Object, Object> map = getMap(mapName, cfg);
@@ -79,8 +94,8 @@ public class MapLoaderMultiNodeTest extends HazelcastTestSupport {
         assertSizeAndLoadCount(map);
     }
 
-    @Test(timeout = MINUTE)
-    public void testLoadsAll_whenLazyModeAndLoadAll() throws Exception {
+    @Test
+    public void testLoadsAll_whenLazyModeAndLoadAll() {
         Config cfg = newConfig(mapName, LAZY);
 
         IMap<Object, Object> map = getMap(mapName, cfg);
@@ -90,8 +105,8 @@ public class MapLoaderMultiNodeTest extends HazelcastTestSupport {
         assertSizeAndLoadCount(map);
     }
 
-    @Test(timeout = MINUTE)
-    public void testDoesNotLoadAgain_whenLoadedAndNodeAdded() throws Exception {
+    @Test
+    public void testDoesNotLoadAgain_whenLoadedAndNodeAdded() {
         Config cfg = newConfig(mapName, EAGER);
 
         IMap<Object, Object> map = getMap(mapName, cfg);
@@ -101,8 +116,8 @@ public class MapLoaderMultiNodeTest extends HazelcastTestSupport {
         assertSizeAndLoadCount(map);
     }
 
-    @Test(timeout = MINUTE)
-    public void testDoesNotLoadAgain_whenLoadedLazyAndNodeAdded() throws Exception {
+    @Test
+    public void testDoesNotLoadAgain_whenLoadedLazyAndNodeAdded() {
         Config cfg = newConfig(mapName, LAZY);
 
         IMap<Object, Object> map = getMap(mapName, cfg);
@@ -113,8 +128,8 @@ public class MapLoaderMultiNodeTest extends HazelcastTestSupport {
         assertSizeAndLoadCount(map);
     }
 
-    @Test(timeout = MINUTE)
-    public void testLoadAgain_whenLoadedAllCalledMultipleTimes() throws Exception {
+    @Test
+    public void testLoadAgain_whenLoadedAllCalledMultipleTimes() {
         Config cfg = newConfig(mapName, LAZY);
 
         IMap<Object, Object> map = getMap(mapName, cfg);
@@ -126,8 +141,8 @@ public class MapLoaderMultiNodeTest extends HazelcastTestSupport {
         assertEquals(2 * MAP_STORE_ENTRY_COUNT, mapLoader.getLoadedValueCount());
     }
 
-    @Test(timeout = MINUTE)
-    public void testLoadsOnce_whenSizeCheckedTwice() throws Exception {
+    @Test
+    public void testLoadsOnce_whenSizeCheckedTwice() {
 
         mapLoader = new CountingMapLoader(MAP_STORE_ENTRY_COUNT, true);
         Config cfg = newConfig(mapName, LAZY);
@@ -163,8 +178,7 @@ public class MapLoaderMultiNodeTest extends HazelcastTestSupport {
         cfg.setProperty(GroupProperty.MAP_LOAD_CHUNK_SIZE.getName(), Integer.toString(BATCH_SIZE));
         cfg.setProperty(GroupProperty.PARTITION_COUNT.getName(), "31");
 
-        MapStoreConfig mapStoreConfig = new MapStoreConfig()
-                .setImplementation(loader).setInitialLoadMode(loadMode);
+        MapStoreConfig mapStoreConfig = new MapStoreConfig().setImplementation(loader).setInitialLoadMode(loadMode);
 
         cfg.getMapConfig(mapName).setMapStoreConfig(mapStoreConfig).setBackupCount(backups);
 

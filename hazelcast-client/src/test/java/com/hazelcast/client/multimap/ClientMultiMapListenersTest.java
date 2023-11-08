@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -91,7 +91,6 @@ public class ClientMultiMapListenersTest {
 
         assertTrue(mm.removeEntryListener(id));
     }
-
 
     @Test
     public void testRemoveListener_whenNotExist() throws InterruptedException {
@@ -317,13 +316,13 @@ public class ClientMultiMapListenersTest {
         assertOpenEventually(listener.clearLatch);
     }
 
-    static abstract class MyEntryListener extends EntryAdapter {
+    abstract static class MyEntryListener extends EntryAdapter {
 
-        final public CountDownLatch addLatch;
-        final public CountDownLatch removeLatch;
-        final public CountDownLatch updateLatch;
-        final public CountDownLatch evictLatch;
-        final public CountDownLatch clearLatch;
+        public final CountDownLatch addLatch;
+        public final CountDownLatch removeLatch;
+        public final CountDownLatch updateLatch;
+        public final CountDownLatch evictLatch;
+        public final CountDownLatch clearLatch;
 
         public MyEntryListener(int latchCount) {
             addLatch = new CountDownLatch(latchCount);
@@ -429,5 +428,4 @@ public class ClientMultiMapListenersTest {
             clearLatch.countDown();
         }
     }
-
 }

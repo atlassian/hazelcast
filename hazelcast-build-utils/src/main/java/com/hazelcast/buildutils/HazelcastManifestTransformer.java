@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,13 +17,11 @@
 package com.hazelcast.buildutils;
 
 import aQute.lib.osgi.Instruction;
-import edu.emory.mathcs.backport.java.util.Arrays;
-import edu.emory.mathcs.backport.java.util.Collections;
+import com.hazelcast.logging.ILogger;
+import com.hazelcast.logging.Logger;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import org.apache.maven.plugins.shade.relocation.Relocator;
 import org.apache.maven.plugins.shade.resource.ManifestResourceTransformer;
-import org.codehaus.plexus.util.IOUtil;
-import org.codehaus.plexus.util.StringUtils;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -39,13 +37,19 @@ import java.util.jar.JarFile;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
 
+import static java.util.Arrays.asList;
+import static java.util.Collections.emptySet;
+import static org.codehaus.plexus.util.IOUtil.close;
+import static org.codehaus.plexus.util.StringUtils.join;
+
 /**
  * This transformer implementation is used to merge MANIFEST and OSGi
  * bundle metadata in conjunction with the Maven Shade plugin when
- * integrating multiple dependencies into one output JAR
+ * integrating multiple dependencies into one output JAR.
  */
-public class HazelcastManifestTransformer
-        extends ManifestResourceTransformer {
+public class HazelcastManifestTransformer extends ManifestResourceTransformer {
+
+    private static ILogger logger = Logger.getLogger(HazelcastManifestTransformer.class);
 
     private static final String VERSION_PREFIX = "version=";
     private static final String RESOLUTION_PREFIX = "resolution:=";
@@ -57,6 +61,12 @@ public class HazelcastManifestTransformer
     private static final String IMPORT_PACKAGE = "Import-Package";
     private static final String EXPORT_PACKAGE = "Export-Package";
 
+    // configuration
+    private String mainClass;
+    private Map<String, Object> manifestEntries;
+    private Map<String, Object> removeEntries;
+    private Map<String, String> overrideInstructions;
+
     private final Map<String, PackageDefinition> importedPackages = new HashMap<String, PackageDefinition>();
     private final Map<String, PackageDefinition> exportedPackages = new HashMap<String, PackageDefinition>();
     private final List<InstructionDefinition> importOverrideInstructions = new ArrayList<InstructionDefinition>();
@@ -64,18 +74,25 @@ public class HazelcastManifestTransformer
 
     private Manifest shadedManifest;
 
-    // Configuration
-    @SuppressFBWarnings(value = "UWF_UNWRITTEN_FIELD",
-            justification = "Filled by Maven")
-    private Map<String, Attributes> manifestEntries;
+    @Override
+    public void setMainClass(String mainClass) {
+        this.mainClass = mainClass;
+        super.setMainClass(mainClass);
+    }
 
-    @SuppressFBWarnings(value = "UWF_UNWRITTEN_FIELD",
-            justification = "Filled by Maven")
-    private String mainClass;
+    @Override
+    public void setManifestEntries(Map<String, Object> manifestEntries) {
+        this.manifestEntries = manifestEntries;
+        super.setManifestEntries(manifestEntries);
+    }
 
-    @SuppressFBWarnings(value = "UWF_UNWRITTEN_FIELD",
-            justification = "Filled by Maven")
-    private Map<String, String> overrideInstructions;
+    public void setOverrideInstructions(Map<String, String> overrideInstructions) {
+        this.overrideInstructions = overrideInstructions;
+    }
+
+    public void setRemoveEntries(Map<String, Object> removeEntries) {
+        this.removeEntries = removeEntries;
+    }
 
     @Override
     public boolean canTransformResource(String resource) {
@@ -83,9 +100,8 @@ public class HazelcastManifestTransformer
     }
 
     @Override
-    public void processResource(String resource, InputStream inputStream, List<Relocator> relocators)
+    public void processResource(String resource, InputStream inputStream, List<Relocator> relocators, long time)
             throws IOException {
-
         Attributes attributes;
         if (shadedManifest == null) {
             shadedManifest = new Manifest(inputStream);
@@ -119,19 +135,23 @@ public class HazelcastManifestTransformer
             }
         }
 
-        IOUtil.close(inputStream);
+        close(inputStream);
     }
 
     private PackageDefinition findStrongerDefinition(PackageDefinition packageDefinition,
                                                      PackageDefinition oldPackageDefinition) {
+        // if the override is a remove instruction skip all other tests
+        if (packageDefinition.removeImport) {
+            return packageDefinition;
+        }
 
-        // If no old definition or new definition is required import we take the new one
+        // if no old definition or new definition is required import we take the new one
         if (oldPackageDefinition == null
                 || oldPackageDefinition.resolutionOptional && !packageDefinition.resolutionOptional) {
             return packageDefinition;
         }
 
-        // If old definition was required import but new isn't we take the old one
+        // if old definition was required import but new isn't we take the old one
         if (!oldPackageDefinition.resolutionOptional && packageDefinition.resolutionOptional) {
             return oldPackageDefinition;
         }
@@ -149,7 +169,6 @@ public class HazelcastManifestTransformer
 
     private PackageDefinition mergeExportUsesConstraint(PackageDefinition packageDefinition,
                                                         PackageDefinition oldPackageDefinition) {
-
         Set<String> uses = new LinkedHashSet<String>();
         if (oldPackageDefinition != null) {
             uses.addAll(oldPackageDefinition.uses);
@@ -168,9 +187,8 @@ public class HazelcastManifestTransformer
     }
 
     @Override
-    public void modifyOutputStream(JarOutputStream jarOutputStream)
-            throws IOException {
-
+    @SuppressWarnings("Since15")
+    public void modifyOutputStream(JarOutputStream jarOutputStream) throws IOException {
         if (shadedManifest == null) {
             shadedManifest = new Manifest();
         }
@@ -178,8 +196,8 @@ public class HazelcastManifestTransformer
         precompileOverrideInstructions();
 
         Attributes attributes = shadedManifest.getMainAttributes();
-        attributes.putValue(IMPORT_PACKAGE, StringUtils.join(shadeImports().iterator(), ","));
-        attributes.putValue(EXPORT_PACKAGE, StringUtils.join(shadeExports().iterator(), ","));
+        attributes.putValue(IMPORT_PACKAGE, join(shadeImports().iterator(), ","));
+        attributes.putValue(EXPORT_PACKAGE, join(shadeExports().iterator(), ","));
 
         attributes.putValue("Created-By", "HazelcastManifestTransformer through Shade Plugin");
 
@@ -188,8 +206,14 @@ public class HazelcastManifestTransformer
         }
 
         if (manifestEntries != null) {
-            for (Map.Entry<String, Attributes> entry : manifestEntries.entrySet()) {
+            for (Map.Entry<String, Object> entry : manifestEntries.entrySet()) {
                 attributes.put(new Attributes.Name(entry.getKey()), entry.getValue());
+            }
+        }
+
+        if (removeEntries != null) {
+            for (Map.Entry<String, Object> entry : removeEntries.entrySet()) {
+                attributes.remove(new Attributes.Name(entry.getKey()));
             }
         }
 
@@ -198,8 +222,7 @@ public class HazelcastManifestTransformer
         jarOutputStream.flush();
     }
 
-    @SuppressFBWarnings(value = "NP_UNWRITTEN_FIELD",
-            justification = "Field is set by Maven")
+    @SuppressFBWarnings(value = "NP_UNWRITTEN_FIELD", justification = "Field is set by Maven")
     private void precompileOverrideInstructions() {
         String importPackageInstructions = overrideInstructions.get(IMPORT_PACKAGE);
         if (importPackageInstructions != null) {
@@ -207,7 +230,7 @@ public class HazelcastManifestTransformer
             for (String packageInstruction : packageInstructions) {
                 PackageDefinition packageDefinition = new PackageDefinition(packageInstruction);
                 Instruction instruction = Instruction.getPattern(packageDefinition.packageName);
-                System.out.println("Compiled import instruction '" + packageInstruction + "' -> " + instruction);
+                logger.fine("Compiled import instruction '" + packageInstruction + "' -> " + instruction);
                 importOverrideInstructions.add(new InstructionDefinition(packageDefinition, instruction));
             }
         }
@@ -217,7 +240,7 @@ public class HazelcastManifestTransformer
             for (String packageInstruction : packageInstructions) {
                 PackageDefinition packageDefinition = new PackageDefinition(packageInstruction);
                 Instruction instruction = Instruction.getPattern(packageDefinition.packageName);
-                System.out.println("Compiled export instruction '" + packageInstruction + "' -> " + instruction);
+                logger.fine("Compiled export instruction '" + packageInstruction + "' -> " + instruction);
                 exportOverrideInstructions.add(new InstructionDefinition(packageDefinition, instruction));
             }
         }
@@ -228,7 +251,7 @@ public class HazelcastManifestTransformer
         for (Map.Entry<String, PackageDefinition> entry : exportedPackages.entrySet()) {
             String definition = entry.getValue().buildDefinition(false);
             exports.add(definition);
-            System.out.println("Adding shaded export -> " + definition);
+            logger.fine("Adding shaded export -> " + definition);
         }
         return exports;
     }
@@ -242,9 +265,13 @@ public class HazelcastManifestTransformer
         for (Map.Entry<String, PackageDefinition> entry : importedPackages.entrySet()) {
             PackageDefinition original = entry.getValue();
             PackageDefinition overridden = overridePackageDefinitionResolution(original);
-            String definition = overridden.buildDefinition(true);
-            imports.add(definition);
-            System.out.println("Adding shaded import -> " + definition);
+            if (overridden != null) {
+                String definition = overridden.buildDefinition(true);
+                imports.add(definition);
+                logger.fine("Adding shaded import -> " + definition);
+            } else {
+                logger.fine("Removing shaded import -> " + entry.getValue().packageName);
+            }
         }
         return imports;
     }
@@ -252,9 +279,14 @@ public class HazelcastManifestTransformer
     private PackageDefinition overridePackageDefinitionResolution(PackageDefinition packageDefinition) {
         for (InstructionDefinition instructionDefinition : importOverrideInstructions) {
             Instruction instruction = instructionDefinition.instruction;
-            boolean instructed = !instruction.isNegated() == instruction.matches(packageDefinition.packageName);
-            if (instructed) {
-                System.out.println("Instruction '" + instruction + "' -> package '" + packageDefinition.packageName + "'");
+            if (instruction.matches(packageDefinition.packageName)) {
+                // is remove instruction?
+                if (instruction.isNegated()) {
+                    logger.fine("Instruction '" + instruction + "' -> package '" + packageDefinition.packageName + "'");
+                    return null;
+                }
+
+                logger.fine("Instruction '" + instruction + "' -> package '" + packageDefinition.packageName + "'");
 
                 PackageDefinition override = instructionDefinition.packageDefinition;
                 String packageName = packageDefinition.packageName;
@@ -267,21 +299,25 @@ public class HazelcastManifestTransformer
         return packageDefinition;
     }
 
-    private static final class PackageDefinition {
+    static final class PackageDefinition {
+
+        private final boolean removeImport;
         private final String packageName;
         private final boolean resolutionOptional;
         private final String version;
         private final Set<String> uses;
 
-        private PackageDefinition(String definition) {
+        PackageDefinition(String definition) {
             String[] tokens = definition.split(";");
+            this.removeImport = tokens[0].startsWith("!");
             this.packageName = tokens[0];
             this.resolutionOptional = findResolutionConstraint(tokens);
             this.version = findVersionConstraint(tokens);
             this.uses = findUsesConstraint(tokens);
         }
 
-        private PackageDefinition(String packageName, boolean resolutionOptional, String version, Set<String> uses) {
+        PackageDefinition(String packageName, boolean resolutionOptional, String version, Set<String> uses) {
+            this.removeImport = packageName.startsWith("!");
             this.packageName = packageName;
             this.resolutionOptional = resolutionOptional;
             this.version = version;
@@ -298,7 +334,6 @@ public class HazelcastManifestTransformer
             }
 
             PackageDefinition that = (PackageDefinition) o;
-
             if (packageName != null ? !packageName.equals(that.packageName) : that.packageName != null) {
                 return false;
             }
@@ -313,11 +348,14 @@ public class HazelcastManifestTransformer
 
         @Override
         public String toString() {
-            return "PackageDefinition{" + "packageName='" + packageName + '\'' + ", resolutionOptional=" + resolutionOptional
-                    + ", version='" + version + '\'' + ", uses=" + uses + '}';
+            return "PackageDefinition{"
+                    + "packageName='" + packageName + '\''
+                    + ", resolutionOptional=" + resolutionOptional
+                    + ", version='" + version + '\''
+                    + ", uses=" + uses + '}';
         }
 
-        public String buildDefinition(boolean addResolutionConstraint) {
+        String buildDefinition(boolean addResolutionConstraint) {
             StringBuilder sb = new StringBuilder(packageName);
             if (addResolutionConstraint && resolutionOptional) {
                 sb.append(";").append(RESOLUTION_PREFIX).append("optional");
@@ -326,7 +364,7 @@ public class HazelcastManifestTransformer
                 sb.append(";").append(VERSION_PREFIX).append(version);
             }
             if (uses != null && !uses.isEmpty()) {
-                sb.append(";").append(USES_PREFIX).append('"').append(StringUtils.join(uses.iterator(), ",")).append('"');
+                sb.append(";").append(USES_PREFIX).append('"').append(join(uses.iterator(), ",")).append('"');
             }
             return sb.toString();
         }
@@ -349,30 +387,34 @@ public class HazelcastManifestTransformer
             return false;
         }
 
+        @SuppressWarnings("unchecked")
         private Set<String> findUsesConstraint(String[] tokens) {
             for (String token : tokens) {
                 if (token.startsWith(USES_PREFIX)) {
                     String packages = token.substring(USES_OFFSET, token.length() - 1);
                     String[] sepPackages = packages.split(",");
-                    return new LinkedHashSet<String>(Arrays.asList(sepPackages));
+                    return new LinkedHashSet<String>(asList(sepPackages));
                 }
             }
-            return Collections.emptySet();
+            return emptySet();
         }
     }
 
-    private static final class InstructionDefinition {
+    static final class InstructionDefinition {
+
         private final PackageDefinition packageDefinition;
         private final Instruction instruction;
 
-        private InstructionDefinition(PackageDefinition packageDefinition, Instruction instruction) {
+        InstructionDefinition(PackageDefinition packageDefinition, Instruction instruction) {
             this.packageDefinition = packageDefinition;
             this.instruction = instruction;
         }
 
         @Override
         public String toString() {
-            return "InstructionDefinition{" + "packageDefinition=" + packageDefinition + ", instruction=" + instruction + '}';
+            return "InstructionDefinition{"
+                    + "packageDefinition=" + packageDefinition
+                    + ", instruction=" + instruction + '}';
         }
     }
 }

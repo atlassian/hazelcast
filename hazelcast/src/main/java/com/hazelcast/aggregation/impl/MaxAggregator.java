@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,12 +17,17 @@
 package com.hazelcast.aggregation.impl;
 
 import com.hazelcast.aggregation.Aggregator;
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+import com.hazelcast.query.impl.Comparables;
 
-import java.util.Map;
+import java.io.IOException;
 
-public class MaxAggregator<T extends Comparable, K, V> extends AbstractAggregator<T, K, V> {
+public final class MaxAggregator<I, R extends Comparable> extends AbstractAggregator<I, R, R>
+        implements IdentifiedDataSerializable {
 
-    private T max;
+    private R max;
 
     public MaxAggregator() {
         super();
@@ -33,29 +38,54 @@ public class MaxAggregator<T extends Comparable, K, V> extends AbstractAggregato
     }
 
     @Override
-    public void accumulate(Map.Entry<K, V> entry) {
-        T extractedValue = (T) extract(entry);
-
-        if (max == null || isCurrentlyLessThan(extractedValue)) {
-            max = extractedValue;
+    public void accumulateExtracted(I entry, R value) {
+        if (isCurrentlyLessThan(value)) {
+            max = value;
         }
     }
 
-    private boolean isCurrentlyLessThan(T extractedValue) {
-        return max.compareTo(extractedValue) < 0;
+    private boolean isCurrentlyLessThan(R otherValue) {
+        if (otherValue == null) {
+            return false;
+        }
+        return max == null || Comparables.compare(max, otherValue) < 0;
     }
 
+    @SuppressWarnings("unchecked")
     @Override
     public void combine(Aggregator aggregator) {
         MaxAggregator maxAggregator = (MaxAggregator) aggregator;
-        T valueFromOtherAggregator = (T) maxAggregator.max;
+        R valueFromOtherAggregator = (R) maxAggregator.max;
         if (isCurrentlyLessThan(valueFromOtherAggregator)) {
             this.max = valueFromOtherAggregator;
         }
     }
 
     @Override
-    public T aggregate() {
+    public R aggregate() {
         return max;
     }
+
+    @Override
+    public int getFactoryId() {
+        return AggregatorDataSerializerHook.F_ID;
+    }
+
+    @Override
+    public int getId() {
+        return AggregatorDataSerializerHook.MAX;
+    }
+
+    @Override
+    public void writeData(ObjectDataOutput out) throws IOException {
+        out.writeUTF(attributePath);
+        out.writeObject(max);
+    }
+
+    @Override
+    public void readData(ObjectDataInput in) throws IOException {
+        this.attributePath = in.readUTF();
+        this.max = in.readObject();
+    }
+
 }

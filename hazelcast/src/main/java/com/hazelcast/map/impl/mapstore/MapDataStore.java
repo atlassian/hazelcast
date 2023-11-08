@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,8 +23,8 @@ import java.util.Map;
  * Map data stores general contract.
  * Provides an extra abstraction layer over write-through and write-behind map-store implementations.
  *
- * @param <K> type of key to store.
- * @param <V> type of value to store.
+ * @param <K> type of key to store
+ * @param <V> type of value to store
  */
 public interface MapDataStore<K, V> {
 
@@ -45,16 +45,38 @@ public interface MapDataStore<K, V> {
 
     V load(K key);
 
+    /**
+     * Loads values for the provided keys if a {@link com.hazelcast.core.MapLoader} is
+     * configured for this map. This method never returns {@code null}.
+     * The returned map will contain deserialised keys and values.
+     *
+     * @param keys the keys for which values are loaded
+     * @return the map from deserialised key to deserialised value
+     * @see com.hazelcast.core.MapLoader#loadAll(Collection)
+     */
     Map loadAll(Collection keys);
 
     /**
      * Removes keys from map store.
      * It also handles {@link com.hazelcast.nio.serialization.Data} to object conversions of keys.
      *
-     * @param keys to be removed.
+     * @param keys to be removed
      */
     void removeAll(Collection keys);
 
+    /**
+     * Used in {@link com.hazelcast.core.IMap#loadAll} calls.
+     * If the write-behind map-store feature is enabled, some things may lead to possible data inconsistencies.
+     * These are:
+     * - calling evict/evictAll,
+     * - calling remove, and
+     * - not yet stored write-behind queue operations.
+     * <p/>
+     * With this method, we can be sure if a key can be loadable from map-store or not.
+     *
+     * @param key the key to query whether it is loadable or not
+     * @return {@code true} if the key is loadable
+     */
     boolean loadable(K key);
 
     int notFinishedOperationsCount();

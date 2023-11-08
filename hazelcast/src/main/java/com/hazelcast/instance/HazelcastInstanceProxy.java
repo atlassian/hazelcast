@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,8 @@
 
 package com.hazelcast.instance;
 
-import com.hazelcast.config.Config;
 import com.hazelcast.cardinality.CardinalityEstimator;
+import com.hazelcast.config.Config;
 import com.hazelcast.core.ClientService;
 import com.hazelcast.core.Cluster;
 import com.hazelcast.core.DistributedObject;
@@ -42,12 +42,16 @@ import com.hazelcast.core.Member;
 import com.hazelcast.core.MultiMap;
 import com.hazelcast.core.PartitionService;
 import com.hazelcast.core.ReplicatedMap;
+import com.hazelcast.cp.CPSubsystem;
+import com.hazelcast.crdt.pncounter.PNCounter;
 import com.hazelcast.durableexecutor.DurableExecutorService;
+import com.hazelcast.flakeidgen.FlakeIdGenerator;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.logging.LoggingService;
 import com.hazelcast.mapreduce.JobTracker;
 import com.hazelcast.quorum.QuorumService;
 import com.hazelcast.ringbuffer.Ringbuffer;
+import com.hazelcast.scheduledexecutor.IScheduledExecutorService;
 import com.hazelcast.spi.annotation.PrivateApi;
 import com.hazelcast.spi.impl.SerializationServiceSupport;
 import com.hazelcast.transaction.HazelcastXAResource;
@@ -75,7 +79,9 @@ import java.util.concurrent.ConcurrentMap;
 @SuppressWarnings({"checkstyle:methodcount", "checkstyle:classfanoutcomplexity"})
 @PrivateApi
 public final class HazelcastInstanceProxy implements HazelcastInstance, SerializationServiceSupport {
+
     protected volatile HazelcastInstanceImpl original;
+
     private final String name;
 
     protected HazelcastInstanceProxy(HazelcastInstanceImpl original) {
@@ -171,6 +177,11 @@ public final class HazelcastInstanceProxy implements HazelcastInstance, Serializ
     @Override
     public IdGenerator getIdGenerator(String name) {
         return getOriginal().getIdGenerator(name);
+    }
+
+    @Override
+    public FlakeIdGenerator getFlakeIdGenerator(String name) {
+        return getOriginal().getFlakeIdGenerator(name);
     }
 
     @Override
@@ -280,10 +291,26 @@ public final class HazelcastInstanceProxy implements HazelcastInstance, Serializ
     }
 
     @Override
+    public PNCounter getPNCounter(String name) {
+        return getOriginal().getPNCounter(name);
+    }
+
+    @Override
+    public IScheduledExecutorService getScheduledExecutorService(String name) {
+        return getOriginal().getScheduledExecutorService(name);
+    }
+
+    @Override
+    public CPSubsystem getCPSubsystem() {
+        return getOriginal().getCPSubsystem();
+    }
+
+    @Override
     public void shutdown() {
         getLifecycleService().shutdown();
     }
 
+    @Override
     public InternalSerializationService getSerializationService() {
         return getOriginal().getSerializationService();
     }

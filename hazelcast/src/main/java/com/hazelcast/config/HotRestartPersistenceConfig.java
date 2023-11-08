@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,11 +23,11 @@ import static com.hazelcast.util.Preconditions.checkPositive;
 
 /**
  * Configures the Hot Restart stores.
- * <p/>
+ * <p>
  * Hot restart stores are used to hold copy of in-memory data in
  * disk to be able to restart very fast without needing to load
  * data from a central storage.
- * <p/>
+ * <p>
  * HotRestartConfig configures whether hot restart is enabled,
  * where disk data will be stored, should data be persisted
  * sync or async etc.
@@ -55,11 +55,13 @@ public class HotRestartPersistenceConfig {
 
     private boolean enabled;
     private File baseDir = new File(HOT_RESTART_BASE_DIR_DEFAULT);
+    private File backupDir;
     private int parallelism = DEFAULT_PARALLELISM;
     private int validationTimeoutSeconds = DEFAULT_VALIDATION_TIMEOUT;
     private int dataLoadTimeoutSeconds = DEFAULT_DATA_LOAD_TIMEOUT;
     private HotRestartClusterDataRecoveryPolicy clusterDataRecoveryPolicy
             = HotRestartClusterDataRecoveryPolicy.FULL_RECOVERY_ONLY;
+    private boolean autoRemoveStaleData = true;
 
     /**
      * Returns whether hot restart enabled on this member.
@@ -73,7 +75,7 @@ public class HotRestartPersistenceConfig {
     /**
      * Sets whether hot restart is enabled on this member.
      *
-     * @return HotRestartConfig
+     * @return HotRestartPersistenceConfig
      */
     public HotRestartPersistenceConfig setEnabled(boolean enabled) {
         this.enabled = enabled;
@@ -94,7 +96,7 @@ public class HotRestartPersistenceConfig {
      *
      * @param clusterDataRecoveryPolicy the policy to be used when the cluster is started
      *
-     * @return HotRestartConfig
+     * @return HotRestartPersistenceConfig
      */
     public HotRestartPersistenceConfig setClusterDataRecoveryPolicy(HotRestartClusterDataRecoveryPolicy
                                                                             clusterDataRecoveryPolicy) {
@@ -103,21 +105,40 @@ public class HotRestartPersistenceConfig {
     }
 
     /**
-     * Base directory for all Hot Restart stores.
+     * Base directory for all Hot Restart stores. Can be an absolute or relative path to the node startup directory.
      */
     public File getBaseDir() {
         return baseDir;
     }
 
     /**
-     * Sets base directory for all Hot Restart stores.
+     * Sets base directory for all Hot Restart stores. Can be an absolute or relative path to the node startup directory.
      *
      * @param baseDir home directory
-     * @return HotRestartConfig
+     * @return HotRestartPersistenceConfig
      */
     public HotRestartPersistenceConfig setBaseDir(File baseDir) {
         checkNotNull(baseDir, "Base directory cannot be null!");
         this.baseDir = baseDir;
+        return this;
+    }
+
+    /**
+     * Base directory for hot backups. Each new backup will be created in a separate directory inside this one.
+     * Can be an absolute or relative path to the node startup directory.
+     */
+    public File getBackupDir() {
+        return backupDir;
+    }
+
+    /**
+     * Sets base directory for all Hot Restart stores.
+     *
+     * @param backupDir home directory
+     * @return HotRestartPersistenceConfig
+     */
+    public HotRestartPersistenceConfig setBackupDir(File backupDir) {
+        this.backupDir = backupDir;
         return this;
     }
 
@@ -151,7 +172,7 @@ public class HotRestartPersistenceConfig {
      * cluster members expected to join and partition table on all cluster.
      *
      * @param validationTimeoutSeconds validation timeout in seconds
-     * @return HotRestartConfig
+     * @return HotRestartPersistenceConfig
      */
     public HotRestartPersistenceConfig setValidationTimeoutSeconds(int validationTimeoutSeconds) {
         checkPositive(validationTimeoutSeconds, "Validation timeout should be positive!");
@@ -174,11 +195,94 @@ public class HotRestartPersistenceConfig {
      * before this timeout.
      *
      * @param dataLoadTimeoutSeconds data load timeout in seconds
-     * @return HotRestartConfig
+     * @return HotRestartPersistenceConfig
      */
     public HotRestartPersistenceConfig setDataLoadTimeoutSeconds(int dataLoadTimeoutSeconds) {
         checkPositive(dataLoadTimeoutSeconds, "Load timeout should be positive!");
         this.dataLoadTimeoutSeconds = dataLoadTimeoutSeconds;
         return this;
+    }
+
+    /**
+     * Returns whether or not automatically removal of stale Hot Restart data is enabled.
+     *
+     * @return whether or not automatically removal of stale data is enabled
+     */
+    public boolean isAutoRemoveStaleData() {
+        return autoRemoveStaleData;
+    }
+
+    /**
+     * Sets whether or not automatically removal of stale Hot Restart data is enabled.
+     * <p>
+     * When a member terminates or crashes when cluster state is {@link com.hazelcast.cluster.ClusterState#ACTIVE},
+     * remaining members redistributes data among themselves and data persisted on terminated member's storage becomes
+     * stale. That terminated member cannot rejoin the cluster without removing Hot Restart data.
+     * When auto-removal of stale Hot Restart data is enabled, while restarting that member, Hot Restart data is
+     * automatically removed and it joins the cluster as a completely new member.
+     * Otherwise, Hot Restart data should be removed manually.
+     *
+     * @param autoRemoveStaleData {@code true} to enable auto-removal of stale data, {@code false} otherwise
+     * @return HotRestartPersistenceConfig
+     */
+    public HotRestartPersistenceConfig setAutoRemoveStaleData(boolean autoRemoveStaleData) {
+        this.autoRemoveStaleData = autoRemoveStaleData;
+        return this;
+    }
+
+    @Override
+    @SuppressWarnings("checkstyle:npathcomplexity")
+    public final boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof HotRestartPersistenceConfig)) {
+            return false;
+        }
+
+        HotRestartPersistenceConfig that = (HotRestartPersistenceConfig) o;
+        if (enabled != that.enabled) {
+            return false;
+        }
+        if (parallelism != that.parallelism) {
+            return false;
+        }
+        if (validationTimeoutSeconds != that.validationTimeoutSeconds) {
+            return false;
+        }
+        if (dataLoadTimeoutSeconds != that.dataLoadTimeoutSeconds) {
+            return false;
+        }
+        if (autoRemoveStaleData != that.autoRemoveStaleData) {
+            return false;
+        }
+        if (baseDir != null ? !baseDir.equals(that.baseDir) : that.baseDir != null) {
+            return false;
+        }
+        if (backupDir != null ? !backupDir.equals(that.backupDir) : that.backupDir != null) {
+            return false;
+        }
+        return clusterDataRecoveryPolicy == that.clusterDataRecoveryPolicy;
+    }
+
+    @Override
+    public final int hashCode() {
+        int result = (enabled ? 1 : 0);
+        result = 31 * result + (baseDir != null ? baseDir.hashCode() : 0);
+        result = 31 * result + (backupDir != null ? backupDir.hashCode() : 0);
+        result = 31 * result + parallelism;
+        result = 31 * result + validationTimeoutSeconds;
+        result = 31 * result + dataLoadTimeoutSeconds;
+        result = 31 * result + (clusterDataRecoveryPolicy != null ? clusterDataRecoveryPolicy.hashCode() : 0);
+        result = 31 * result + (autoRemoveStaleData ? 1 : 0);
+        return result;
+    }
+
+    @Override
+    public String toString() {
+        return "HotRestartPersistenceConfig{" + "enabled=" + enabled + ", baseDir=" + baseDir + ", backupDir=" + backupDir
+                + ", parallelism=" + parallelism + ", validationTimeoutSeconds=" + validationTimeoutSeconds
+                + ", dataLoadTimeoutSeconds=" + dataLoadTimeoutSeconds + ", clusterDataRecoveryPolicy="
+                + clusterDataRecoveryPolicy + ", autoRemoveStaleData=" + autoRemoveStaleData + '}';
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,12 +36,12 @@ public final class UnsafeUtil {
     /**
      * If this constant is {@code true}, then {@link #UNSAFE} refers to a usable {@link sun.misc.Unsafe} instance.
      */
-    static final boolean UNSAFE_AVAILABLE;
+    public static final boolean UNSAFE_AVAILABLE;
 
     /**
      * The {@link sun.misc.Unsafe} instance which is available and ready to use.
      */
-    static final Unsafe UNSAFE;
+    public static final Unsafe UNSAFE;
 
     private static final ILogger LOGGER = Logger.getLogger(UnsafeUtil.class);
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,12 @@ import com.hazelcast.spi.ReadonlyOperation;
 
 import java.io.IOException;
 
+/**
+ * Operation for fetching a chunk of entries from a single {@link com.hazelcast.core.IMap} partition.
+ * The starting offset is defined by the {@link #lastTableIndex} and the soft limit is defined by the {@link #fetchSize}.
+ *
+ * @see com.hazelcast.map.impl.proxy.MapProxyImpl#iterator(int, int, boolean)
+ */
 public class MapFetchEntriesOperation extends MapOperation implements ReadonlyOperation {
 
     private int fetchSize;

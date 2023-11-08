@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ package com.hazelcast.config;
 /**
  * Configuration for Executor(Read Only)
  *
- * @deprecated this class will be removed in 3.8; it is meant for internal usage only.
+ * @deprecated this class will be removed in 4.0; it is meant for internal usage only.
  */
 public class ExecutorConfigReadOnly extends ExecutorConfig {
 
@@ -44,6 +44,11 @@ public class ExecutorConfigReadOnly extends ExecutorConfig {
 
     @Override
     public ExecutorConfig setStatisticsEnabled(boolean statisticsEnabled) {
+        throw new UnsupportedOperationException("This config is read-only executor: " + getName());
+    }
+
+    @Override
+    public ExecutorConfig setQuorumName(String quorumName) {
         throw new UnsupportedOperationException("This config is read-only executor: " + getName());
     }
 }

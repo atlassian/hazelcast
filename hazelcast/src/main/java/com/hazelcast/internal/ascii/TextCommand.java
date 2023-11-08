@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,9 @@
 
 package com.hazelcast.internal.ascii;
 
-import com.hazelcast.nio.OutboundFrame;
-import com.hazelcast.nio.ascii.TextReadHandler;
-import com.hazelcast.nio.ascii.TextWriteHandler;
+import com.hazelcast.internal.networking.OutboundFrame;
+import com.hazelcast.nio.ascii.TextDecoder;
+import com.hazelcast.nio.ascii.TextEncoder;
 
 import java.nio.ByteBuffer;
 
@@ -26,11 +26,11 @@ public interface TextCommand extends OutboundFrame {
 
     TextCommandConstants.TextCommandType getType();
 
-    void init(TextReadHandler textReadHandler, long requestId);
+    void init(TextDecoder decoder, long requestId);
 
-    TextReadHandler getReadHandler();
+    TextDecoder getDecoder();
 
-    TextWriteHandler getWriteHandler();
+    TextEncoder getEncoder();
 
     long getRequestId();
 

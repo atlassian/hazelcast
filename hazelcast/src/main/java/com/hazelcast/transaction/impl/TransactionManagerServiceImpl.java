@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -193,7 +193,7 @@ public class TransactionManagerServiceImpl implements TransactionManagerService,
         MemberImpl member = event.getMember();
         final String uuid = member.getUuid();
         if (nodeEngine.isRunning()) {
-            logger.info("Committing/rolling-back alive transactions of " + member + ", UUID: " + uuid);
+            logger.info("Committing/rolling-back live transactions of " + member.getAddress() + ", UUID: " + uuid);
             nodeEngine.getExecutionService().execute(ExecutionService.SYSTEM_EXECUTOR, new Runnable() {
                 @Override
                 public void run() {
@@ -201,7 +201,7 @@ public class TransactionManagerServiceImpl implements TransactionManagerService,
                 }
             });
         } else if (logger.isFinestEnabled()) {
-            logger.finest("Will not commit/roll-back transactions of " + member + ", UUID: " + uuid
+            logger.finest("Will not commit/roll-back transactions of " + member.getAddress() + ", UUID: " + uuid
                     + " because this member is not running");
         }
     }
@@ -280,7 +280,7 @@ public class TransactionManagerServiceImpl implements TransactionManagerService,
 
     @Override
     public void clientDisconnected(String clientUuid) {
-        logger.info("Committing/rolling-back alive transactions of client, UUID: " + clientUuid);
+        logger.info("Committing/rolling-back live transactions of client, UUID: " + clientUuid);
         finalizeTransactionsOf(clientUuid);
     }
 

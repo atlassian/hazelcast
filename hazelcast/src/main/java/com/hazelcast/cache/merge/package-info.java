@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,6 @@
  */
 
 /**
- * <p>This package contains out of the box merge policies.<br/>
+ * Contains out-of-the-box merge policies for {@link com.hazelcast.cache.ICache}.
  */
 package com.hazelcast.cache.merge;

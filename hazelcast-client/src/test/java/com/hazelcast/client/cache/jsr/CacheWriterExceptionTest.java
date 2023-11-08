@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,19 +23,17 @@ import org.junit.BeforeClass;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-
 @RunWith(HazelcastSerialClassRunner.class)
 @Category(QuickTest.class)
-public class CacheWriterExceptionTest
-        extends javax.cache.integration.CacheWriterExceptionTest {
+public class CacheWriterExceptionTest extends javax.cache.integration.CacheWriterExceptionTest {
 
     @BeforeClass
     public static void setupInstance() {
-        JsrClientTestUtil.setup();
+        JsrClientTestUtil.setupWithHazelcastInstance();
     }
 
     @AfterClass
-    public static void cleanup(){
+    public static void cleanup() {
         JsrClientTestUtil.cleanup();
     }
 }

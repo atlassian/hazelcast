@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.map;
 
 
@@ -16,6 +32,8 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
+import org.junit.runners.Parameterized.Parameter;
+import org.junit.runners.Parameterized.Parameters;
 
 import java.util.Arrays;
 import java.util.HashSet;
@@ -32,10 +50,10 @@ import static org.junit.Assert.assertEquals;
 @Category({QuickTest.class, ParallelTest.class})
 public class MapPartitionIteratorTest extends HazelcastTestSupport {
 
-    @Parameterized.Parameter
+    @Parameter
     public boolean prefetchValues;
 
-    @Parameterized.Parameters(name = "prefetchValues:{0}")
+    @Parameters(name = "prefetchValues:{0}")
     public static Iterable<Object[]> parameters() {
         return Arrays.asList(new Object[]{Boolean.TRUE}, new Object[]{Boolean.FALSE});
     }
@@ -70,7 +88,7 @@ public class MapPartitionIteratorTest extends HazelcastTestSupport {
         Iterator<Map.Entry<Object, Object>> iterator = proxy.iterator(10, 1, prefetchValues);
         iterator.next();
         iterator.remove();
-        assertEquals(0,proxy.size());
+        assertEquals(0, proxy.size());
     }
 
     @Test
@@ -139,7 +157,6 @@ public class MapPartitionIteratorTest extends HazelcastTestSupport {
         for (int i = 0; i < 100; i++) {
             Map.Entry entry = iterator.next();
             assertEquals(value, entry.getValue());
-
         }
     }
 
@@ -157,7 +174,6 @@ public class MapPartitionIteratorTest extends HazelcastTestSupport {
         // force rehashing
         putValuesToPartition(instance, proxy, randomString(), 1, 150);
         assertUniques(readKeys, iterator);
-
     }
 
     @Test
@@ -206,7 +222,8 @@ public class MapPartitionIteratorTest extends HazelcastTestSupport {
         }
     }
 
-    private void putValuesToPartition(HazelcastInstance instance, MapProxyImpl<String, String> proxy, String value, int partitionId, int count) {
+    private void putValuesToPartition(HazelcastInstance instance, MapProxyImpl<String, String> proxy, String value,
+                                      int partitionId, int count) {
         for (int i = 0; i < count; i++) {
             String key = generateKeyForPartition(instance, partitionId);
             proxy.put(key, value);

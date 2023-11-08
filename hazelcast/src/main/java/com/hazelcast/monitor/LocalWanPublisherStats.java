@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,18 @@
 
 package com.hazelcast.monitor;
 
+import com.hazelcast.config.WanPublisherState;
 import com.hazelcast.internal.management.JsonSerializable;
+import com.hazelcast.wan.impl.DistributedServiceWanEventCounters.DistributedObjectWanEventCounters;
+import com.hazelcast.wan.WanSyncStats;
+import com.hazelcast.wan.merkletree.ConsistencyCheckResult;
 
+import java.util.Map;
+
+/**
+ * Local WAN publisher statistics to be used by {@link MemberState}
+ * implementations.
+ */
 public interface LocalWanPublisherStats extends JsonSerializable {
 
     /**
@@ -50,9 +60,30 @@ public interface LocalWanPublisherStats extends JsonSerializable {
     int getOutboundQueueSize();
 
     /**
-     * Returns if the wan replication on this member is paused
+     * Returns the current {@link WanPublisherState} of this publisher.
      *
-     * @return true the wan replication on this member is paused
+     * @see com.hazelcast.wan.WanReplicationService#pause(String, String)
+     * @see com.hazelcast.wan.WanReplicationService#stop(String, String)
      */
-    boolean isPaused();
+    WanPublisherState getPublisherState();
+
+    /**
+     * Returns the counter for the successfully transfered map WAN events.
+     */
+    Map<String, DistributedObjectWanEventCounters> getSentMapEventCounter();
+
+    /**
+     * Returns the counter for the successfully transfered cache WAN events.
+     */
+    Map<String, DistributedObjectWanEventCounters> getSentCacheEventCounter();
+
+    /**
+     * Returns the last results of the consistency checks, mapped by map name.
+     */
+    Map<String, ConsistencyCheckResult> getLastConsistencyCheckResults();
+
+    /**
+     * Returns the last synchronization statistics, mapped by map name.
+     */
+    Map<String, WanSyncStats> getLastSyncStats();
 }

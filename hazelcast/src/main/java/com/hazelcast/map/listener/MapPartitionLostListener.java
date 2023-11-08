@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,18 +19,17 @@ package com.hazelcast.map.listener;
 import com.hazelcast.map.MapPartitionLostEvent;
 
 /**
- * Invoked when owner and all backups of a partition is lost for a specific map
- * @see MapPartitionLostEvent
+ * Invoked when owner and all backups of a partition is lost for a specific map.
  *
+ * @see MapPartitionLostEvent
  * @since 3.5
  */
 public interface MapPartitionLostListener extends MapListener {
 
     /**
-     * Invoked when owner and all backups of a partition is lost for a specific map
+     * Invoked when owner and all backups of a partition is lost for a specific map.
      *
-     * @param event the event object that contains map name and lost partition id
+     * @param event the event object that contains map name and lost partition ID
      */
     void partitionLost(MapPartitionLostEvent event);
-
 }

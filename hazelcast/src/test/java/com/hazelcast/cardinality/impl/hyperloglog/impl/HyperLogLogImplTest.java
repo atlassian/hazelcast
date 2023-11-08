@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,47 +18,57 @@ package com.hazelcast.cardinality.impl.hyperloglog.impl;
 
 import com.hazelcast.cardinality.impl.hyperloglog.HyperLogLog;
 import com.hazelcast.test.HazelcastParametersRunnerFactory;
+import com.hazelcast.test.annotation.SlowTest;
 import com.hazelcast.util.HashUtil;
 import com.hazelcast.util.collection.IntHashSet;
 import org.HdrHistogram.Histogram;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
+import org.junit.runners.Parameterized.Parameter;
+import org.junit.runners.Parameterized.Parameters;
+import org.junit.runners.Parameterized.UseParametersRunnerFactory;
 
 import java.nio.ByteBuffer;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Random;
 
+import static java.util.Arrays.asList;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
 @RunWith(Parameterized.class)
-@Parameterized.UseParametersRunnerFactory(HazelcastParametersRunnerFactory.class)
+@UseParametersRunnerFactory(HazelcastParametersRunnerFactory.class)
+@Category(SlowTest.class)
 public class HyperLogLogImplTest {
 
-    private static final int PRIME_PRECISION = 25;
+    private static final int DEFAULT_RUN_LENGTH = 10000000;
 
-    @Parameterized.Parameters()
-    public static Collection<Integer[]> params() {
-        return Arrays.asList(new Integer[][]{
-                {11, 10000000}, {12, 10000000}, {13, 10000000},
-                {14, 10000000}, {15, 10000000}, {16, 10000000}
+    @Parameters(name = "precision:{0}, errorRange:{1}")
+    public static Collection<Object[]> parameters() {
+        return asList(new Object[][]{
+                {11, 7.0f},
+                {12, 5.5f},
+                {13, 3.5f},
+                {14, 3.0f},
+                {15, 2.5f},
+                {16, 2.0f},
         });
     }
 
-    @Parameterized.Parameter()
+    @Parameter
     public int precision;
 
-    @Parameterized.Parameter(1)
-    public int runLength;
+    @Parameter(value = 1)
+    public double errorRange;
 
     private HyperLogLog hyperLogLog;
 
     @Before
     public void setup() {
-        hyperLogLog = new HyperLogLogImpl(precision, PRIME_PRECISION);
+        hyperLogLog = new HyperLogLogImpl(precision);
     }
 
     @Test
@@ -69,24 +79,26 @@ public class HyperLogLogImplTest {
 
     @Test
     public void addAll() {
-        hyperLogLog.addAll(new long[]{1L, 1L, 2000L, 3000, 40000L});
+        hyperLogLog.addAll(new long[]{1L, 1L, 2000L, 3000L, 40000L});
         assertEquals(4L, hyperLogLog.estimate());
     }
 
     /**
-     * - Add up-to runLength() random numbers on both a Set and a HyperLogLog encoder.
-     * - Sample the actual count, and the estimate respectively every 100 operations.
-     * - Compute the error rate, of the measurements and store it in a histogram.
-     * - Assert that the 99th percentile of the histogram is less than the expected max error,
-     * which is the result of std error (1.04 / sqrt(m)) + 3%.
-     * (2% is the typical accuracy, but tests on the implementation showed up rare occurrences of 3%)
+     * <ul>
+     * <li>Adds up to {@link #DEFAULT_RUN_LENGTH} random numbers on both a Set and a HyperLogLog encoder.</li>
+     * <li>Samples the actual count, and the estimate respectively every 100 operations.</li>
+     * <li>Computes the error rate, of the measurements and store it in a histogram.</li>
+     * <li>Asserts that the 99th percentile of the histogram is less than the expected max error,
+     * which is the result of std error (1.04 / sqrt(m)) + [2.0, 6.5]% (2% is the typical accuracy,
+     * but tests with a lower precision need a higher error range).</li>
+     * </ul>
      */
     @Test
     public void testEstimateErrorRateForBigCardinalities() {
-        double stdError = (1.04 / Math.sqrt(1 << precision)) * 100;
-        double maxError = Math.ceil(stdError + 3.0);
+        double stdError = (1.04f / Math.sqrt(1 << precision)) * 100;
+        double maxError = Math.ceil(stdError + errorRange);
 
-        IntHashSet actualCount = new IntHashSet(runLength, -1);
+        IntHashSet actualCount = new IntHashSet(DEFAULT_RUN_LENGTH, -1);
         Random random = new Random();
         Histogram histogram = new Histogram(5);
         ByteBuffer bb = ByteBuffer.allocate(4);
@@ -95,7 +107,7 @@ public class HyperLogLogImplTest {
         long expected;
         long actual;
 
-        for (int i = 1; i <= runLength; i++) {
+        for (int i = 1; i <= DEFAULT_RUN_LENGTH; i++) {
             int toCount = random.nextInt();
             actualCount.add(toCount);
 
@@ -113,8 +125,7 @@ public class HyperLogLogImplTest {
 
         double errorPerc99 = histogram.getValueAtPercentile(99) / 100.0;
         if (errorPerc99 > maxError) {
-            fail("For P=" + precision + ", Expected max error=" + maxError + "%."
-                    + " Actual error: " + errorPerc99 + "%.");
+            fail("For P=" + precision + ": Expected max error=" + maxError + "%. Actual error=" + errorPerc99 + "%.");
         }
     }
 }

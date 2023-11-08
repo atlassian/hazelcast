@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.cluster;
 
 import com.hazelcast.config.Config;
@@ -11,9 +27,11 @@ import com.hazelcast.instance.HazelcastInstanceFactory;
 import com.hazelcast.instance.Node;
 import com.hazelcast.internal.cluster.impl.ClusterServiceImpl;
 import com.hazelcast.test.HazelcastSerialClassRunner;
+import com.hazelcast.test.OverridePropertyRule;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -21,15 +39,20 @@ import org.junit.runner.RunWith;
 import java.util.HashSet;
 import java.util.Set;
 
+import static com.hazelcast.test.HazelcastTestSupport.assertClusterSize;
 import static com.hazelcast.test.HazelcastTestSupport.assertClusterSizeEventually;
 import static com.hazelcast.test.HazelcastTestSupport.closeConnectionBetween;
 import static com.hazelcast.test.HazelcastTestSupport.getNode;
 import static com.hazelcast.test.HazelcastTestSupport.randomString;
+import static com.hazelcast.test.OverridePropertyRule.clear;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastSerialClassRunner.class)
 @Category(QuickTest.class)
 public class LiteMemberJoinTest {
+
+    @Rule
+    public final OverridePropertyRule ruleSysPropHazelcastLocalAddress = clear("hazelcast.local.localAddress");
 
     private final String name = randomString();
 
@@ -66,8 +89,8 @@ public class LiteMemberJoinTest {
         final HazelcastInstance other = Hazelcast.newHazelcastInstance(configCreator.create(name, pw, false));
 
         assertTrue(getNode(liteMaster).isMaster());
-        assertClusterSizeEventually(2, liteMaster);
-        assertClusterSizeEventually(2, other);
+        assertClusterSize(2, liteMaster);
+        assertClusterSize(2, other);
 
         final Set<Member> members = other.getCluster().getMembers();
         assertLiteMemberExcluding(members, other);
@@ -104,8 +127,9 @@ public class LiteMemberJoinTest {
     private void test_liteMemberBecomesVisibleTo2ndNode(final ConfigCreator configCreator) {
         final HazelcastInstance master = Hazelcast.newHazelcastInstance(configCreator.create(name, pw, false));
         final HazelcastInstance other = Hazelcast.newHazelcastInstance(configCreator.create(name, pw, false));
-        Hazelcast.newHazelcastInstance(configCreator.create(name, pw, true));
+        final HazelcastInstance other2 = Hazelcast.newHazelcastInstance(configCreator.create(name, pw, true));
 
+        assertClusterSize(3, master, other2);
         assertClusterSizeEventually(3, other);
 
         final Set<Member> members = other.getCluster().getMembers();
@@ -152,8 +176,7 @@ public class LiteMemberJoinTest {
 
         reconnect(master, liteInstance);
 
-        assertClusterSizeEventually(2, master);
-        assertClusterSizeEventually(2, liteInstance);
+        assertClusterSizeEventually(2, master, liteInstance);
 
         final Set<Member> members = master.getCluster().getMembers();
         assertLiteMemberExcluding(members, master);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,61 +17,151 @@
 package com.hazelcast.quorum.impl;
 
 import com.hazelcast.config.QuorumConfig;
+import com.hazelcast.core.ManagedContext;
 import com.hazelcast.core.Member;
-import com.hazelcast.nio.ClassLoaderUtil;
+import com.hazelcast.core.MembershipEvent;
+import com.hazelcast.core.MembershipListener;
+import com.hazelcast.logging.ILogger;
+import com.hazelcast.quorum.HeartbeatAware;
+import com.hazelcast.quorum.PingAware;
 import com.hazelcast.quorum.Quorum;
 import com.hazelcast.quorum.QuorumEvent;
 import com.hazelcast.quorum.QuorumException;
 import com.hazelcast.quorum.QuorumFunction;
+import com.hazelcast.quorum.QuorumService;
 import com.hazelcast.quorum.QuorumType;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.ReadonlyOperation;
 import com.hazelcast.spi.impl.MutatingOperation;
 import com.hazelcast.spi.impl.NodeEngineImpl;
+import com.hazelcast.spi.impl.QuorumCheckAwareOperation;
 import com.hazelcast.spi.impl.eventservice.InternalEventService;
-import com.hazelcast.util.ExceptionUtil;
 
 import java.util.Collection;
-import java.util.concurrent.atomic.AtomicBoolean;
 
-import static com.hazelcast.cluster.memberselector.MemberSelectors.DATA_MEMBER_SELECTOR;
+import static com.hazelcast.nio.ClassLoaderUtil.newInstance;
+import static com.hazelcast.util.ExceptionUtil.rethrow;
 
 /**
  * {@link QuorumImpl} can be used to notify quorum service for a particular quorum result that originated externally.
+ * <p>
+ * IMPORTANT: The term "quorum" simply refers to the count of members in the cluster required for an operation to succeed.
+ * It does NOT refer to an implementation of Paxos or Raft protocols as used in many NoSQL and distributed systems.
+ * The mechanism it provides in Hazelcast protects the user in case the number of nodes in a cluster drops below the
+ * specified one.
  */
 public class QuorumImpl implements Quorum {
 
-    private final AtomicBoolean isPresent = new AtomicBoolean(true);
-    private final AtomicBoolean lastPresence = new AtomicBoolean(true);
+    private enum QuorumState {
+        INITIAL,
+        PRESENT,
+        ABSENT
+    }
 
     private final NodeEngineImpl nodeEngine;
     private final String quorumName;
     private final int size;
     private final QuorumConfig config;
     private final InternalEventService eventService;
-    private QuorumFunction quorumFunction;
+    private final QuorumFunction quorumFunction;
+    private final boolean heartbeatAwareQuorumFunction;
+    private final boolean pingAwareQuorumFunction;
+    private final boolean membershipListenerQuorumFunction;
 
-    private volatile boolean initialized;
+    /**
+     * Current quorum state. Updated by single thread, read by multiple threads.
+     */
+    private volatile QuorumState quorumState = QuorumState.INITIAL;
 
-    public QuorumImpl(QuorumConfig config, NodeEngineImpl nodeEngine) {
+    QuorumImpl(QuorumConfig config, NodeEngineImpl nodeEngine) {
         this.nodeEngine = nodeEngine;
         this.eventService = nodeEngine.getEventService();
         this.config = config;
         this.quorumName = config.getName();
         this.size = config.getSize();
-        initializeQuorumFunction();
+        this.quorumFunction = initializeQuorumFunction();
+        this.heartbeatAwareQuorumFunction = (quorumFunction instanceof HeartbeatAware);
+        this.membershipListenerQuorumFunction = (quorumFunction instanceof MembershipListener);
+        this.pingAwareQuorumFunction = (quorumFunction instanceof PingAware);
     }
 
     /**
      * Determines if the quorum is present for the given member collection, caches the result and publishes an event under
      * the {@link #quorumName} topic if there was a change in presence.
+     * <p/>
+     * <strong>This method is not thread safe and should not be called concurrently.</strong>
      *
      * @param members the members for which the presence is determined
      */
-    public void update(Collection<Member> members) {
-        boolean presence = quorumFunction.apply(members);
-        setLocalResult(presence);
-        updateLastResultAndFireEvent(members, presence);
+    void update(Collection<Member> members) {
+        QuorumState previousQuorumState = quorumState;
+        QuorumState newQuorumState = QuorumState.ABSENT;
+        try {
+            boolean present = quorumFunction.apply(members);
+            newQuorumState = present ? QuorumState.PRESENT : QuorumState.ABSENT;
+        } catch (Exception e) {
+            ILogger logger = nodeEngine.getLogger(QuorumService.class);
+            logger.severe("Quorum function of quorum: " + quorumName + " failed! Quorum status is set to "
+                    + newQuorumState, e);
+        }
+
+        if (previousQuorumState == QuorumState.INITIAL && newQuorumState != QuorumState.PRESENT) {
+            // We should not set the new quorum state until quorum is met the first time
+            // after local member joins the cluster.
+            return;
+        }
+
+        quorumState = newQuorumState;
+
+        if (previousQuorumState == QuorumState.INITIAL) {
+            // We should not fire any quorum events before quorum is present the first time
+            // when local member joins the cluster.
+            return;
+        }
+
+        if (previousQuorumState != newQuorumState) {
+            createAndPublishEvent(members, newQuorumState == QuorumState.PRESENT);
+        }
+    }
+
+    /**
+     * Notify a {@link HeartbeatAware} {@code QuorumFunction} that a heartbeat has been received from a member.
+     *
+     * @param member    source member
+     * @param timestamp heartbeat's timestamp
+     */
+    void onHeartbeat(Member member, long timestamp) {
+        if (!heartbeatAwareQuorumFunction) {
+            return;
+        }
+        ((HeartbeatAware) quorumFunction).onHeartbeat(member, timestamp);
+    }
+
+    void onPing(Member member, boolean successful) {
+        if (!pingAwareQuorumFunction) {
+            return;
+        }
+        PingAware pingAware = (PingAware) quorumFunction;
+        if (successful) {
+            pingAware.onPingRestored(member);
+        } else {
+            pingAware.onPingLost(member);
+        }
+
+    }
+
+    void onMemberAdded(MembershipEvent event) {
+        if (!membershipListenerQuorumFunction) {
+            return;
+        }
+        ((MembershipListener) quorumFunction).memberAdded(event);
+    }
+
+    void onMemberRemoved(MembershipEvent event) {
+        if (!membershipListenerQuorumFunction) {
+            return;
+        }
+        ((MembershipListener) quorumFunction).memberRemoved(event);
     }
 
     public String getName() {
@@ -86,32 +176,35 @@ public class QuorumImpl implements Quorum {
         return config;
     }
 
-    public boolean isInitialized() {
-        return initialized;
-    }
-
     @Override
     public boolean isPresent() {
-        return isPresent.get();
+        return quorumState == QuorumState.PRESENT;
     }
 
     /**
-     * Sets the current quorum presence to the given {@code presence} and marks the instance as initialized.
+     * Indicates whether the {@link #quorumFunction} is {@link HeartbeatAware}. If so, then member heartbeats will be published
+     * to the {@link #quorumFunction}.
      *
-     * @param presence the quorum presence to be set
+     * @return {@code true} when the {@link #quorumFunction} implements {@link HeartbeatAware}, otherwise {@code false}
      */
-    public void setLocalResult(boolean presence) {
-        setLocalResultInternal(presence);
-    }
-
-    private void setLocalResultInternal(boolean presence) {
-        this.initialized = true;
-        this.isPresent.set(presence);
+    boolean isHeartbeatAware() {
+        return heartbeatAwareQuorumFunction;
     }
 
     /**
-     * Returns if quorum is needed for this operation. This is determined by the {@link QuorumConfig#type} and by the type
-     * of the operation - {@link ReadonlyOperation} or {@link MutatingOperation}.
+     * Indicates whether the {@link #quorumFunction} is {@link PingAware}. If so, then ICMP pings will be published
+     * to the {@link #quorumFunction}.
+     *
+     * @return {@code true} when the {@link #quorumFunction} implements {@link PingAware}, otherwise {@code false}
+     */
+    boolean isPingAware() {
+        return pingAwareQuorumFunction;
+    }
+
+    /**
+     * Returns if quorum is needed for this operation.
+     * The quorum is determined by the {@link QuorumConfig#type} and by the type of the operation -
+     * {@link ReadonlyOperation} or {@link MutatingOperation}.
      *
      * @param op the operation which is to be executed
      * @return if this quorum should be consulted for this operation
@@ -121,22 +214,40 @@ public class QuorumImpl implements Quorum {
         QuorumType type = config.getType();
         switch (type) {
             case WRITE:
-                return isWriteOperation(op);
+                return isWriteOperation(op) && shouldCheckQuorum(op);
             case READ:
-                return isReadOperation(op);
+                return isReadOperation(op) && shouldCheckQuorum(op);
             case READ_WRITE:
-                return isReadOperation(op) || isWriteOperation(op);
+                return (isReadOperation(op) || isWriteOperation(op)) && shouldCheckQuorum(op);
             default:
                 throw new IllegalStateException("Unhandled quorum type: " + type);
         }
     }
 
+    /**
+     * Returns {@code true} if this operation is marked as a read-only operation.
+     * If this method returns {@code false}, the operation still might be
+     * read-only but is not marked as such.
+     */
     private static boolean isReadOperation(Operation op) {
         return op instanceof ReadonlyOperation;
     }
 
+    /**
+     * Returns {@code true} if this operation is marked as a mutating operation.
+     * If this method returns {@code false}, the operation still might be
+     * mutating but is not marked as such.
+     */
     private static boolean isWriteOperation(Operation op) {
         return op instanceof MutatingOperation;
+    }
+
+    /**
+     * Returns {@code true} if the operation allows checking for quorum,
+     * {@code false} if the quorum check does not apply to this operation.
+     */
+    private static boolean shouldCheckQuorum(Operation op) {
+        return !(op instanceof QuorumCheckAwareOperation) || ((QuorumCheckAwareOperation) op).shouldCheckQuorum();
     }
 
     /**
@@ -147,41 +258,21 @@ public class QuorumImpl implements Quorum {
      * @param op the operation for which the quorum should be present
      * @throws QuorumException if the operation requires a quorum and the quorum is not present
      */
-    public void ensureQuorumPresent(Operation op) {
+    void ensureQuorumPresent(Operation op) {
         if (!isQuorumNeeded(op)) {
             return;
         }
-        Collection<Member> memberList = nodeEngine.getClusterService().getMembers(DATA_MEMBER_SELECTOR);
-        if (!isInitialized()) {
-            update(memberList);
-        }
+        ensureQuorumPresent();
+    }
+
+    void ensureQuorumPresent() {
         if (!isPresent()) {
-            updateLastResultAndFireEvent(memberList, false);
-            throw newQuorumException(memberList);
+            throw newQuorumException();
         }
-        updateLastResultAndFireEvent(memberList, true);
     }
 
-    private QuorumException newQuorumException(Collection<Member> memberList) {
-        if (size == 0) {
-            throw new QuorumException("Cluster quorum failed");
-        }
-        throw new QuorumException("Cluster quorum failed, quorum minimum size: "
-                + size + ", current size: " + memberList.size());
-    }
-
-
-    private void updateLastResultAndFireEvent(Collection<Member> memberList, Boolean presence) {
-        for (; ; ) {
-            boolean currentPresence = lastPresence.get();
-            if (presence.equals(currentPresence)) {
-                return;
-            }
-            if (lastPresence.compareAndSet(currentPresence, presence)) {
-                createAndPublishEvent(memberList, presence);
-                return;
-            }
-        }
+    private QuorumException newQuorumException() {
+        throw new QuorumException("Split brain protection exception: " + quorumName + " has failed!");
     }
 
     private void createAndPublishEvent(Collection<Member> memberList, boolean presence) {
@@ -189,38 +280,31 @@ public class QuorumImpl implements Quorum {
         eventService.publishEvent(QuorumServiceImpl.SERVICE_NAME, quorumName, quorumEvent, quorumEvent.hashCode());
     }
 
-    private void initializeQuorumFunction() {
-        if (config.getQuorumFunctionImplementation() != null) {
-            quorumFunction = config.getQuorumFunctionImplementation();
-        } else if (config.getQuorumFunctionClassName() != null) {
+    private QuorumFunction initializeQuorumFunction() {
+        QuorumFunction quorumFunction = config.getQuorumFunctionImplementation();
+        if (quorumFunction == null && config.getQuorumFunctionClassName() != null) {
             try {
-                quorumFunction = ClassLoaderUtil
-                        .newInstance(nodeEngine.getConfigClassLoader(), config.getQuorumFunctionClassName());
+                quorumFunction = newInstance(nodeEngine.getConfigClassLoader(), config.getQuorumFunctionClassName());
             } catch (Exception e) {
-                throw ExceptionUtil.rethrow(e);
+                throw rethrow(e);
             }
         }
         if (quorumFunction == null) {
-            quorumFunction = new MemberCountQuorumFunction();
+            quorumFunction = new MemberCountQuorumFunction(size);
         }
-    }
-
-    private class MemberCountQuorumFunction implements QuorumFunction {
-        @Override
-        public boolean apply(Collection<Member> members) {
-            return members.size() >= size;
-        }
+        ManagedContext managedContext = nodeEngine.getSerializationService().getManagedContext();
+        quorumFunction = (QuorumFunction) managedContext.initialize(quorumFunction);
+        return quorumFunction;
     }
 
     @Override
     public String toString() {
         return "QuorumImpl{"
                 + "quorumName='" + quorumName + '\''
-                + ", isPresent=" + isPresent
+                + ", isPresent=" + isPresent()
                 + ", size=" + size
                 + ", config=" + config
                 + ", quorumFunction=" + quorumFunction
-                + ", initialized=" + initialized
                 + '}';
     }
 }

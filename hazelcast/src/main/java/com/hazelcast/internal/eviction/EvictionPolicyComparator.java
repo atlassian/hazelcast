@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,4 +58,16 @@ public abstract class EvictionPolicyComparator<K, V, E extends EvictableEntryVie
     @Override
     public abstract int compare(E e1, E e2);
 
+    @Override
+    public boolean equals(Object obj) {
+        if (obj == null) {
+            return false;
+        }
+        return this.getClass().equals(obj.getClass());
+    }
+
+    @Override
+    public int hashCode() {
+        return this.getClass().hashCode();
+    }
 }

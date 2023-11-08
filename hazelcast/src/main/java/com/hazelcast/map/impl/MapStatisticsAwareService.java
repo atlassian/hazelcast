@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,9 @@
 
 package com.hazelcast.map.impl;
 
-import com.hazelcast.core.DistributedObject;
 import com.hazelcast.monitor.LocalMapStats;
-import com.hazelcast.spi.ProxyService;
 import com.hazelcast.spi.StatisticsAwareService;
-import com.hazelcast.util.MapUtil;
 
-import java.util.Collection;
 import java.util.Map;
 
 /**
@@ -32,25 +28,17 @@ import java.util.Map;
  *
  * @see StatisticsAwareService
  */
-class MapStatisticsAwareService implements StatisticsAwareService {
+class MapStatisticsAwareService implements StatisticsAwareService<LocalMapStats> {
 
     private final MapServiceContext mapServiceContext;
-    private final ProxyService proxyService;
 
     MapStatisticsAwareService(MapServiceContext mapServiceContext) {
         this.mapServiceContext = mapServiceContext;
-        this.proxyService = mapServiceContext.getNodeEngine().getProxyService();
     }
 
     @Override
     public Map<String, LocalMapStats> getStats() {
-        MapServiceContext mapServiceContext = this.mapServiceContext;
-        Collection<DistributedObject> mapProxies = proxyService.getDistributedObjects(MapService.SERVICE_NAME);
-        Map<String, LocalMapStats> mapStats = MapUtil.createHashMap(mapProxies.size());
-        for (DistributedObject mapProxy : mapProxies) {
-            LocalMapStatsProvider localMapStatsProvider = mapServiceContext.getLocalMapStatsProvider();
-            mapStats.put(mapProxy.getName(), localMapStatsProvider.createLocalMapStats(mapProxy.getName()));
-        }
-        return mapStats;
+        LocalMapStatsProvider localMapStatsProvider = mapServiceContext.getLocalMapStatsProvider();
+        return localMapStatsProvider.createAllLocalMapStats();
     }
 }

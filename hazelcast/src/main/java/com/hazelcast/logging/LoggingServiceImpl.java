@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package com.hazelcast.logging;
 
 import com.hazelcast.instance.BuildInfo;
+import com.hazelcast.instance.JetBuildInfo;
 import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.util.ConstructorFunction;
 
@@ -30,7 +31,6 @@ import static com.hazelcast.util.ConcurrencyUtil.getOrPutIfAbsent;
 
 public class LoggingServiceImpl implements LoggingService {
 
-    private final String groupName;
     private final CopyOnWriteArrayList<LogListenerRegistration> listeners
             = new CopyOnWriteArrayList<LogListenerRegistration>();
 
@@ -46,21 +46,23 @@ public class LoggingServiceImpl implements LoggingService {
     };
 
     private final LoggerFactory loggerFactory;
-    private final BuildInfo buildInfo;
+    private final String versionMessage;
 
     private volatile MemberImpl thisMember = new MemberImpl();
-    private volatile String thisAddressString = "[LOCAL]";
+    private volatile String thisAddressString = "[LOCAL] ";
     private volatile Level minLevel = Level.OFF;
 
     public LoggingServiceImpl(String groupName, String loggingType, BuildInfo buildInfo) {
-        this.groupName = groupName;
         this.loggerFactory = Logger.newLoggerFactory(loggingType);
-        this.buildInfo = buildInfo;
+        JetBuildInfo jetBuildInfo = buildInfo.getJetBuildInfo();
+        versionMessage = "[" + groupName + "] ["
+                + (jetBuildInfo != null ?  jetBuildInfo.getVersion() : buildInfo.getVersion()) + "] ";
     }
 
     public void setThisMember(MemberImpl thisMember) {
         this.thisMember = thisMember;
-        this.thisAddressString = "[" + thisMember.getAddress().getHost() + "]:" + thisMember.getAddress().getPort();
+        this.thisAddressString = "[" + thisMember.getAddress().getHost() + "]:"
+                + thisMember.getAddress().getPort() + " ";
     }
 
     @Override
@@ -151,7 +153,8 @@ public class LoggingServiceImpl implements LoggingService {
             this.logger = loggerFactory.getLogger(name);
         }
 
-        @Override public void log(Level level, String message) {
+        @Override
+        public void log(Level level, String message) {
             log(level, message, null);
         }
 
@@ -160,9 +163,7 @@ public class LoggingServiceImpl implements LoggingService {
             boolean loggable = logger.isLoggable(level);
             if (loggable || level.intValue() >= minLevel.intValue()) {
                 String address = thisAddressString;
-                String logMessage = (address != null ? address : "")
-                        + " [" + groupName + "] [" + buildInfo.getVersion() + "] " + message;
-
+                String logMessage = (address != null ? address : "") + versionMessage + message;
                 if (loggable) {
                     logger.log(level, logMessage, thrown);
                 }

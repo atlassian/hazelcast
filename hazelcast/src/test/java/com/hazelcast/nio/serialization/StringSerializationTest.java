@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,12 +31,13 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.Charset;
 import java.util.Arrays;
 
+import static java.nio.ByteOrder.BIG_ENDIAN;
+import static java.nio.ByteOrder.LITTLE_ENDIAN;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
@@ -45,17 +46,17 @@ import static org.junit.Assert.assertNull;
 @Category(QuickTest.class)
 public class StringSerializationTest {
 
-    private InternalSerializationService serializationService;
+    private static final String TEST_DATA_TURKISH = "Pijamalı hasta, yağız şoföre çabucak güvendi.";
+    private static final String TEST_DATA_JAPANESE = "イロハニホヘト チリヌルヲ ワカヨタレソ ツネナラム";
+    private static final String TEST_DATA_ASCII = "The quick brown fox jumps over the lazy dog";
+    private static final String TEST_DATA_ALL = TEST_DATA_TURKISH + TEST_DATA_JAPANESE + TEST_DATA_ASCII;
+    private static final int TEST_STR_SIZE = 1 << 20;
 
-    private final static String TEST_DATA_TURKISH = "Pijamalı hasta, yağız şoföre çabucak güvendi.";
-    private final static String TEST_DATA_JAPANESE = "イロハニホヘト チリヌルヲ ワカヨタレソ ツネナラム";
-    private final static String TEST_DATA_ASCII = "The quick brown fox jumps over the lazy dog";
-    private final static String TEST_DATA_ALL = TEST_DATA_TURKISH + TEST_DATA_JAPANESE + TEST_DATA_ASCII;
-    private final static int TEST_STR_SIZE = 1 << 20;
-
-    private final static byte[] TEST_DATA_BYTES_ALL = TEST_DATA_ALL.getBytes(Charset.forName("utf8"));
+    private static final byte[] TEST_DATA_BYTES_ALL = TEST_DATA_ALL.getBytes(Charset.forName("utf8"));
 
     private static final char[] allChars;
+
+    private InternalSerializationService serializationService;
 
     static {
         CharBuffer cb = CharBuffer.allocate(Character.MAX_VALUE);
@@ -78,36 +79,33 @@ public class StringSerializationTest {
     }
 
     @Test
-    public void testStringEncode()
-            throws IOException {
+    public void testStringEncode() {
         byte[] expected = toDataByte(TEST_DATA_BYTES_ALL, TEST_DATA_ALL.length());
         byte[] actual = serializationService.toBytes(TEST_DATA_ALL);
         assertArrayEquals(expected, actual);
     }
 
     @Test
-    public void testStringDecode()
-            throws IOException {
+    public void testStringDecode() {
         Data data = new HeapData(toDataByte(TEST_DATA_BYTES_ALL, TEST_DATA_ALL.length()));
         String actualStr = serializationService.toObject(data);
         assertEquals(TEST_DATA_ALL, actualStr);
     }
 
     @Test
-    public void testStringAllCharLetterEncode()
-            throws IOException {
-        String allstr = new String(allChars);
-        byte[] expected = allstr.getBytes(Charset.forName("utf8"));
-        byte[] bytes = serializationService.toBytes(allstr);
+    public void testStringAllCharLetterEncode() {
+        String allStr = new String(allChars);
+        byte[] expected = allStr.getBytes(Charset.forName("utf8"));
+        byte[] bytes = serializationService.toBytes(allStr);
         byte[] actual = Arrays.copyOfRange(bytes, HeapData.DATA_OFFSET + Bits.INT_SIZE_IN_BYTES, bytes.length);
         assertArrayEquals(expected, actual);
     }
 
     @Test
-    public void testLargeStringEncodeDecode()
-            throws IOException {
+    public void testLargeStringEncodeDecode() {
         StringBuilder sb = new StringBuilder();
-        int i = 0, j = 0;
+        int i = 0;
+        int j = 0;
         while (j < TEST_STR_SIZE) {
             int ch = i++ % Character.MAX_VALUE;
             if (Character.isLetter(ch)) {
@@ -125,8 +123,7 @@ public class StringSerializationTest {
     }
 
     @Test
-    public void testNullStringEncodeDecode()
-            throws IOException {
+    public void testNullStringEncodeDecode() {
         Data nullData = serializationService.toData(null);
         String decodedStr = serializationService.toObject(nullData);
 
@@ -134,8 +131,7 @@ public class StringSerializationTest {
     }
 
     @Test
-    public void testNullStringEncodeDecode2()
-            throws IOException {
+    public void testNullStringEncodeDecode2() throws Exception {
         BufferObjectDataOutput objectDataOutput = serializationService.createObjectDataOutput();
         objectDataOutput.writeUTF(null);
 
@@ -149,18 +145,16 @@ public class StringSerializationTest {
     }
 
     @Test
-    public void testStringAllCharLetterDecode()
-            throws IOException {
-        String allstr = new String(allChars);
-        byte[] expected = allstr.getBytes(Charset.forName("utf8"));
-        Data data = new HeapData(toDataByte(expected, allstr.length()));
+    public void testStringAllCharLetterDecode() {
+        String allStr = new String(allChars);
+        byte[] expected = allStr.getBytes(Charset.forName("utf8"));
+        Data data = new HeapData(toDataByte(expected, allStr.length()));
         String actualStr = serializationService.toObject(data);
-        assertEquals(allstr, actualStr);
+        assertEquals(allStr, actualStr);
     }
 
     @Test
-    public void testStringArrayEncodeDecode()
-            throws IOException {
+    public void testStringArrayEncodeDecode() {
         String[] stringArray = new String[100];
         for (int i = 0; i < stringArray.length; i++) {
             stringArray[i] = TEST_DATA_ALL + i;
@@ -173,10 +167,33 @@ public class StringSerializationTest {
     }
 
     private byte[] toDataByte(byte[] input, int length) {
-        //the first 4 byte of type id, 4 byte string length and last 4 byte of partition hashCode
+        // the first 4 byte of type id, 4 byte string length and last 4 byte of partition hashCode
+        if (serializationService.getByteOrder() == BIG_ENDIAN) {
+            return toDataByteBigEndian(input, length);
+        } else {
+            return toDataByteLittleEndian(input, length);
+        }
+    }
+
+    private byte[] toDataByteBigEndian(byte[] input, int length) {
         ByteBuffer bf = ByteBuffer.allocate(input.length + 12);
         bf.putInt(0);
         bf.putInt(SerializationConstants.CONSTANT_TYPE_STRING);
+        bf.putInt(length);
+        bf.put(input);
+        return bf.array();
+    }
+
+    private byte[] toDataByteLittleEndian(byte[] input, int length) {
+        ByteBuffer bf = ByteBuffer.allocate(input.length + 12);
+        bf.order(LITTLE_ENDIAN);
+        bf.putInt(0);
+        // even when serialization service is configured with little endian byte order,
+        // the serializerTypeId (CONSTANT_TYPE_STRING) is still output in BIG_ENDIAN
+        bf.put((byte) 0xFF);
+        bf.put((byte) 0xFF);
+        bf.put((byte) 0xFF);
+        bf.put((byte) 0xF5);
         bf.putInt(length);
         bf.put(input);
         return bf.array();

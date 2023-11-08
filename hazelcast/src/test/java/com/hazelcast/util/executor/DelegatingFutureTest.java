@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -64,7 +64,7 @@ public class DelegatingFutureTest {
     }
 
     @Test
-    public void test_get_Data() throws Exception{
+    public void test_get_Data() throws Exception {
         Object value = "value";
         Data data = serializationService.toData(value);
         Future future = new DelegatingFuture(new FakeCompletableFuture(data), serializationService);
@@ -79,7 +79,7 @@ public class DelegatingFutureTest {
 
         Object result1 = future.get();
         Object result2 = future.get();
-        assertSame(result1,result2);
+        assertSame(result1, result2);
     }
 
     @Test
@@ -205,7 +205,7 @@ public class DelegatingFutureTest {
         @Override
         public V join() {
             try {
-                 return get();
+                return get();
             } catch (Throwable throwable) {
                 throw rethrow(throwable);
             }

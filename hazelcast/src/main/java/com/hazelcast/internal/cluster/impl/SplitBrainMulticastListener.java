@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package com.hazelcast.internal.cluster.impl;
 
 import com.hazelcast.instance.Node;
+import com.hazelcast.nio.Address;
 
 import java.util.concurrent.BlockingDeque;
 
@@ -38,7 +39,9 @@ public class SplitBrainMulticastListener implements MulticastListener {
     public void onMessage(Object msg) {
         if (msg instanceof SplitBrainJoinMessage) {
             SplitBrainJoinMessage joinRequest = (SplitBrainJoinMessage) msg;
-            if (!node.getThisAddress().equals(joinRequest.getAddress())) {
+            Address thisAddress = node.getThisAddress();
+            // only master nodes execute the SplitBrainHandler that processes SplitBrainJoinMessages
+            if (!thisAddress.equals(joinRequest.getAddress()) && node.isMaster()) {
                 deque.addFirst(joinRequest);
             }
         }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package com.hazelcast.durableexecutor;
 
 import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.core.IAtomicLong;
 import com.hazelcast.executor.ExecutorServiceTestSupport;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
@@ -30,6 +31,7 @@ import org.junit.runner.RunWith;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -111,6 +113,40 @@ public class DurableRetrieveResultTest extends ExecutorServiceTestSupport {
 
         Future<Object> resultFuture = executorService.retrieveResult(taskId);
         assertNull(resultFuture.get());
+    }
+
+    @Test
+    public void testSingleExecution_WhenMigratedAfterCompletion_WhenOwnerMemberKilled() throws Exception {
+        TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(3);
+
+        HazelcastInstance[] instances = factory.newInstances();
+        HazelcastInstance first = instances[0];
+        HazelcastInstance second = instances[1];
+
+        waitAllForSafeState(instances);
+
+        String key = generateKeyOwnedBy(first);
+
+        String runCounterName = "runCount";
+        IAtomicLong runCount = second.getAtomicLong(runCounterName);
+
+        String name = randomString();
+        DurableExecutorService executorService = first.getDurableExecutorService(name);
+        IncrementAtomicLongRunnable task = new IncrementAtomicLongRunnable(runCounterName);
+        DurableExecutorServiceFuture future = executorService.submitToKeyOwner(task, key);
+
+        future.get(); // Wait for it to finish
+
+        // Avoid race between PutResult & SHUTDOWN
+        sleepSeconds(3);
+
+        first.getLifecycleService().terminate();
+
+        executorService = second.getDurableExecutorService(name);
+        Future<Object> newFuture = executorService.retrieveResult(future.getTaskId());
+        newFuture.get(); // Make sure its completed
+
+        assertEquals(1, runCount.get());
     }
 
     @Test

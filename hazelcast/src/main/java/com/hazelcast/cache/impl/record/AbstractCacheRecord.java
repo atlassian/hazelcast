@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,14 @@
 package com.hazelcast.cache.impl.record;
 
 import com.hazelcast.cache.impl.CacheDataSerializerHook;
+import com.hazelcast.internal.cluster.Versions;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+import com.hazelcast.version.Version;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
+import javax.cache.expiry.ExpiryPolicy;
 import java.io.IOException;
 
 /**
@@ -31,7 +34,13 @@ import java.io.IOException;
  *
  * @param <V> the type of the value stored by this {@link AbstractCacheRecord}
  */
-public abstract class AbstractCacheRecord<V> implements CacheRecord<V>, IdentifiedDataSerializable {
+public abstract class AbstractCacheRecord<V, E> implements CacheRecord<V, E>, IdentifiedDataSerializable {
+
+    /**
+     * Represents when {@link com.hazelcast.cache.ICache#setExpiryPolicy(Object, ExpiryPolicy)} is added.
+     * The constant is used in selective serialization of {@link CacheRecord}s.
+     */
+    public static final Version EXPIRY_POLICY_VERSION = Versions.V3_11;
 
     protected long creationTime = TIME_NOT_AVAILABLE;
     protected volatile long expirationTime = TIME_NOT_AVAILABLE;

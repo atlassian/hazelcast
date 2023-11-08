@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.hazelcast.client.proxy;
 
-import com.hazelcast.client.impl.ClientLockReferenceIdGenerator;
+import com.hazelcast.client.impl.clientside.ClientLockReferenceIdGenerator;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.LockForceUnlockCodec;
 import com.hazelcast.client.impl.protocol.codec.LockGetLockCountCodec;
@@ -26,6 +26,7 @@ import com.hazelcast.client.impl.protocol.codec.LockIsLockedCodec;
 import com.hazelcast.client.impl.protocol.codec.LockLockCodec;
 import com.hazelcast.client.impl.protocol.codec.LockTryLockCodec;
 import com.hazelcast.client.impl.protocol.codec.LockUnlockCodec;
+import com.hazelcast.client.spi.ClientContext;
 import com.hazelcast.core.ICondition;
 import com.hazelcast.core.ILock;
 import com.hazelcast.util.ThreadUtil;
@@ -35,6 +36,7 @@ import java.util.concurrent.locks.Condition;
 
 import static com.hazelcast.util.Preconditions.checkNotNull;
 import static com.hazelcast.util.Preconditions.checkPositive;
+import static java.lang.Thread.currentThread;
 
 /**
  * Proxy implementation of {@link ILock}.
@@ -43,8 +45,8 @@ public class ClientLockProxy extends PartitionSpecificClientProxy implements ILo
 
     private ClientLockReferenceIdGenerator referenceIdGenerator;
 
-    public ClientLockProxy(String serviceName, String objectId) {
-        super(serviceName, objectId);
+    public ClientLockProxy(String serviceName, String objectId, ClientContext context) {
+        super(serviceName, objectId, context);
     }
 
     @Deprecated
@@ -90,7 +92,7 @@ public class ClientLockProxy extends PartitionSpecificClientProxy implements ILo
         checkPositive(leaseTime, "leaseTime should be positive");
         ClientMessage request = LockLockCodec.encodeRequest(name,
                 getTimeInMillis(leaseTime, timeUnit), ThreadUtil.getThreadId(), referenceIdGenerator.getNextReferenceId());
-        invokeOnPartition(request);
+        invokeOnPartition(request, Long.MAX_VALUE);
     }
 
     @Override
@@ -111,14 +113,14 @@ public class ClientLockProxy extends PartitionSpecificClientProxy implements ILo
     public void lock() {
         ClientMessage request = LockLockCodec
                 .encodeRequest(name, -1, ThreadUtil.getThreadId(), referenceIdGenerator.getNextReferenceId());
-        invokeOnPartition(request);
+        invokeOnPartition(request, Long.MAX_VALUE);
     }
 
     @Override
     public void lockInterruptibly() throws InterruptedException {
         ClientMessage request = LockLockCodec
                 .encodeRequest(name, -1, ThreadUtil.getThreadId(), referenceIdGenerator.getNextReferenceId());
-        invokeOnPartitionInterruptibly(request);
+        invokeOnPartitionInterruptibly(request, Long.MAX_VALUE);
     }
 
     @Override
@@ -126,6 +128,7 @@ public class ClientLockProxy extends PartitionSpecificClientProxy implements ILo
         try {
             return tryLock(0, null);
         } catch (InterruptedException e) {
+            currentThread().interrupt();
             return false;
         }
     }
@@ -142,7 +145,8 @@ public class ClientLockProxy extends PartitionSpecificClientProxy implements ILo
         long threadId = ThreadUtil.getThreadId();
         ClientMessage request = LockTryLockCodec
                 .encodeRequest(name, threadId, leaseTimeInMillis, timeoutInMillis, referenceIdGenerator.getNextReferenceId());
-        LockTryLockCodec.ResponseParameters resultParameters = LockTryLockCodec.decodeResponse(invokeOnPartition(request));
+        ClientMessage clientMessage = invokeOnPartition(request, Long.MAX_VALUE);
+        LockTryLockCodec.ResponseParameters resultParameters = LockTryLockCodec.decodeResponse(clientMessage);
         return resultParameters.response;
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,10 +24,14 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
+import java.util.Arrays;
+
+import static com.hazelcast.util.collection.ArrayUtils.replaceFirst;
 import static org.hamcrest.Matchers.arrayWithSize;
 import static org.hamcrest.Matchers.emptyArray;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.sameInstance;
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
@@ -154,9 +158,50 @@ public class ArrayUtilsTest extends HazelcastTestSupport {
     }
 
     @Test
+    public void replace_whenInMiddle() {
+        Integer[] result = replaceFirst(new Integer[]{1, 6, 4}, 6, new Integer[]{2, 3});
+        System.out.println(Arrays.toString(result));
+        assertArrayEquals(new Integer[]{1, 2, 3, 4}, result);
+    }
+
+    @Test
+    public void replace_whenInBeginning() {
+        Integer[] result = replaceFirst(new Integer[]{6, 3, 4}, 6, new Integer[]{1, 2});
+        System.out.println(Arrays.toString(result));
+        assertArrayEquals(new Integer[]{1, 2, 3, 4}, result);
+    }
+
+    @Test
+    public void replace_whenInEnd() {
+        Integer[] result = replaceFirst(new Integer[]{1, 2, 6}, 6, new Integer[]{3, 4});
+        System.out.println(Arrays.toString(result));
+        assertArrayEquals(new Integer[]{1, 2, 3, 4}, result);
+    }
+
+    @Test
+    public void replace_whenSrcEmpty() {
+        Integer[] result = replaceFirst(new Integer[]{}, 6, new Integer[]{3, 4});
+        System.out.println(Arrays.toString(result));
+        assertArrayEquals(new Integer[]{}, result);
+    }
+
+    @Test
+    public void replace_whenNewValuesEmpty() {
+        Integer[] result = replaceFirst(new Integer[]{1, 2, 10, 3, 4}, 10, new Integer[]{});
+        System.out.println(Arrays.toString(result));
+        assertArrayEquals(new Integer[]{1, 2, 3, 4}, result);
+    }
+
+    @Test
+    public void replace_whenNotFound() {
+        Integer[] result = replaceFirst(new Integer[]{1, 2, 3}, 10, new Integer[]{100});
+        assertArrayEquals(new Integer[]{1, 2, 3}, result);
+    }
+
+    @Test
     public void concat() {
-        Integer[] first = new Integer[] {1,2,3};
-        Integer[] second = new Integer[] {4};
+        Integer[] first = new Integer[]{1, 2, 3};
+        Integer[] second = new Integer[]{4};
         Integer[] concatenated = new Integer[4];
         ArrayUtils.concat(first, second, concatenated);
         assertEquals(4, concatenated.length);
@@ -169,7 +214,7 @@ public class ArrayUtilsTest extends HazelcastTestSupport {
     @Test(expected = NullPointerException.class)
     public void concat_whenFirstNull() {
         Integer[] first = null;
-        Integer[] second = new Integer[] {4};
+        Integer[] second = new Integer[]{4};
         Integer[] concatenated = new Integer[4];
         ArrayUtils.concat(first, second, concatenated);
         fail();
@@ -177,7 +222,7 @@ public class ArrayUtilsTest extends HazelcastTestSupport {
 
     @Test(expected = NullPointerException.class)
     public void concat_whenSecondNull() {
-        Integer[] first = new Integer[] {1,2,3};
+        Integer[] first = new Integer[]{1, 2, 3};
         Integer[] second = null;
         Integer[] concatenated = new Integer[4];
         ArrayUtils.concat(first, second, concatenated);
@@ -186,10 +231,57 @@ public class ArrayUtilsTest extends HazelcastTestSupport {
 
     @Test(expected = NullPointerException.class)
     public void concat_whenDestNull() {
-        Integer[] first = new Integer[] {1,2,3};
-        Integer[] second = new Integer[] {4};
+        Integer[] first = new Integer[]{1, 2, 3};
+        Integer[] second = new Integer[]{4};
         Integer[] concatenated = null;
         ArrayUtils.concat(first, second, concatenated);
         fail();
+    }
+
+    @Test
+    public void boundsCheck() {
+        ArrayUtils.boundsCheck(100, 0, 10);
+    }
+
+    @Test
+    public void boundsCheck_allZero() {
+        ArrayUtils.boundsCheck(0, 0, 0);
+    }
+
+    @Test(expected = IndexOutOfBoundsException.class)
+    public void boundsCheck_whenMoreThanCapacity() {
+        ArrayUtils.boundsCheck(100, 0, 110);
+    }
+
+    @Test(expected = IndexOutOfBoundsException.class)
+    public void boundsCheck_whenIndexSmallerThanZero() {
+        ArrayUtils.boundsCheck(100, -1, 110);
+    }
+
+    @Test(expected = IndexOutOfBoundsException.class)
+    public void boundsCheck_whenLengthSmallerThanZero() {
+        ArrayUtils.boundsCheck(100, 0, -1);
+    }
+
+    @Test(expected = IndexOutOfBoundsException.class)
+    public void boundsCheck_whenCapacitySmallerThanZero() {
+        ArrayUtils.boundsCheck(-1, 0, 0);
+    }
+
+    @Test(expected = IndexOutOfBoundsException.class)
+    public void boundsCheck_whenLengthIntegerMax() {
+        //Testing wrapping does not cause false check
+        ArrayUtils.boundsCheck(0, 10, Integer.MAX_VALUE);
+    }
+
+    @Test(expected = IndexOutOfBoundsException.class)
+    public void boundsCheck_whenIndexIntegerMax() {
+        //Testing wrapping does not cause false check
+        ArrayUtils.boundsCheck(100, Integer.MAX_VALUE, 1);
+    }
+
+    @Test(expected = IndexOutOfBoundsException.class)
+    public void boundsCheck_whenCapacityIntegerMin() {
+        ArrayUtils.boundsCheck(Integer.MIN_VALUE, 0, 100);
     }
 }

@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.map.impl.tx;
 
 import com.hazelcast.config.Config;
@@ -45,7 +61,7 @@ import static org.junit.Assert.assertTrue;
 @Category(NightlyTest.class)
 public class MapTransactionStressTest extends HazelcastTestSupport {
 
-    private static String DUMMY_TX_SERVICE = "dummy-tx-service";
+    private static final String DUMMY_TX_SERVICE = "dummy-tx-service";
 
     @Test
     public void testTransactionAtomicity_whenMapGetIsUsed_withTransaction() throws InterruptedException {
@@ -214,7 +230,9 @@ public class MapTransactionStressTest extends HazelcastTestSupport {
     }
 
     public static class ProducerThread extends Thread {
-        public static final String value = "some-value";
+
+        public static final String VALUE = "some-value";
+
         private final HazelcastInstance hz;
         private final String name;
         private final String dummyServiceName;
@@ -236,10 +254,10 @@ public class MapTransactionStressTest extends HazelcastTestSupport {
                     DummyTransactionalObject slowTxObject = tx.getTransactionalObject(dummyServiceName, name);
                     slowTxObject.doSomethingTxnal();
                     TransactionalMap<String, Object> map = tx.getMap(name);
-                    map.put(id, value);
+                    map.put(id, VALUE);
                     slowTxObject.doSomethingTxnal();
                     TransactionalMultiMap<Object, Object> multiMap = tx.getMultiMap(name);
-                    multiMap.put(id, value);
+                    multiMap.put(id, VALUE);
                     tx.commitTransaction();
                 } catch (TransactionException e) {
                     tx.rollbackTransaction();
@@ -337,6 +355,16 @@ public class MapTransactionStressTest extends HazelcastTestSupport {
                     LockSupport.parkNanos(10000);
                 }
             };
+        }
+
+        @Override
+        public void onCommitSuccess() {
+            // NOP
+        }
+
+        @Override
+        public void onCommitFailure() {
+            // NOP
         }
 
         @Override

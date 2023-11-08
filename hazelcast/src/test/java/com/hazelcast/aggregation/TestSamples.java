@@ -1,6 +1,21 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.aggregation;
 
-import com.hazelcast.config.MapAttributeConfig;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.map.impl.MapEntrySimple;
 import com.hazelcast.nio.serialization.Data;
@@ -11,7 +26,6 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -29,8 +43,8 @@ final class TestSamples {
         return new MapEntrySimple<T, T>(value, value);
     }
 
-    static <T> Map.Entry<T, T> createExtractableEntryWithValue(T value) {
-        return new ExtractableEntry<T, T>(value, value);
+    static <T> Map.Entry<T, T> createExtractableEntryWithValue(T value, InternalSerializationService ss) {
+        return new ExtractableEntry<T, T>(value, value, ss);
     }
 
     static List<Integer> sampleIntegers() {
@@ -88,7 +102,7 @@ final class TestSamples {
     }
 
     static List<String> sampleStrings() {
-        return asList(LOREM_IPSUM.split(" "));
+        return new ArrayList(asList(LOREM_IPSUM.split(" ")));
     }
 
     static List<Person> samplePersons() {
@@ -184,8 +198,8 @@ final class TestSamples {
         private K key;
         private V value;
 
-        ExtractableEntry(K key, V value) {
-            this.extractors = new Extractors(Collections.<MapAttributeConfig>emptyList(), null);
+        ExtractableEntry(K key, V value, InternalSerializationService ss) {
+            this.extractors = Extractors.newBuilder(ss).build();
             this.key = key;
             this.value = value;
         }
@@ -228,6 +242,35 @@ final class TestSamples {
 
         void setSerializationService(InternalSerializationService serializationService) {
             this.serializationService = serializationService;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+
+            ExtractableEntry<?, ?> that = (ExtractableEntry<?, ?>) o;
+
+            if (key != null ? !key.equals(that.key) : that.key != null) {
+                return false;
+            }
+            return value != null ? value.equals(that.value) : that.value == null;
+        }
+
+        @Override
+        public int hashCode() {
+            int result = key != null ? key.hashCode() : 0;
+            result = 31 * result + (value != null ? value.hashCode() : 0);
+            return result;
+        }
+
+        @Override
+        public String toString() {
+            return "ExtractableEntry{key=" + key + ", value=" + value + '}';
         }
     }
 }

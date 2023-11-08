@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import com.hazelcast.nio.Address;
 import com.hazelcast.nio.IOUtil;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.serialization.impl.BinaryInterface;
+import com.hazelcast.nio.serialization.impl.Versioned;
 import com.hazelcast.spi.annotation.PrivateApi;
 import com.hazelcast.version.MemberVersion;
 
@@ -36,12 +36,18 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+import static com.hazelcast.instance.EndpointQualifier.MEMBER;
+import static com.hazelcast.internal.cluster.Versions.V3_12;
+import static com.hazelcast.internal.serialization.impl.SerializationUtil.readNullableMap;
+import static com.hazelcast.internal.serialization.impl.SerializationUtil.writeNullableMap;
+import static com.hazelcast.util.Preconditions.checkNotNull;
+
 @PrivateApi
-@BinaryInterface
-public abstract class AbstractMember implements Member {
+public abstract class AbstractMember implements Member, Versioned {
 
     protected final Map<String, Object> attributes = new ConcurrentHashMap<String, Object>();
     protected Address address;
+    protected Map<EndpointQualifier, Address> addressMap;
     protected String uuid;
     protected boolean liteMember;
     protected MemberVersion version;
@@ -49,23 +55,13 @@ public abstract class AbstractMember implements Member {
     protected AbstractMember() {
     }
 
-    protected AbstractMember(Address address, MemberVersion version) {
-        this(address, version, null, null);
-    }
-
-    protected AbstractMember(Address address, MemberVersion version, String uuid) {
-        this(address, version, uuid, null);
-    }
-
-    protected AbstractMember(Address address, MemberVersion version, String uuid, Map<String, Object> attributes) {
-        this(address, version, uuid, attributes, false);
-    }
-
-    protected AbstractMember(Address address, MemberVersion version, String uuid, Map<String, Object> attributes,
-                             boolean liteMember) {
-        this.address = address;
+    protected AbstractMember(Map<EndpointQualifier, Address> addresses, MemberVersion version,
+                             String uuid, Map<String, Object> attributes, boolean liteMember) {
+        this.address = addresses.get(MEMBER);
+        this.addressMap = addresses;
+        assert address != null : "Address is required!";
         this.version = version;
-        this.uuid = uuid;
+        this.uuid = uuid != null ? uuid : "<" + address.toString() + ">";
         if (attributes != null) {
             this.attributes.putAll(attributes);
         }
@@ -74,6 +70,7 @@ public abstract class AbstractMember implements Member {
 
     protected AbstractMember(AbstractMember member) {
         this.address = member.address;
+        this.addressMap = member.addressMap;
         this.version = member.version;
         this.uuid = member.uuid;
         this.attributes.putAll(member.attributes);
@@ -82,6 +79,10 @@ public abstract class AbstractMember implements Member {
 
     public Address getAddress() {
         return address;
+    }
+
+    public Map<EndpointQualifier, Address> getAddressMap() {
+        return addressMap;
     }
 
     public int getPort() {
@@ -108,8 +109,20 @@ public abstract class AbstractMember implements Member {
 
     @Override
     public InetSocketAddress getSocketAddress() {
+        return getSocketAddress(MEMBER);
+    }
+
+    @Override
+    public InetSocketAddress getSocketAddress(EndpointQualifier qualifier) {
+        Address addr = addressMap.get(qualifier);
+        if (addr == null && !qualifier.getType().equals(ProtocolType.MEMBER)) {
+            addr = addressMap.get(MEMBER);
+        }
+
+        checkNotNull(addr);
+
         try {
-            return address.getInetSocketAddress();
+            return addr.getInetSocketAddress();
         } catch (UnknownHostException e) {
             if (getLogger() != null) {
                 getLogger().warning(e);
@@ -172,6 +185,7 @@ public abstract class AbstractMember implements Member {
             Object value = IOUtil.readAttributeValue(in);
             attributes.put(key, value);
         }
+        addressMap = readAddressMap(in);
     }
 
     @Override
@@ -186,6 +200,7 @@ public abstract class AbstractMember implements Member {
             out.writeUTF(entry.getKey());
             IOUtil.writeAttributeValue(entry.getValue(), out);
         }
+        writeAddressMap(out);
     }
 
     @Override
@@ -207,12 +222,12 @@ public abstract class AbstractMember implements Member {
 
     @Override
     public int hashCode() {
-        final int prime = 31;
-        int result = 1;
-        result = prime * result + ((address == null) ? 0 : address.hashCode());
+        int result = address.hashCode();
+        result = 31 * result + uuid.hashCode();
         return result;
     }
 
+    @SuppressWarnings("checkstyle:npathcomplexity")
     @Override
     public boolean equals(Object obj) {
         if (this == obj) {
@@ -221,17 +236,27 @@ public abstract class AbstractMember implements Member {
         if (obj == null) {
             return false;
         }
-        if (!(obj instanceof AbstractMember)) {
+        if (!(obj instanceof Member)) {
             return false;
         }
-        final AbstractMember other = (AbstractMember) obj;
-        if (address == null) {
-            if (other.address != null) {
-                return false;
-            }
-        } else if (!address.equals(other.address)) {
-            return false;
+
+        Member that = (Member) obj;
+        return address.equals(that.getAddress()) && uuid.equals(that.getUuid());
+    }
+
+    private void writeAddressMap(ObjectDataOutput out) throws IOException {
+        if (out.getVersion().isUnknownOrLessThan(V3_12)) {
+            return;
         }
-        return true;
+
+        writeNullableMap(addressMap, out);
+    }
+
+    private Map<EndpointQualifier, Address> readAddressMap(ObjectDataInput in) throws IOException {
+        if (in.getVersion().isUnknownOrLessThan(V3_12)) {
+            return null;
+        }
+
+        return readNullableMap(in);
     }
 }

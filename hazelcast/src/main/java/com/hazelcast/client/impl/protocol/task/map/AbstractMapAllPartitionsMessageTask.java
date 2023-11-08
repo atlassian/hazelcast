@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,8 +21,6 @@ import com.hazelcast.client.impl.protocol.task.AbstractAllPartitionsMessageTask;
 import com.hazelcast.instance.Node;
 import com.hazelcast.map.impl.MapService;
 import com.hazelcast.map.impl.MapServiceContext;
-import com.hazelcast.map.impl.nearcache.MapNearCacheManager;
-import com.hazelcast.map.impl.nearcache.invalidation.NearCacheInvalidator;
 import com.hazelcast.map.impl.operation.MapOperationProvider;
 import com.hazelcast.nio.Connection;
 
@@ -38,13 +36,5 @@ abstract class AbstractMapAllPartitionsMessageTask<P> extends AbstractAllPartiti
         MapService mapService = getService(SERVICE_NAME);
         MapServiceContext mapServiceContext = mapService.getMapServiceContext();
         return mapServiceContext.getMapOperationProvider(mapName);
-    }
-
-    protected final void sendNearCacheClearEvent(String mapName) {
-        MapService mapService = getService(SERVICE_NAME);
-        MapServiceContext mapServiceContext = mapService.getMapServiceContext();
-        MapNearCacheManager mapNearCacheManager = mapServiceContext.getMapNearCacheManager();
-        NearCacheInvalidator nearCacheInvalidator = mapNearCacheManager.getNearCacheInvalidator();
-        nearCacheInvalidator.clear(mapName, getEndpoint().getUuid());
     }
 }

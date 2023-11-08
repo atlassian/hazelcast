@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package com.hazelcast.cache.impl;
 
 import com.hazelcast.cache.CacheStatistics;
+import com.hazelcast.cache.HazelcastCacheManager;
 import com.hazelcast.cache.impl.event.CachePartitionLostEventFilter;
 import com.hazelcast.cache.impl.event.CachePartitionLostListener;
 import com.hazelcast.cache.impl.event.InternalCachePartitionLostListenerAdapter;
@@ -41,7 +42,6 @@ import javax.cache.configuration.CacheEntryListenerConfiguration;
 import javax.cache.expiry.ExpiryPolicy;
 import java.util.Collection;
 import java.util.EventListener;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -51,9 +51,13 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static com.hazelcast.cache.impl.CacheProxyUtil.validateNotNull;
 import static com.hazelcast.cache.impl.operation.MutableOperation.IGNORE_COMPLETION;
+import static com.hazelcast.util.ExceptionUtil.rethrowAllowedTypeFirst;
+import static com.hazelcast.util.SetUtil.createHashSet;
+import static java.lang.Thread.currentThread;
 
 /**
  * Abstract {@link com.hazelcast.cache.ICache} implementation which provides shared internal implementations
@@ -69,36 +73,32 @@ import static com.hazelcast.cache.impl.operation.MutableOperation.IGNORE_COMPLET
  */
 abstract class AbstractInternalCacheProxy<K, V>
         extends AbstractCacheProxyBase<K, V>
-        implements ICacheInternal<K, V>, CacheSyncListenerCompleter {
+        implements CacheSyncListenerCompleter {
 
     private static final long MAX_COMPLETION_LATCH_WAIT_TIME = TimeUnit.MINUTES.toMillis(5);
-
     private static final long COMPLETION_LATCH_WAIT_TIME_STEP = TimeUnit.SECONDS.toMillis(1);
-    private final ConcurrentMap<CacheEntryListenerConfiguration, String> asyncListenerRegistrations;
-
-    private final ConcurrentMap<CacheEntryListenerConfiguration, String> syncListenerRegistrations;
-    private final ConcurrentMap<Integer, CountDownLatch> syncLocks;
 
     private final AtomicInteger completionIdCounter = new AtomicInteger();
 
-    private HazelcastServerCacheManager cacheManager;
+    private final ConcurrentMap<CacheEntryListenerConfiguration, String> asyncListenerRegistrations;
+    private final ConcurrentMap<CacheEntryListenerConfiguration, String> syncListenerRegistrations;
+    private final ConcurrentMap<Integer, CountDownLatch> syncLocks;
 
-    protected AbstractInternalCacheProxy(CacheConfig cacheConfig, NodeEngine nodeEngine,
-                                         ICacheService cacheService) {
+    private AtomicReference<HazelcastServerCacheManager> cacheManagerRef = new AtomicReference<HazelcastServerCacheManager>();
+
+    AbstractInternalCacheProxy(CacheConfig<K, V> cacheConfig, NodeEngine nodeEngine, ICacheService cacheService) {
         super(cacheConfig, nodeEngine, cacheService);
         asyncListenerRegistrations = new ConcurrentHashMap<CacheEntryListenerConfiguration, String>();
         syncListenerRegistrations = new ConcurrentHashMap<CacheEntryListenerConfiguration, String>();
         syncLocks = new ConcurrentHashMap<Integer, CountDownLatch>();
 
-        final List<CachePartitionLostListenerConfig> configs = cacheConfig.getPartitionLostListenerConfigs();
+        List<CachePartitionLostListenerConfig> configs = cacheConfig.getPartitionLostListenerConfigs();
         for (CachePartitionLostListenerConfig listenerConfig : configs) {
-            final CachePartitionLostListener listener = initializeListener(listenerConfig);
+            CachePartitionLostListener listener = initializeListener(listenerConfig);
             if (listener != null) {
-                final InternalCachePartitionLostListenerAdapter listenerAdapter =
-                        new InternalCachePartitionLostListenerAdapter(listener);
-                final EventFilter filter = new CachePartitionLostEventFilter();
-                final ICacheService service = getService();
-                service.getNodeEngine().getEventService()
+                EventFilter filter = new CachePartitionLostEventFilter();
+                CacheEventListener listenerAdapter = new InternalCachePartitionLostListenerAdapter(listener);
+                getService().getNodeEngine().getEventService()
                         .registerListener(AbstractCacheService.SERVICE_NAME, name, filter, listenerAdapter);
             }
         }
@@ -106,217 +106,52 @@ abstract class AbstractInternalCacheProxy<K, V>
 
     @Override
     public CacheManager getCacheManager() {
-        return cacheManager;
+        return cacheManagerRef.get();
     }
 
-    void setCacheManager(HazelcastServerCacheManager cacheManager) {
-        this.cacheManager = cacheManager;
+    @Override
+    public void setCacheManager(HazelcastCacheManager cacheManager) {
+        assert cacheManager instanceof HazelcastServerCacheManager;
+
+        // optimistically assume the CacheManager is already set
+        if (cacheManagerRef.get() == cacheManager) {
+            return;
+        }
+
+        if (!this.cacheManagerRef.compareAndSet(null, (HazelcastServerCacheManager) cacheManager)) {
+            if (cacheManagerRef.get() == cacheManager) {
+                // some other thread managed to set the same CacheManager, we are good
+                return;
+            }
+            throw new IllegalStateException("Cannot overwrite a Cache's CacheManager.");
+        }
+    }
+
+    @Override
+    public void resetCacheManager() {
+        cacheManagerRef.set(null);
     }
 
     @Override
     protected void postDestroy() {
+        CacheManager cacheManager = cacheManagerRef.get();
         if (cacheManager != null) {
             cacheManager.destroyCache(getName());
         }
+        resetCacheManager();
     }
 
-    protected <T> InternalCompletableFuture<T> invoke(Operation op, int partitionId, boolean completionOperation) {
-        Integer completionId = null;
-        if (completionOperation) {
-            completionId = registerCompletionLatch(1);
-            if (op instanceof MutableOperation) {
-                ((MutableOperation) op).setCompletionId(completionId);
+    @Override
+    public void countDownCompletionLatch(int countDownLatchId) {
+        if (countDownLatchId != IGNORE_COMPLETION) {
+            CountDownLatch countDownLatch = syncLocks.get(countDownLatchId);
+            if (countDownLatch == null) {
+                return;
             }
-        }
-        try {
-            final InternalCompletableFuture<T> f =
-                    getNodeEngine().getOperationService()
-                            .invokeOnPartition(getServiceName(), op, partitionId);
-            if (completionOperation) {
-                waitCompletionLatch(completionId);
+            countDownLatch.countDown();
+            if (countDownLatch.getCount() == 0) {
+                deregisterCompletionLatch(countDownLatchId);
             }
-            return f;
-        } catch (Throwable e) {
-            if (e instanceof IllegalStateException) {
-                close();
-            }
-            throw ExceptionUtil.rethrowAllowedTypeFirst(e, CacheException.class);
-        } finally {
-            if (completionOperation) {
-                deregisterCompletionLatch(completionId);
-            }
-        }
-    }
-
-    protected <T> InternalCompletableFuture<T> invoke(Operation op, Data keyData, boolean completionOperation) {
-        final int partitionId = getPartitionId(keyData);
-        return invoke(op, partitionId, completionOperation);
-    }
-
-    protected <T> InternalCompletableFuture<T> removeAsyncInternal(K key, V oldValue, boolean hasOldValue,
-                                                                   boolean isGet, boolean withCompletionEvent) {
-        ensureOpen();
-        if (hasOldValue) {
-            validateNotNull(key, oldValue);
-            CacheProxyUtil.validateConfiguredTypes(cacheConfig, key, oldValue);
-        } else {
-            validateNotNull(key);
-            CacheProxyUtil.validateConfiguredTypes(cacheConfig, key);
-        }
-        final Data keyData = serializationService.toData(key);
-        final Data valueData = serializationService.toData(oldValue);
-        final Operation operation;
-        if (isGet) {
-            operation = operationProvider.createGetAndRemoveOperation(keyData, IGNORE_COMPLETION);
-        } else {
-            operation = operationProvider.createRemoveOperation(keyData, valueData, IGNORE_COMPLETION);
-        }
-        return invoke(operation, keyData, withCompletionEvent);
-    }
-
-    protected <T> InternalCompletableFuture<T> replaceAsyncInternal(K key, V oldValue, V newValue,
-                                                                    ExpiryPolicy expiryPolicy,
-                                                                    boolean hasOldValue, boolean isGet,
-                                                                    boolean withCompletionEvent) {
-        ensureOpen();
-        if (hasOldValue) {
-            validateNotNull(key, oldValue, newValue);
-            CacheProxyUtil.validateConfiguredTypes(cacheConfig, key, oldValue, newValue);
-        } else {
-            validateNotNull(key, newValue);
-            CacheProxyUtil.validateConfiguredTypes(cacheConfig, key, newValue);
-        }
-        final Data keyData = serializationService.toData(key);
-        final Data oldValueData = serializationService.toData(oldValue);
-        final Data newValueData = serializationService.toData(newValue);
-        final Operation operation;
-        if (isGet) {
-            operation = operationProvider.createGetAndReplaceOperation(keyData, newValueData,
-                                                                       expiryPolicy, IGNORE_COMPLETION);
-        } else {
-            operation = operationProvider.createReplaceOperation(keyData, oldValueData, newValueData,
-                                                                 expiryPolicy, IGNORE_COMPLETION);
-        }
-        return invoke(operation, keyData, withCompletionEvent);
-    }
-
-    protected <T> InternalCompletableFuture<T> putAsyncInternal(K key, V value, ExpiryPolicy expiryPolicy,
-                                                                boolean isGet, boolean withCompletionEvent) {
-        ensureOpen();
-        validateNotNull(key, value);
-        CacheProxyUtil.validateConfiguredTypes(cacheConfig, key, value);
-        final Data keyData = serializationService.toData(key);
-        final Data valueData = serializationService.toData(value);
-        final Operation op = operationProvider.createPutOperation(keyData, valueData, expiryPolicy,
-                                                                  isGet, IGNORE_COMPLETION);
-        return invoke(op, keyData, withCompletionEvent);
-    }
-
-    protected InternalCompletableFuture<Boolean> putIfAbsentAsyncInternal(K key, V value,
-                                                                          ExpiryPolicy expiryPolicy,
-                                                                          boolean withCompletionEvent) {
-        ensureOpen();
-        validateNotNull(key, value);
-        CacheProxyUtil.validateConfiguredTypes(cacheConfig, key, value);
-        final Data keyData = serializationService.toData(key);
-        final Data valueData = serializationService.toData(value);
-        Operation operation = operationProvider.createPutIfAbsentOperation(keyData, valueData,
-                                                                           expiryPolicy, IGNORE_COMPLETION);
-        return invoke(operation, keyData, withCompletionEvent);
-    }
-
-    protected void clearInternal() {
-        final OperationService operationService = getNodeEngine().getOperationService();
-        OperationFactory operationFactory = operationProvider.createClearOperationFactory();
-        try {
-            final Map<Integer, Object> results =
-                    operationService.invokeOnAllPartitions(getServiceName(), operationFactory);
-            for (Object result : results.values()) {
-                if (result != null && result instanceof CacheClearResponse) {
-                    final Object response = ((CacheClearResponse) result).getResponse();
-                    if (response instanceof Throwable) {
-                        throw (Throwable) response;
-                    }
-                }
-            }
-        } catch (Throwable t) {
-            throw ExceptionUtil.rethrowAllowedTypeFirst(t, CacheException.class);
-        } finally {
-            // send single invalidation event
-            cacheService.sendInvalidationEvent(nameWithPrefix, null, AbstractCacheRecordStore.SOURCE_NOT_AVAILABLE);
-        }
-    }
-
-    protected void removeAllInternal(Set<? extends K> keys) {
-        final Set<Data> keysData;
-        if (keys != null) {
-            keysData = new HashSet<Data>();
-            for (K key : keys) {
-                keysData.add(serializationService.toData(key));
-            }
-        } else {
-            keysData = null;
-        }
-        final int partitionCount = getNodeEngine().getPartitionService().getPartitionCount();
-        final Integer completionId = registerCompletionLatch(partitionCount);
-        final OperationService operationService = getNodeEngine().getOperationService();
-        OperationFactory operationFactory =
-                operationProvider.createRemoveAllOperationFactory(keysData, completionId);
-        try {
-            final Map<Integer, Object> results =
-                    operationService.invokeOnAllPartitions(getServiceName(), operationFactory);
-            int completionCount = 0;
-            for (Object result : results.values()) {
-                if (result != null && result instanceof CacheClearResponse) {
-                    final Object response = ((CacheClearResponse) result).getResponse();
-                    if (response instanceof Boolean) {
-                        completionCount++;
-                    }
-                    if (response instanceof Throwable) {
-                        throw (Throwable) response;
-                    }
-                }
-            }
-            waitCompletionLatch(completionId, partitionCount - completionCount);
-        } catch (Throwable t) {
-            deregisterCompletionLatch(completionId);
-            throw ExceptionUtil.rethrowAllowedTypeFirst(t, CacheException.class);
-        }
-    }
-
-    protected void addListenerLocally(String regId,
-                                      CacheEntryListenerConfiguration<K, V> cacheEntryListenerConfiguration) {
-        if (cacheEntryListenerConfiguration.isSynchronous()) {
-            syncListenerRegistrations.putIfAbsent(cacheEntryListenerConfiguration, regId);
-        } else {
-            asyncListenerRegistrations.putIfAbsent(cacheEntryListenerConfiguration, regId);
-        }
-    }
-
-    protected String removeListenerLocally(CacheEntryListenerConfiguration<K, V> cacheEntryListenerConfiguration) {
-        final ConcurrentMap<CacheEntryListenerConfiguration, String> regs;
-        if (cacheEntryListenerConfiguration.isSynchronous()) {
-            regs = syncListenerRegistrations;
-        } else {
-            regs = asyncListenerRegistrations;
-        }
-        return regs.remove(cacheEntryListenerConfiguration);
-    }
-
-    protected String getListenerIdLocal(CacheEntryListenerConfiguration<K, V> cacheEntryListenerConfiguration) {
-        final ConcurrentMap<CacheEntryListenerConfiguration, String> regs;
-        if (cacheEntryListenerConfiguration.isSynchronous()) {
-            regs = syncListenerRegistrations;
-        } else {
-            regs = asyncListenerRegistrations;
-        }
-        return regs.get(cacheEntryListenerConfiguration);
-    }
-
-    private void deregisterAllCacheEntryListener(Collection<String> listenerRegistrations) {
-        final ICacheService service = getService();
-        for (String regId : listenerRegistrations) {
-            service.deregisterListener(nameWithPrefix, regId);
         }
     }
 
@@ -330,11 +165,202 @@ abstract class AbstractInternalCacheProxy<K, V>
         notifyAndClearSyncListenerLatches();
     }
 
+    @Override
+    public CacheStatistics getLocalCacheStatistics() {
+        // TODO: throw UnsupportedOperationException if cache statistics are not enabled (but it breaks backward compatibility)
+        return getService().createCacheStatIfAbsent(cacheConfig.getNameWithPrefix());
+    }
+
+    <T> InternalCompletableFuture<T> invoke(Operation op, int partitionId, boolean completionOperation) {
+        Integer completionId = null;
+        if (completionOperation) {
+            completionId = registerCompletionLatch(1);
+            if (op instanceof MutableOperation) {
+                ((MutableOperation) op).setCompletionId(completionId);
+            }
+        }
+        try {
+            InternalCompletableFuture<T> future = getNodeEngine().getOperationService()
+                    .invokeOnPartition(getServiceName(), op, partitionId);
+            if (completionOperation) {
+                waitCompletionLatch(completionId);
+            }
+            return future;
+        } catch (Throwable e) {
+            if (e instanceof IllegalStateException) {
+                close();
+            }
+            throw rethrowAllowedTypeFirst(e, CacheException.class);
+        } finally {
+            if (completionOperation) {
+                deregisterCompletionLatch(completionId);
+            }
+        }
+    }
+
+    <T> InternalCompletableFuture<T> invoke(Operation op, Data keyData, boolean completionOperation) {
+        int partitionId = getPartitionId(keyData);
+        return invoke(op, partitionId, completionOperation);
+    }
+
+    <T> InternalCompletableFuture<T> removeAsyncInternal(K key, V oldValue, boolean hasOldValue,
+                                                         boolean isGet, boolean withCompletionEvent) {
+        ensureOpen();
+        if (hasOldValue) {
+            validateNotNull(key, oldValue);
+            CacheProxyUtil.validateConfiguredTypes(cacheConfig, key, oldValue);
+        } else {
+            validateNotNull(key);
+            CacheProxyUtil.validateConfiguredTypes(cacheConfig, key);
+        }
+        Data keyData = serializationService.toData(key);
+        Data valueData = serializationService.toData(oldValue);
+        Operation operation;
+        if (isGet) {
+            operation = operationProvider.createGetAndRemoveOperation(keyData, IGNORE_COMPLETION);
+        } else {
+            operation = operationProvider.createRemoveOperation(keyData, valueData, IGNORE_COMPLETION);
+        }
+        return invoke(operation, keyData, withCompletionEvent);
+    }
+
+    <T> InternalCompletableFuture<T> replaceAsyncInternal(K key, V oldValue, V newValue, ExpiryPolicy expiryPolicy,
+                                                          boolean hasOldValue, boolean isGet, boolean withCompletionEvent) {
+        ensureOpen();
+        if (hasOldValue) {
+            validateNotNull(key, oldValue, newValue);
+            CacheProxyUtil.validateConfiguredTypes(cacheConfig, key, oldValue, newValue);
+        } else {
+            validateNotNull(key, newValue);
+            CacheProxyUtil.validateConfiguredTypes(cacheConfig, key, newValue);
+        }
+        Data keyData = serializationService.toData(key);
+        Data oldValueData = serializationService.toData(oldValue);
+        Data newValueData = serializationService.toData(newValue);
+        Operation operation;
+        if (isGet) {
+            operation = operationProvider.createGetAndReplaceOperation(keyData, newValueData, expiryPolicy, IGNORE_COMPLETION);
+        } else {
+            operation = operationProvider.createReplaceOperation(keyData, oldValueData, newValueData, expiryPolicy,
+                    IGNORE_COMPLETION);
+        }
+        return invoke(operation, keyData, withCompletionEvent);
+    }
+
+    <T> InternalCompletableFuture<T> putAsyncInternal(K key, V value, ExpiryPolicy expiryPolicy,
+                                                      boolean isGet, boolean withCompletionEvent) {
+        ensureOpen();
+        validateNotNull(key, value);
+        CacheProxyUtil.validateConfiguredTypes(cacheConfig, key, value);
+        Data keyData = serializationService.toData(key);
+        Data valueData = serializationService.toData(value);
+        Operation op = operationProvider.createPutOperation(keyData, valueData, expiryPolicy, isGet, IGNORE_COMPLETION);
+        return invoke(op, keyData, withCompletionEvent);
+    }
+
+    InternalCompletableFuture<Boolean> putIfAbsentAsyncInternal(K key, V value, ExpiryPolicy expiryPolicy,
+                                                                boolean withCompletionEvent) {
+        ensureOpen();
+        validateNotNull(key, value);
+        CacheProxyUtil.validateConfiguredTypes(cacheConfig, key, value);
+        Data keyData = serializationService.toData(key);
+        Data valueData = serializationService.toData(value);
+        Operation operation = operationProvider.createPutIfAbsentOperation(keyData, valueData, expiryPolicy, IGNORE_COMPLETION);
+        return invoke(operation, keyData, withCompletionEvent);
+    }
+
+    void clearInternal() {
+        try {
+            OperationService operationService = getNodeEngine().getOperationService();
+            OperationFactory operationFactory = operationProvider.createClearOperationFactory();
+            Map<Integer, Object> results = operationService.invokeOnAllPartitions(getServiceName(), operationFactory);
+            for (Object result : results.values()) {
+                if (result != null && result instanceof CacheClearResponse) {
+                    Object response = ((CacheClearResponse) result).getResponse();
+                    if (response instanceof Throwable) {
+                        throw (Throwable) response;
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            throw rethrowAllowedTypeFirst(t, CacheException.class);
+        }
+    }
+
+    void removeAllInternal(Set<? extends K> keys) {
+        Set<Data> keysData = null;
+        if (keys != null) {
+            keysData = createHashSet(keys.size());
+            for (K key : keys) {
+                validateNotNull(key);
+                keysData.add(serializationService.toData(key));
+            }
+        }
+        int partitionCount = getNodeEngine().getPartitionService().getPartitionCount();
+        Integer completionId = registerCompletionLatch(partitionCount);
+        OperationService operationService = getNodeEngine().getOperationService();
+        OperationFactory operationFactory = operationProvider.createRemoveAllOperationFactory(keysData, completionId);
+        try {
+            Map<Integer, Object> results = operationService.invokeOnAllPartitions(getServiceName(), operationFactory);
+            int completionCount = 0;
+            for (Object result : results.values()) {
+                if (result != null && result instanceof CacheClearResponse) {
+                    Object response = ((CacheClearResponse) result).getResponse();
+                    if (response instanceof Boolean) {
+                        completionCount++;
+                    }
+                    if (response instanceof Throwable) {
+                        throw (Throwable) response;
+                    }
+                }
+            }
+            waitCompletionLatch(completionId, partitionCount - completionCount);
+        } catch (Throwable t) {
+            deregisterCompletionLatch(completionId);
+            throw rethrowAllowedTypeFirst(t, CacheException.class);
+        }
+    }
+
+    void addListenerLocally(String regId, CacheEntryListenerConfiguration<K, V> cacheEntryListenerConfiguration) {
+        if (cacheEntryListenerConfiguration.isSynchronous()) {
+            syncListenerRegistrations.putIfAbsent(cacheEntryListenerConfiguration, regId);
+        } else {
+            asyncListenerRegistrations.putIfAbsent(cacheEntryListenerConfiguration, regId);
+        }
+    }
+
+    String removeListenerLocally(CacheEntryListenerConfiguration<K, V> cacheEntryListenerConfiguration) {
+        ConcurrentMap<CacheEntryListenerConfiguration, String> regs;
+        if (cacheEntryListenerConfiguration.isSynchronous()) {
+            regs = syncListenerRegistrations;
+        } else {
+            regs = asyncListenerRegistrations;
+        }
+        return regs.remove(cacheEntryListenerConfiguration);
+    }
+
+    String getListenerIdLocal(CacheEntryListenerConfiguration<K, V> cacheEntryListenerConfiguration) {
+        ConcurrentMap<CacheEntryListenerConfiguration, String> regs;
+        if (cacheEntryListenerConfiguration.isSynchronous()) {
+            regs = syncListenerRegistrations;
+        } else {
+            regs = asyncListenerRegistrations;
+        }
+        return regs.get(cacheEntryListenerConfiguration);
+    }
+
+    private void deregisterAllCacheEntryListener(Collection<String> listenerRegistrations) {
+        ICacheService service = getService();
+        for (String regId : listenerRegistrations) {
+            service.deregisterListener(nameWithPrefix, regId);
+        }
+    }
+
     private void notifyAndClearSyncListenerLatches() {
         // notify waiting sync listeners
         Collection<CountDownLatch> latches = syncLocks.values();
         Iterator<CountDownLatch> iterator = latches.iterator();
-        while (iterator.hasNext())  {
+        while (iterator.hasNext()) {
             CountDownLatch latch = iterator.next();
             iterator.remove();
             while (latch.getCount() > 0) {
@@ -343,22 +369,9 @@ abstract class AbstractInternalCacheProxy<K, V>
         }
     }
 
-    public void countDownCompletionLatch(int countDownLatchId) {
-        if (countDownLatchId != IGNORE_COMPLETION) {
-            final CountDownLatch countDownLatch = syncLocks.get(countDownLatchId);
-            if (countDownLatch == null) {
-                return;
-            }
-            countDownLatch.countDown();
-            if (countDownLatch.getCount() == 0) {
-                deregisterCompletionLatch(countDownLatchId);
-            }
-        }
-    }
-
-    protected Integer registerCompletionLatch(int count) {
+    Integer registerCompletionLatch(int count) {
         if (!syncListenerRegistrations.isEmpty()) {
-            final int id = completionIdCounter.incrementAndGet();
+            int id = completionIdCounter.incrementAndGet();
             int size = syncListenerRegistrations.size();
             CountDownLatch countDownLatch = new CountDownLatch(count * size);
             syncLocks.put(id, countDownLatch);
@@ -367,24 +380,24 @@ abstract class AbstractInternalCacheProxy<K, V>
         return IGNORE_COMPLETION;
     }
 
-    protected void deregisterCompletionLatch(Integer countDownLatchId) {
+    void deregisterCompletionLatch(Integer countDownLatchId) {
         if (countDownLatchId != IGNORE_COMPLETION) {
             syncLocks.remove(countDownLatchId);
         }
     }
 
-    protected void waitCompletionLatch(Integer countDownLatchId) {
+    void waitCompletionLatch(Integer countDownLatchId) {
         if (countDownLatchId != IGNORE_COMPLETION) {
-            final CountDownLatch countDownLatch = syncLocks.get(countDownLatchId);
+            CountDownLatch countDownLatch = syncLocks.get(countDownLatchId);
             if (countDownLatch != null) {
                 awaitLatch(countDownLatch);
             }
         }
     }
 
-    protected void waitCompletionLatch(Integer countDownLatchId, int offset) {
+    private void waitCompletionLatch(Integer countDownLatchId, int offset) {
         if (countDownLatchId != IGNORE_COMPLETION) {
-            final CountDownLatch countDownLatch = syncLocks.get(countDownLatchId);
+            CountDownLatch countDownLatch = syncLocks.get(countDownLatchId);
             if (countDownLatch != null) {
                 for (int i = 0; i < offset; i++) {
                     countDownLatch.countDown();
@@ -409,38 +422,32 @@ abstract class AbstractInternalCacheProxy<K, V>
                 if (!getNodeEngine().isRunning()) {
                     throw new HazelcastInstanceNotActiveException();
                 } else if (isClosed()) {
-                    throw new IllegalStateException("Cache (" + nameWithPrefix + ") is closed !");
+                    throw new IllegalStateException("Cache (" + nameWithPrefix + ") is closed!");
                 } else if (isDestroyed()) {
-                    throw new IllegalStateException("Cache (" + nameWithPrefix + ") is destroyed !");
+                    throw new IllegalStateException("Cache (" + nameWithPrefix + ") is destroyed!");
                 }
 
             }
         } catch (InterruptedException e) {
+            currentThread().interrupt();
             ExceptionUtil.sneakyThrow(e);
         }
     }
 
+    @SuppressWarnings("unchecked")
     private <T extends EventListener> T initializeListener(ListenerConfig listenerConfig) {
         T listener = null;
         if (listenerConfig.getImplementation() != null) {
             listener = (T) listenerConfig.getImplementation();
         } else if (listenerConfig.getClassName() != null) {
             try {
-                return ClassLoaderUtil.newInstance(getNodeEngine().getConfigClassLoader(),
-                                                   listenerConfig.getClassName());
+                listener = ClassLoaderUtil.newInstance(getNodeEngine().getConfigClassLoader(),
+                        listenerConfig.getClassName());
             } catch (Exception e) {
                 throw ExceptionUtil.rethrow(e);
             }
         }
+        injectDependencies(listener);
         return listener;
     }
-
-    @Override
-    public CacheStatistics getLocalCacheStatistics() {
-        // TODO Throw `UnsupportedOperationException` if cache statistics are not enabled
-        // but it breaks backward compatibility.
-        final ICacheService service = getService();
-        return service.createCacheStatIfAbsent(cacheConfig.getNameWithPrefix());
-    }
-
 }

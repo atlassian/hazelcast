@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.internal.serialization.impl;
 
 import com.hazelcast.nio.serialization.FieldDefinition;
@@ -6,7 +22,6 @@ import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
-import com.hazelcast.util.EmptyStatement;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -213,7 +228,7 @@ public class PortablePositionFactoryTest extends HazelcastTestSupport {
     @Test
     public void createSinglePrimitivePosition() {
         // GIVEN
-        FieldDefinition fd = new FieldDefinitionImpl(1, "field", FieldType.PORTABLE);
+        FieldDefinition fd = new FieldDefinitionImpl(1, "field", FieldType.PORTABLE, 0);
         int streamPosition = 100;
         int index = 1;
         boolean leaf = true;
@@ -274,10 +289,12 @@ public class PortablePositionFactoryTest extends HazelcastTestSupport {
     @Test
     public void createSinglePortablePosition() {
         // GIVEN
-        FieldDefinition fd = new FieldDefinitionImpl(1, "field", FieldType.PORTABLE);
+        FieldDefinition fd = new FieldDefinitionImpl(1, "field", FieldType.PORTABLE, 0);
         int streamPosition = 100;
-        int factoryId = 123, classId = 546;
-        boolean nil = false, leaf = true;
+        int factoryId = 123;
+        int classId = 546;
+        boolean nil = false;
+        boolean leaf = true;
 
         // WHEN
         PortablePosition p = PortablePositionFactory.createSinglePortablePosition(fd, streamPosition, factoryId,
@@ -307,10 +324,12 @@ public class PortablePositionFactoryTest extends HazelcastTestSupport {
     @Test
     public void createSinglePortablePosition_withIndex() {
         // GIVEN
-        FieldDefinition fd = new FieldDefinitionImpl(1, "field", FieldType.PORTABLE);
+        FieldDefinition fd = new FieldDefinitionImpl(1, "field", FieldType.PORTABLE, 0);
         int streamPosition = 100;
-        int factoryId = 123, classId = 546;
-        int index = 27, len = 30;
+        int factoryId = 123;
+        int classId = 546;
+        int index = 27;
+        int len = 30;
         boolean leaf = true;
 
         // WHEN
@@ -340,10 +359,12 @@ public class PortablePositionFactoryTest extends HazelcastTestSupport {
     @Test
     public void createSinglePortablePosition_withIndex_nullifiedDueIndexOutOfBound() {
         // GIVEN
-        FieldDefinition fd = new FieldDefinitionImpl(1, "field", FieldType.PORTABLE);
+        FieldDefinition fd = new FieldDefinitionImpl(1, "field", FieldType.PORTABLE, 0);
         int streamPosition = 100;
-        int factoryId = 123, classId = 546;
-        int index = 1, len = 0;
+        int factoryId = 123;
+        int classId = 546;
+        int index = 1;
+        int len = 0;
         boolean leaf = true;
 
         // WHEN
@@ -405,7 +426,7 @@ public class PortablePositionFactoryTest extends HazelcastTestSupport {
             portablePosition.asMultiPosition();
             fail("expected IllegalArgumentException");
         } catch (IllegalArgumentException expected) {
-            EmptyStatement.ignore(expected);
+            ignore(expected);
         }
     }
 }

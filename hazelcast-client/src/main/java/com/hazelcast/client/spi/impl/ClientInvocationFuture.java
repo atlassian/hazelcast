@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,15 @@
 
 package com.hazelcast.client.spi.impl;
 
-import com.hazelcast.client.impl.HazelcastClientInstanceImpl;
 import com.hazelcast.client.impl.protocol.ClientMessage;
+import com.hazelcast.core.ExecutionCallback;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.spi.impl.AbstractInvocationFuture;
+import com.hazelcast.spi.impl.sequence.CallIdSequence;
 
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -30,14 +32,19 @@ import static com.hazelcast.util.ExceptionUtil.fixAsyncStackTrace;
 
 public class ClientInvocationFuture extends AbstractInvocationFuture<ClientMessage> {
 
-    protected final ClientMessage request;
+    private final ClientMessage request;
     private final ClientInvocation invocation;
+    private final CallIdSequence callIdSequence;
 
-    public ClientInvocationFuture(ClientInvocation invocation, HazelcastClientInstanceImpl client,
-                                  ClientMessage request, ILogger logger) {
-        super(client.getClientExecutionService(), logger);
+    public ClientInvocationFuture(ClientInvocation invocation,
+                                  Executor internalExecutor,
+                                  ClientMessage request,
+                                  ILogger logger,
+                                  CallIdSequence callIdSequence) {
+        super(internalExecutor, logger);
         this.request = request;
         this.invocation = invocation;
+        this.callIdSequence = callIdSequence;
     }
 
     @Override
@@ -69,6 +76,21 @@ public class ClientInvocationFuture extends AbstractInvocationFuture<ClientMessa
     }
 
     @Override
+    public void andThen(ExecutionCallback<ClientMessage> callback) {
+        super.andThen(new InternalDelegatingExecutionCallback(callback));
+    }
+
+    @Override
+    public void andThen(ExecutionCallback<ClientMessage> callback, Executor executor) {
+        super.andThen(new InternalDelegatingExecutionCallback(callback), executor);
+    }
+
+    @Override
+    protected void onComplete() {
+        callIdSequence.complete();
+    }
+
+    @Override
     public ClientMessage resolveAndThrowIfException(Object response) throws ExecutionException, InterruptedException {
         if (response instanceof Throwable) {
             fixAsyncStackTrace((Throwable) response, Thread.currentThread().getStackTrace());
@@ -91,6 +113,34 @@ public class ClientInvocationFuture extends AbstractInvocationFuture<ClientMessa
 
     public ClientInvocation getInvocation() {
         return invocation;
+    }
+
+    class InternalDelegatingExecutionCallback implements ExecutionCallback<ClientMessage> {
+
+        private final ExecutionCallback<ClientMessage> callback;
+
+        InternalDelegatingExecutionCallback(ExecutionCallback<ClientMessage> callback) {
+            this.callback = callback;
+            callIdSequence.forceNext();
+        }
+
+        @Override
+        public void onResponse(ClientMessage message) {
+            try {
+                callback.onResponse(message);
+            } finally {
+                callIdSequence.complete();
+            }
+        }
+
+        @Override
+        public void onFailure(Throwable t) {
+            try {
+                callback.onFailure(t);
+            } finally {
+                callIdSequence.complete();
+            }
+        }
     }
 }
 

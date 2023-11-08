@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,4 +25,6 @@ import com.hazelcast.spi.ProxyService;
  * interface and additional methods we don't want to expose in the SPI, we can add here.
  */
 public interface InternalProxyService extends ProxyService {
+
+    void destroyLocalDistributedObject(String serviceName, String name, boolean fireEvent);
 }

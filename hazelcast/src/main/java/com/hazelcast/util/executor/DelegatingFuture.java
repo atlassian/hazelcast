@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -123,12 +123,12 @@ public class DelegatingFuture<V> implements InternalCompletableFuture<V> {
 
     @Override
     public boolean cancel(boolean mayInterruptIfRunning) {
-        return false;
+        return future.cancel(mayInterruptIfRunning);
     }
 
     @Override
     public boolean isCancelled() {
-        return false;
+        return future.isCancelled();
     }
 
     @Override
@@ -143,10 +143,6 @@ public class DelegatingFuture<V> implements InternalCompletableFuture<V> {
 
     protected void setError(Throwable error) {
         future.complete(error);
-    }
-
-    protected void completeWithDefault() {
-        future.complete(result);
     }
 
     protected ICompletableFuture getFuture() {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,11 +14,13 @@
  * limitations under the License.
  */
 
-
 package com.hazelcast.monitor;
 
 import java.util.Map;
 
+/**
+ * Local WAN statistics to be used by {@link MemberState} implementations.
+ */
 public interface LocalWanStats extends LocalInstanceStats {
 
     /**
@@ -27,5 +29,4 @@ public interface LocalWanStats extends LocalInstanceStats {
      * @return statistics of different publisher clusters belongs the scheme on this member
      */
     Map<String, LocalWanPublisherStats> getLocalWanPublisherStats();
-
 }

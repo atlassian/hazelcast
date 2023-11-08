@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,10 @@
 package com.hazelcast.aggregation;
 
 import java.io.Serializable;
-import java.util.Map;
 
 /**
  * Base class for all aggregators. Exposes API for parallel two-phase aggregations:
- * - accumulation of entries by multiple instance of aggregators
+ * - accumulation of input entries by multiple instance of aggregators
  * - combining all aggregators into one to calculate the final result
  * <p>
  * Aggregator does not have to be thread-safe.
@@ -31,19 +30,18 @@ import java.util.Map;
  * that will be cloned using serialization, since each partition gets its own instance of an aggregator.
  * In this way the aggregator is not used by multiple-threads. Each thread gets its own aggregator instance.
  *
- * @param <R> aggregation result
- * @param <K> entry key type
- * @param <V> entry value type
+ * @param <I> input type
+ * @param <R> result type
  * @since 3.8
  */
-public abstract class Aggregator<R, K, V> implements Serializable {
+public abstract class Aggregator<I, R> implements Serializable {
 
     /**
      * Accumulates the given entries.
      *
-     * @param entry entries to accumulate.
+     * @param input input to accumulate.
      */
-    public abstract void accumulate(Map.Entry<K, V> entry);
+    public abstract void accumulate(I input);
 
     /**
      * Called after the last call to combine on a specific instance. Enables disposing of the intermediary state.
@@ -58,10 +56,12 @@ public abstract class Aggregator<R, K, V> implements Serializable {
 
     /**
      * Incorporates the intermediary result of the given aggregator to this instance of the aggregator.
+     * The given aggregator has to be of the same class as the one that the method is being called on.
      * Enables merging the intermediary state from a given aggregator.
      * It is used when the aggregation is split into a couple of aggregators.
      *
      * @param aggregator aggregator providing intermediary results to be combined into the results of this aggregator.
+     *                   The given aggregator has to be of the same class as the one that the method is being called on.
      */
     public abstract void combine(Aggregator aggregator);
 

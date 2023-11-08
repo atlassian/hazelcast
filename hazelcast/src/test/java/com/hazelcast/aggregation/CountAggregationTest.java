@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package com.hazelcast.aggregation;
 
+import com.hazelcast.internal.serialization.InternalSerializationService;
+import com.hazelcast.internal.serialization.impl.DefaultSerializationServiceBuilder;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
@@ -25,8 +27,10 @@ import org.junit.runner.RunWith;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 import static com.hazelcast.aggregation.TestSamples.createEntryWithValue;
+import static com.hazelcast.aggregation.TestSamples.createExtractableEntryWithValue;
 import static com.hazelcast.aggregation.TestSamples.sampleBigDecimals;
 import static com.hazelcast.aggregation.TestSamples.samplePersons;
 import static org.hamcrest.Matchers.equalTo;
@@ -37,16 +41,21 @@ import static org.junit.Assert.assertThat;
 @Category({QuickTest.class, ParallelTest.class})
 public class CountAggregationTest {
 
+    private final InternalSerializationService ss = new DefaultSerializationServiceBuilder().build();
+
     @Test(timeout = TimeoutInMillis.MINUTE)
     public void testCountAggregator() {
         List<BigDecimal> values = sampleBigDecimals();
         long expectation = values.size();
 
-        Aggregator<Long, BigDecimal, BigDecimal> aggregation = Aggregators.count();
+        Aggregator<Map.Entry<BigDecimal, BigDecimal>, Long> aggregation = Aggregators.count();
         for (BigDecimal value : values) {
             aggregation.accumulate(createEntryWithValue(value));
         }
-        long result = aggregation.aggregate();
+
+        Aggregator<Map.Entry<BigDecimal, BigDecimal>, Long> resultAggregation = Aggregators.count();
+        resultAggregation.combine(aggregation);
+        long result = resultAggregation.aggregate();
 
         assertThat(result, is(equalTo(expectation)));
     }
@@ -56,11 +65,50 @@ public class CountAggregationTest {
         List<Person> values = samplePersons();
         long expectation = values.size();
 
-        Aggregator<Long, Person, Person> aggregation = Aggregators.count("age");
+        Aggregator<Map.Entry<Person, Person>, Long> aggregation = Aggregators.count("age");
         for (Person person : values) {
-            aggregation.accumulate(createEntryWithValue(person));
+            aggregation.accumulate(createExtractableEntryWithValue(person, ss));
         }
-        long result = aggregation.aggregate();
+
+        Aggregator<Map.Entry<BigDecimal, BigDecimal>, Long> resultAggregation = Aggregators.count("age");
+        resultAggregation.combine(aggregation);
+        long result = resultAggregation.aggregate();
+
+        assertThat(result, is(equalTo(expectation)));
+    }
+
+    @Test(timeout = TimeoutInMillis.MINUTE)
+    public void testCountAggregator_withNull() {
+        List<BigDecimal> values = sampleBigDecimals();
+        values.add(null);
+        long expectation = values.size();
+
+        Aggregator<Map.Entry<BigDecimal, BigDecimal>, Long> aggregation = Aggregators.count();
+        for (BigDecimal value : values) {
+            aggregation.accumulate(createEntryWithValue(value));
+        }
+
+        Aggregator<Map.Entry<BigDecimal, BigDecimal>, Long> resultAggregation = Aggregators.count();
+        resultAggregation.combine(aggregation);
+        long result = resultAggregation.aggregate();
+
+        assertThat(result, is(equalTo(expectation)));
+    }
+
+    @Test(timeout = TimeoutInMillis.MINUTE)
+    public void testCountAggregator_withAttributePath_withNull() {
+        List<Person> values = samplePersons();
+        values.add(null);
+        long expectation = values.size();
+
+        Aggregator<Map.Entry<Person, Person>, Long> aggregation = Aggregators.count("age");
+        for (Person person : values) {
+            aggregation.accumulate(createExtractableEntryWithValue(person, ss));
+        }
+
+        Aggregator<Map.Entry<BigDecimal, BigDecimal>, Long> resultAggregation = Aggregators.count("age");
+        resultAggregation.combine(aggregation);
+        long result = resultAggregation.aggregate();
 
         assertThat(result, is(equalTo(expectation)));
     }

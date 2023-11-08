@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,9 +20,6 @@ package com.hazelcast.spi;
  * A handler for the {@link com.hazelcast.spi.OperationService} when it has calculated a response. This way you can hook
  * into the Operation execution and decide what to do with it: for example, send it to the right machine.
  *
- * Also during the development of Hazelcast 3.6 additional methods will be added to the OperationResponseHandler for certain
- * types of responses like exceptions, backup complete etc.
- *
  * @param <O> type of the {@link Operation}
  */
 public interface OperationResponseHandler<O extends Operation> {
@@ -32,6 +29,9 @@ public interface OperationResponseHandler<O extends Operation> {
      *
      * @param op       the operation that got executed.
      * @param response the response of the operation that got executed.
+     * @throws com.hazelcast.nio.serialization.HazelcastSerializationException if response is not serializable or
+     *                                                                         contains non serializable object
+     *                                                                         inside NormalResponse
      */
     void sendResponse(O op, Object response);
 }

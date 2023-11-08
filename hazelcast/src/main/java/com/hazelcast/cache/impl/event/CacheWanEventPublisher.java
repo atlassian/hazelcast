@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,47 +23,35 @@ import com.hazelcast.spi.Operation;
 /**
  * This interface provides methods to publish wan replication events
  * from cache operations.
- *
- * Methods of this class should be called within the partition thread to wan keep event order.
+ * <p>
+ * Methods of this class should be called from within the partition thread
+ * to keep event order for keys belonging to a single partition.
  */
 public interface CacheWanEventPublisher {
 
     /**
      * This method will create a wrapper object using the given {@link CacheEntryView}
      * and place it to wan replication queues.
-     *
+     * <p>
      * Updating cache operations should call this method in their {@link Operation#afterRun()} method.
      *
+     * @param cacheNameWithPrefix the full name of the {@link com.hazelcast.cache.ICache}, including the manager scope prefix
+     * @param entryView           the updated cache entry
      * @see com.hazelcast.cache.impl.operation.CachePutOperation
      * @see com.hazelcast.cache.impl.operation.CacheGetAndReplaceOperation
      */
-    void publishWanReplicationUpdate(String cacheName, CacheEntryView<Data, Data> entryView);
+    void publishWanUpdate(String cacheNameWithPrefix, CacheEntryView<Data, Data> entryView);
 
     /**
      * This method will create a wrapper object using the given {@link CacheEntryView}
      * and place it to wan replication queues.
-     *
+     * <p>
      * Cache operations which removes data from cache should call this method in their
      * {@link Operation#afterRun()} method.
      *
+     * @param cacheNameWithPrefix the full name of the {@link com.hazelcast.cache.ICache}, including the manager scope prefix
+     * @param key                 the key of the removed entry
      * @see com.hazelcast.cache.impl.operation.CacheRemoveOperation
      */
-    void publishWanReplicationRemove(String cacheName, Data key);
-
-    /**
-     * Backup operations of operations that call {@link this#publishWanReplicationUpdate(String, CacheEntryView)}
-     * should call this method to provide wan event backups
-     *
-     * @see com.hazelcast.cache.impl.operation.CachePutBackupOperation
-     */
-    void publishWanReplicationUpdateBackup(String cacheName, CacheEntryView<Data, Data> entryView);
-
-    /**
-     * Backup operations of operations that call {@link this#publishWanReplicationRemove(String, Data)}
-     * should call this method to provide wan event backups
-     *
-     * @see com.hazelcast.cache.impl.operation.CacheRemoveBackupOperation
-     */
-    void publishWanReplicationRemoveBackup(String cacheName, Data key);
-
+    void publishWanRemove(String cacheNameWithPrefix, Data key);
 }

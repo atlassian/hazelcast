@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.ringbuffer.impl.operations;
 
 import com.hazelcast.config.Config;
@@ -28,13 +44,14 @@ import static org.junit.Assert.assertEquals;
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
 public class GenericOperationTest extends HazelcastTestSupport {
-    private final static int CAPACITY = 10;
 
-    private HazelcastInstance hz;
+    private static final int CAPACITY = 10;
+
     private NodeEngineImpl nodeEngine;
     private Ringbuffer<Object> ringbuffer;
     private RingbufferContainer ringbufferContainer;
     private SerializationService serializationService;
+    private RingbufferService ringbufferService;
 
     @Before
     public void setup() {
@@ -44,13 +61,17 @@ public class GenericOperationTest extends HazelcastTestSupport {
 
         Config config = new Config().addRingBufferConfig(rbConfig);
 
-        hz = createHazelcastInstance(config);
+        HazelcastInstance hz = createHazelcastInstance(config);
         nodeEngine = getNodeEngineImpl(hz);
         serializationService = nodeEngine.getSerializationService();
-        ringbuffer = hz.getRingbuffer(rbConfig.getName());
+        final String name = rbConfig.getName();
+        ringbuffer = hz.getRingbuffer(name);
 
-        RingbufferService ringbufferService = getNodeEngineImpl(hz).getService(RingbufferService.SERVICE_NAME);
-        ringbufferContainer = ringbufferService.getContainer(rbConfig.getName());
+        ringbufferService = getNodeEngineImpl(hz).getService(RingbufferService.SERVICE_NAME);
+        ringbufferContainer = ringbufferService.getOrCreateContainer(
+                ringbufferService.getRingbufferPartitionId(name),
+                RingbufferService.getRingbufferNamespace(name),
+                rbConfig);
     }
 
     @Test
@@ -58,8 +79,7 @@ public class GenericOperationTest extends HazelcastTestSupport {
         ringbuffer.add("a");
         ringbuffer.add("b");
 
-        GenericOperation op = new GenericOperation(ringbuffer.getName(), OPERATION_SIZE);
-        op.setNodeEngine(nodeEngine);
+        GenericOperation op = getGenericOperation(OPERATION_SIZE);
 
         op.run();
         Long result = op.getResponse();
@@ -71,8 +91,7 @@ public class GenericOperationTest extends HazelcastTestSupport {
         ringbuffer.add("a");
         ringbuffer.add("b");
 
-        GenericOperation op = new GenericOperation(ringbuffer.getName(), OPERATION_CAPACITY);
-        op.setNodeEngine(nodeEngine);
+        GenericOperation op = getGenericOperation(OPERATION_CAPACITY);
 
         op.run();
         Long result = op.getResponse();
@@ -84,8 +103,7 @@ public class GenericOperationTest extends HazelcastTestSupport {
         ringbuffer.add("a");
         ringbuffer.add("b");
 
-        GenericOperation op = new GenericOperation(ringbuffer.getName(), OPERATION_REMAINING_CAPACITY);
-        op.setNodeEngine(nodeEngine);
+        GenericOperation op = getGenericOperation(OPERATION_REMAINING_CAPACITY);
 
         op.run();
         Long result = op.getResponse();
@@ -97,8 +115,7 @@ public class GenericOperationTest extends HazelcastTestSupport {
         ringbuffer.add("a");
         ringbuffer.add("b");
 
-        GenericOperation op = new GenericOperation(ringbuffer.getName(), OPERATION_TAIL);
-        op.setNodeEngine(nodeEngine);
+        GenericOperation op = getGenericOperation(OPERATION_TAIL);
 
         op.run();
         Long result = op.getResponse();
@@ -111,12 +128,18 @@ public class GenericOperationTest extends HazelcastTestSupport {
             ringbuffer.add("a");
         }
 
-        GenericOperation op = new GenericOperation(ringbuffer.getName(), OPERATION_HEAD);
-        op.setNodeEngine(nodeEngine);
+        GenericOperation op = getGenericOperation(OPERATION_HEAD);
 
         op.run();
         Long result = op.getResponse();
         assertEquals(new Long(ringbufferContainer.headSequence()), result);
+    }
+
+    private GenericOperation getGenericOperation(byte operation) {
+        GenericOperation op = new GenericOperation(ringbuffer.getName(), operation);
+        op.setPartitionId(ringbufferService.getRingbufferPartitionId(ringbuffer.getName()));
+        op.setNodeEngine(nodeEngine);
+        return op;
     }
 
     public void serialize() {

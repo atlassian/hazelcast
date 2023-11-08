@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,17 +38,23 @@ public class ClusterClockImpl implements ClusterClock {
         this.logger = logger;
     }
 
-    @Probe(name = "clusterTime")
+    @Probe
     @Override
     public long getClusterTime() {
         return Clock.currentTimeMillis() + clusterTimeDiff;
     }
 
+    /**
+     * Calculate and set the cluster clock diff.
+     *
+     * @param masterTime the cluster clock timestamp sent by the master node
+     */
     public void setMasterTime(long masterTime) {
         long diff = masterTime - Clock.currentTimeMillis();
         setClusterTimeDiff(diff);
     }
 
+    /** Set the cluster time diff and records the maximum observed cluster time diff */
     void setClusterTimeDiff(long diff) {
         if (logger.isFineEnabled()) {
             logger.fine("Setting cluster time diff to " + diff + "ms.");
@@ -61,12 +67,12 @@ public class ClusterClockImpl implements ClusterClock {
         this.clusterTimeDiff = diff;
     }
 
-    @Probe(name = "clusterTimeDiff", level = MANDATORY)
+    @Probe(level = MANDATORY)
     long getClusterTimeDiff() {
         return clusterTimeDiff;
     }
 
-    @Probe(name = "clusterUpTime")
+    @Probe
     @Override
     public long getClusterUpTime() {
         return Clock.currentTimeMillis() - clusterStartTime;
@@ -78,12 +84,12 @@ public class ClusterClockImpl implements ClusterClock {
         }
     }
 
-    @Probe(name = "localClockTime")
+    @Probe
     private long getLocalClockTime() {
         return Clock.currentTimeMillis();
     }
 
-    @Probe(name = "clusterStartTime")
+    @Probe
     public long getClusterStartTime() {
         return clusterStartTime;
     }

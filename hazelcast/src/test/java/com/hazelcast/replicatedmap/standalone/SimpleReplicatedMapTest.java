@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,11 +52,6 @@ public class SimpleReplicatedMapTest {
     private final int putPercentage;
     private final boolean load;
 
-    static {
-        System.setProperty("hazelcast.phone.home.enabled", "false");
-        System.setProperty("java.net.preferIPv4Stack", "true");
-    }
-
     private SimpleReplicatedMapTest(final int threadCount, final int entryCount, final int valueSize,
                                     final int getPercentage, final int putPercentage, final boolean load) {
         this.threadCount = threadCount;
@@ -65,9 +60,11 @@ public class SimpleReplicatedMapTest {
         this.getPercentage = getPercentage;
         this.putPercentage = putPercentage;
         this.load = load;
-        Config cfg = new XmlConfigBuilder().build();
-        cfg.setProperty(GroupProperty.HEALTH_MONITORING_LEVEL.getName(), "NOISY");
-        cfg.setProperty(GroupProperty.HEALTH_MONITORING_DELAY_SECONDS.getName(), "5");
+        Config cfg = new XmlConfigBuilder().build()
+                                           .setProperty(GroupProperty.HEALTH_MONITORING_LEVEL.getName(), "NOISY")
+                                           .setProperty(GroupProperty.HEALTH_MONITORING_DELAY_SECONDS.getName(), "5")
+                                           .setProperty(GroupProperty.PHONE_HOME_ENABLED.getName(), "false")
+                                           .setProperty(GroupProperty.PREFER_IPv4_STACK.getName(), "false");
         instance = Hazelcast.newHazelcastInstance(cfg);
         logger = instance.getLoggingService().getLogger("SimpleReplicatedMapTest");
         random = new Random();
@@ -75,11 +72,8 @@ public class SimpleReplicatedMapTest {
 
     /**
      * Expects the Management Center to be running.
-     *
-     * @param input
-     * @throws InterruptedException
      */
-    public static void main(String[] input) throws InterruptedException {
+    public static void main(String[] input) throws Exception {
         int threadCount = 40;
         int entryCount = 300;
         int valueSize = 100;
@@ -110,11 +104,12 @@ public class SimpleReplicatedMapTest {
             System.out.println();
         }
 
-        SimpleReplicatedMapTest test = new SimpleReplicatedMapTest(threadCount, entryCount, valueSize, getPercentage, putPercentage, load);
+        SimpleReplicatedMapTest test
+                = new SimpleReplicatedMapTest(threadCount, entryCount, valueSize, getPercentage, putPercentage, load);
         test.start();
     }
 
-    private void start() throws InterruptedException {
+    private void start() throws Exception {
         printVariables();
         ExecutorService es = Executors.newFixedThreadPool(threadCount);
         startPrintStats();
@@ -126,6 +121,7 @@ public class SimpleReplicatedMapTest {
         final ReplicatedMap<String, Object> map = instance.getReplicatedMap(NAMESPACE);
         for (int i = 0; i < threadCount; i++) {
             es.execute(new Runnable() {
+                @Override
                 public void run() {
                     try {
                         while (true) {
@@ -156,7 +152,7 @@ public class SimpleReplicatedMapTest {
         return new byte[valueSize];
     }
 
-    private void load(ExecutorService es) throws InterruptedException {
+    private void load(ExecutorService es) throws Exception {
         if (!load) {
             return;
         }
@@ -205,7 +201,7 @@ public class SimpleReplicatedMapTest {
     }
 
     /**
-     * A basic statistics class
+     * A basic statistics class.
      */
     private class Stats {
 
@@ -213,7 +209,7 @@ public class SimpleReplicatedMapTest {
         private AtomicLong puts = new AtomicLong();
         private AtomicLong removes = new AtomicLong();
 
-        public void printAndReset() {
+        void printAndReset() {
             long getsNow = gets.getAndSet(0);
             long putsNow = puts.getAndSet(0);
             long removesNow = removes.getAndSet(0);
@@ -221,7 +217,7 @@ public class SimpleReplicatedMapTest {
 
             logger.info("total= " + total + ", gets:" + getsNow
                     + ", puts:" + putsNow + ", removes:" + removesNow);
-            logger.info("Operations per Second : " + total / STATS_SECONDS);
+            logger.info("Operations per Second: " + total / STATS_SECONDS);
         }
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import java.io.IOException;
 
 /**
  * Provides a mean of writing portable fields to a binary in form of java primitives
- * arrays of java primitives , nested portable fields and array of portable fields.
+ * arrays of java primitives, nested portable fields and array of portable fields.
  */
 public interface PortableWriter {
 
@@ -120,8 +120,8 @@ public interface PortableWriter {
      * To write a null portable value, user needs to provide class and factoryIds of related class.
      *
      * @param fieldName name of the field
-     * @param factoryId factory id of related portable class
-     * @param classId   class id of related portable class
+     * @param factoryId factory ID of related portable class
+     * @param classId   class ID of related portable class
      * @throws IOException
      */
     void writeNullPortable(String fieldName, int factoryId, int classId) throws IOException;

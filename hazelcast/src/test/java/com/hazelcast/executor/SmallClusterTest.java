@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,8 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.hazelcast.executor;
 
+import com.hazelcast.cluster.memberselector.MemberSelectors;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IAtomicLong;
@@ -22,6 +24,7 @@ import com.hazelcast.core.ICompletableFuture;
 import com.hazelcast.core.IExecutorService;
 import com.hazelcast.core.Member;
 import com.hazelcast.core.MultiExecutionCallback;
+import com.hazelcast.nio.serialization.HazelcastSerializationException;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
@@ -42,7 +45,9 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
+import static com.hazelcast.util.FutureUtil.waitForever;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -57,8 +62,9 @@ public class SmallClusterTest extends ExecutorServiceTestSupport {
     private HazelcastInstance[] instances;
 
     @Before
-    public void setup() {
+    public void setUp() {
         instances = createHazelcastInstanceFactory(NODE_COUNT).newInstances(new Config());
+        warmUpPartitions(instances);
     }
 
     @Test
@@ -87,7 +93,7 @@ public class SmallClusterTest extends ExecutorServiceTestSupport {
     }
 
     @Test
-    public void submitToKeyOwner_runnable() throws Exception {
+    public void submitToKeyOwner_runnable() {
         NullResponseCountingCallback callback = new NullResponseCountingCallback(instances.length);
 
         for (HazelcastInstance instance : instances) {
@@ -105,7 +111,7 @@ public class SmallClusterTest extends ExecutorServiceTestSupport {
     }
 
     @Test
-    public void submitToMember_runnable() throws Exception {
+    public void submitToMember_runnable() {
         NullResponseCountingCallback callback = new NullResponseCountingCallback(instances.length);
 
         for (HazelcastInstance instance : instances) {
@@ -122,10 +128,10 @@ public class SmallClusterTest extends ExecutorServiceTestSupport {
     }
 
     @Test
-    public void submitToMembers_runnable() throws Exception {
+    public void submitToMembers_runnable() {
         int sum = 0;
         Set<Member> membersSet = instances[0].getCluster().getMembers();
-        Member[] members = membersSet.toArray(new Member[membersSet.size()]);
+        Member[] members = membersSet.toArray(new Member[0]);
         Random random = new Random();
 
         ResponseCountingMultiExecutionCallback callback = new ResponseCountingMultiExecutionCallback(instances.length);
@@ -145,7 +151,7 @@ public class SmallClusterTest extends ExecutorServiceTestSupport {
     }
 
     @Test
-    public void submitToAllMembers_runnable() throws Exception {
+    public void submitToAllMembers_runnable() {
         ResponseCountingMultiExecutionCallback callback = new ResponseCountingMultiExecutionCallback(instances.length);
 
         for (HazelcastInstance instance : instances) {
@@ -162,10 +168,97 @@ public class SmallClusterTest extends ExecutorServiceTestSupport {
     @Test
     public void submitToSeveralNodes_callable() throws Exception {
         for (int i = 0; i < instances.length; i++) {
-            final IExecutorService service = instances[i].getExecutorService("testSubmitMultipleNode");
-            final Future future = service.submit(new IncrementAtomicLongCallable("testSubmitMultipleNode"));
+            IExecutorService service = instances[i].getExecutorService("testSubmitMultipleNode");
+            Future future = service.submit(new IncrementAtomicLongCallable("testSubmitMultipleNode"));
             assertEquals((long) (i + 1), future.get());
         }
+    }
+
+    @Test
+    public void testSubmitToAllMembersSerializesTheTaskOnlyOnce() {
+        IExecutorService executorService = instances[0].getExecutorService(randomName());
+        SerializationCountingCallable countingCallable = new SerializationCountingCallable();
+        Map<Member, Future<Void>> futures = executorService.submitToAllMembers(countingCallable);
+        waitForever(futures.values());
+        assertEquals(1, countingCallable.getSerializationCount());
+    }
+
+    @Test
+    public void testSubmitToAllMembersSerializesTheTaskOnlyOnce_withCallback() throws InterruptedException {
+        IExecutorService executorService = instances[0].getExecutorService(randomName());
+        SerializationCountingCallable countingCallable = new SerializationCountingCallable();
+        final CountDownLatch complete = new CountDownLatch(1);
+        executorService.submitToAllMembers(countingCallable, new MultiExecutionCallback() {
+            @Override
+            public void onResponse(Member member, Object value) {
+
+            }
+
+            @Override
+            public void onComplete(Map<Member, Object> values) {
+                complete.countDown();
+            }
+        });
+        complete.await();
+        assertEquals(1, countingCallable.getSerializationCount());
+    }
+
+    @Test
+    public void testSubmitToMembersSerializesTheTaskOnlyOnce_withSelector() {
+        IExecutorService executorService = instances[0].getExecutorService(randomName());
+        SerializationCountingCallable countingCallable = new SerializationCountingCallable();
+        Map<Member, Future<Void>> futures = executorService.submitToMembers(countingCallable, MemberSelectors.NON_LOCAL_MEMBER_SELECTOR);
+        waitForever(futures.values());
+        assertEquals(1, countingCallable.getSerializationCount());
+    }
+
+    @Test
+    public void testSubmitToMembersSerializesTheTaskOnlyOnce_withCollection() {
+        IExecutorService executorService = instances[0].getExecutorService(randomName());
+        SerializationCountingCallable countingCallable = new SerializationCountingCallable();
+        Map<Member, Future<Void>> futures = executorService.submitToMembers(countingCallable, instances[0].getCluster().getMembers());
+        waitForever(futures.values());
+        assertEquals(1, countingCallable.getSerializationCount());
+    }
+
+    @Test
+    public void testSubmitToMembersSerializesTheTaskOnlyOnce_withSelectorAndCallback() throws InterruptedException {
+        IExecutorService executorService = instances[0].getExecutorService(randomName());
+        SerializationCountingCallable countingCallable = new SerializationCountingCallable();
+        final CountDownLatch complete = new CountDownLatch(1);
+        executorService.submitToMembers(countingCallable, MemberSelectors.DATA_MEMBER_SELECTOR, new MultiExecutionCallback() {
+            @Override
+            public void onResponse(Member member, Object value) {
+
+            }
+
+            @Override
+            public void onComplete(Map<Member, Object> values) {
+                complete.countDown();
+            }
+        });
+        complete.await();
+        assertEquals(1, countingCallable.getSerializationCount());
+    }
+
+    @Test
+    public void testSubmitToMembersSerializesTheTaskOnlyOnce_withCollectionAndCallback() throws InterruptedException {
+        IExecutorService executorService = instances[0].getExecutorService(randomName());
+        SerializationCountingCallable countingCallable = new SerializationCountingCallable();
+        final CountDownLatch complete = new CountDownLatch(1);
+        executorService.submitToMembers(countingCallable, instances[0].getCluster().getMembers(), new MultiExecutionCallback() {
+            @Override
+            public void onResponse(Member member, Object value) {
+
+            }
+
+            @Override
+            public void onComplete(Map<Member, Object> values) {
+                complete.countDown();
+            }
+        });
+        complete.await();
+        assertEquals(1, countingCallable.getSerializationCount());
     }
 
     @Test(timeout = TEST_TIMEOUT)
@@ -187,7 +280,7 @@ public class SmallClusterTest extends ExecutorServiceTestSupport {
     }
 
     @Test(timeout = TEST_TIMEOUT)
-    public void submitToKeyOwner_callable_withCallback() throws Exception {
+    public void submitToKeyOwner_callable_withCallback() {
         BooleanSuccessResponseCountingCallback callback = new BooleanSuccessResponseCountingCallback(instances.length);
 
         for (HazelcastInstance instance : instances) {
@@ -219,7 +312,7 @@ public class SmallClusterTest extends ExecutorServiceTestSupport {
     }
 
     @Test(timeout = TEST_TIMEOUT)
-    public void submitToMember_callable_withCallback() throws Exception {
+    public void submitToMember_callable_withCallback() {
         BooleanSuccessResponseCountingCallback callback = new BooleanSuccessResponseCountingCallback(instances.length);
 
         for (HazelcastInstance instance : instances) {
@@ -233,12 +326,12 @@ public class SmallClusterTest extends ExecutorServiceTestSupport {
     }
 
     @Test
-    public void submitToMembers_callable() throws Exception {
+    public void submitToMembers_callable() {
         int sum = 0;
         ResponseCountingMultiExecutionCallback callback = new ResponseCountingMultiExecutionCallback(instances.length);
 
         Set<Member> membersSet = instances[0].getCluster().getMembers();
-        Member[] members = membersSet.toArray(new Member[membersSet.size()]);
+        Member[] members = membersSet.toArray(new Member[0]);
         Random random = new Random();
         String name = "testSubmitToMembersCallable";
         for (HazelcastInstance instance : instances) {
@@ -257,7 +350,7 @@ public class SmallClusterTest extends ExecutorServiceTestSupport {
     }
 
     @Test
-    public void submitToAllMembers_callable() throws Exception {
+    public void submitToAllMembers_callable() {
         ResponseCountingMultiExecutionCallback callback = new ResponseCountingMultiExecutionCallback(instances.length);
 
         for (HazelcastInstance instance : instances) {
@@ -272,7 +365,7 @@ public class SmallClusterTest extends ExecutorServiceTestSupport {
     }
 
     @Test
-    public void submitToAllMembers_statefulCallable() throws Exception {
+    public void submitToAllMembers_statefulCallable() {
         IExecutorService executorService = instances[0].getExecutorService(randomString());
         InternallyCountingCallable internallyCountingCallable = new InternallyCountingCallable();
 
@@ -306,5 +399,48 @@ public class SmallClusterTest extends ExecutorServiceTestSupport {
         public Integer call() throws Exception {
             return ++state;
         }
+    }
+
+    @Test
+    public void submitToAllMembers_NonSerializableResponse() {
+        IExecutorService executorService = instances[0].getExecutorService(randomString());
+        NonSerializableResponseCallable nonSerializableResponseCallable = new NonSerializableResponseCallable();
+
+        final AtomicLong exceptionCount = new AtomicLong();
+        final AtomicLong responseCount = new AtomicLong();
+        final CountDownLatch completedLatch = new CountDownLatch(1);
+        executorService.submitToAllMembers(nonSerializableResponseCallable, new MultiExecutionCallback() {
+            @Override
+            public void onResponse(Member member, Object value) {
+                if (value instanceof HazelcastSerializationException) {
+                    exceptionCount.incrementAndGet();
+                } else {
+                    responseCount.incrementAndGet();
+                }
+            }
+
+            @Override
+            public void onComplete(Map<Member, Object> values) {
+                completedLatch.countDown();
+            }
+        });
+
+        assertOpenEventually(completedLatch);
+        // two exceptions from remote nodes
+        assertEquals(2, exceptionCount.get());
+        // one response from local node since, it does not need to serialize/deserialize the response
+        assertEquals(1, responseCount.get());
+    }
+
+    private static class NonSerializableResponseCallable implements Callable, Serializable {
+
+        @Override
+        public Object call() throws Exception {
+            return new NonSerializableResponse();
+        }
+    }
+
+    private static class NonSerializableResponse {
+
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,14 +21,12 @@ import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.BackupOperation;
-import com.hazelcast.util.Clock;
 
 import java.io.IOException;
 
-public class RemoveBackupOperation extends MutatingKeyBasedMapOperation implements BackupOperation {
+public class RemoveBackupOperation extends KeyBasedMapOperation implements BackupOperation {
 
     protected boolean unlockKey;
-    protected boolean disableWanReplicationEvent;
 
     public RemoveBackupOperation() {
     }
@@ -50,7 +48,7 @@ public class RemoveBackupOperation extends MutatingKeyBasedMapOperation implemen
 
     @Override
     public void run() {
-        recordStore.removeBackup(dataKey);
+        recordStore.removeBackup(dataKey, getCallerProvenance());
         if (unlockKey) {
             recordStore.forceUnlock(dataKey);
         }
@@ -58,11 +56,8 @@ public class RemoveBackupOperation extends MutatingKeyBasedMapOperation implemen
 
     @Override
     public void afterRun() throws Exception {
+        publishWanRemove(dataKey);
         evict(dataKey);
-
-        if (!disableWanReplicationEvent && mapContainer.isWanReplicationEnabled()) {
-            mapEventPublisher.publishWanReplicationRemoveBackup(name, dataKey, Clock.currentTimeMillis());
-        }
 
         super.afterRun();
     }

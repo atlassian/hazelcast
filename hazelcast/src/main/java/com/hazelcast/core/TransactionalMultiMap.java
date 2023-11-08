@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,9 +22,12 @@ import java.util.Collection;
 
 /**
  * Transactional implementation of {@link BaseMultiMap}.
+ * <p>
+ * Supports Quorum {@link com.hazelcast.config.QuorumConfig} since 3.10 in
+ * cluster versions 3.10 and higher.
  *
- * @param <K> key
- * @param <V> value
+ * @param <K> type of the multimap key
+ * @param <V> type of the multimap value
  * @see BaseMultiMap
  * @see MultiMap
  */

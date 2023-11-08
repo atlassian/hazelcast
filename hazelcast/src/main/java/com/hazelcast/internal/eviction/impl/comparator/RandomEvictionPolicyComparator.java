@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,14 +18,12 @@ package com.hazelcast.internal.eviction.impl.comparator;
 
 import com.hazelcast.internal.eviction.EvictableEntryView;
 import com.hazelcast.internal.eviction.EvictionPolicyComparator;
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import com.hazelcast.nio.serialization.SerializableByConvention;
 
 /**
  * {@link com.hazelcast.config.EvictionPolicy#RANDOM} policy based {@link EvictionPolicyComparator}.
  */
-@SuppressFBWarnings(
-        value = "SE_COMPARATOR_SHOULD_BE_SERIALIZABLE",
-        justification = "No need to serializable since its instance is not serialized")
+@SerializableByConvention
 public class RandomEvictionPolicyComparator extends EvictionPolicyComparator {
 
     @Override

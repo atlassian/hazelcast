@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,13 @@
 package com.hazelcast.internal.management;
 
 import com.hazelcast.internal.management.dto.MapConfigDTO;
+import com.hazelcast.internal.management.dto.PermissionConfigDTO;
+import com.hazelcast.internal.management.operation.AddWanConfigLegacyOperation;
 import com.hazelcast.internal.management.operation.ScriptExecutorOperation;
+import com.hazelcast.internal.management.operation.SetLicenseOperation;
 import com.hazelcast.internal.management.operation.UpdateManagementCenterUrlOperation;
 import com.hazelcast.internal.management.operation.UpdateMapConfigOperation;
-import com.hazelcast.internal.management.operation.AddWanConfigOperation;
+import com.hazelcast.internal.management.operation.UpdatePermissionConfigOperation;
 import com.hazelcast.internal.serialization.DataSerializerHook;
 import com.hazelcast.internal.serialization.impl.ArrayDataSerializableFactory;
 import com.hazelcast.internal.serialization.impl.FactoryIdHelper;
@@ -40,8 +43,11 @@ public class ManagementDataSerializerHook implements DataSerializerHook {
     public static final int UPDATE_MAP_CONFIG = 2;
     public static final int MAP_CONFIG_DTO = 3;
     public static final int ADD_WAN_CONFIG = 4;
+    public static final int UPDATE_PERMISSION_CONFIG_OPERATION = 5;
+    public static final int PERMISSION_CONFIG_DTO = 6;
+    public static final int SET_LICENSE = 7;
 
-    private static final int LEN = ADD_WAN_CONFIG + 1;
+    private static final int LEN = SET_LICENSE + 1;
 
     @Override
     public int getFactoryId() {
@@ -77,7 +83,25 @@ public class ManagementDataSerializerHook implements DataSerializerHook {
         constructors[ADD_WAN_CONFIG] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
             @Override
             public IdentifiedDataSerializable createNew(Integer arg) {
-                return new AddWanConfigOperation();
+                return new AddWanConfigLegacyOperation();
+            }
+        };
+        constructors[UPDATE_PERMISSION_CONFIG_OPERATION] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+            @Override
+            public IdentifiedDataSerializable createNew(Integer arg) {
+                return new UpdatePermissionConfigOperation();
+            }
+        };
+        constructors[PERMISSION_CONFIG_DTO] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+            @Override
+            public IdentifiedDataSerializable createNew(Integer arg) {
+                return new PermissionConfigDTO();
+            }
+        };
+        constructors[SET_LICENSE] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+            @Override
+            public IdentifiedDataSerializable createNew(Integer arg) {
+                return new SetLicenseOperation();
             }
         };
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,21 +17,17 @@
 package com.hazelcast.client.proxy.txn;
 
 import com.hazelcast.client.connection.nio.ClientConnection;
-import com.hazelcast.client.impl.HazelcastClientInstanceImpl;
+import com.hazelcast.client.impl.clientside.HazelcastClientInstanceImpl;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.TransactionCommitCodec;
 import com.hazelcast.client.impl.protocol.codec.TransactionCreateCodec;
 import com.hazelcast.client.impl.protocol.codec.TransactionRollbackCodec;
-import com.hazelcast.client.spi.impl.ClientInvocation;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.transaction.TransactionException;
 import com.hazelcast.transaction.TransactionNotActiveException;
 import com.hazelcast.transaction.TransactionOptions;
 import com.hazelcast.util.Clock;
-import com.hazelcast.util.ExceptionUtil;
 import com.hazelcast.util.ThreadUtil;
-
-import java.util.concurrent.Future;
 
 import static com.hazelcast.transaction.impl.Transaction.State;
 import static com.hazelcast.transaction.impl.Transaction.State.ACTIVE;
@@ -41,6 +37,7 @@ import static com.hazelcast.transaction.impl.Transaction.State.COMMIT_FAILED;
 import static com.hazelcast.transaction.impl.Transaction.State.NO_TXN;
 import static com.hazelcast.transaction.impl.Transaction.State.ROLLED_BACK;
 import static com.hazelcast.transaction.impl.Transaction.State.ROLLING_BACK;
+import static com.hazelcast.util.ExceptionUtil.rethrow;
 
 final class TransactionProxy {
 
@@ -73,6 +70,9 @@ final class TransactionProxy {
 
     void begin() {
         try {
+            if (client.getConnectionManager().getOwnerConnection() == null) {
+                throw new TransactionException("Owner connection needs to be present to begin a transaction");
+            }
             if (state == ACTIVE) {
                 throw new IllegalStateException("Transaction is already active");
             }
@@ -84,13 +84,13 @@ final class TransactionProxy {
             startTime = Clock.currentTimeMillis();
             ClientMessage request = TransactionCreateCodec.encodeRequest(options.getTimeoutMillis(),
                     options.getDurability(), options.getTransactionType().id(), threadId);
-            ClientMessage response = invoke(request);
+            ClientMessage response = ClientTransactionUtil.invoke(request, getTxnId(), client, connection);
             TransactionCreateCodec.ResponseParameters result = TransactionCreateCodec.decodeResponse(response);
             txnId = result.response;
             state = ACTIVE;
         } catch (Exception e) {
             TRANSACTION_EXISTS.set(null);
-            throw ExceptionUtil.rethrow(e);
+            throw rethrow(e);
         }
     }
 
@@ -103,11 +103,11 @@ final class TransactionProxy {
             checkThread();
             checkTimeout();
             ClientMessage request = TransactionCommitCodec.encodeRequest(txnId, threadId);
-            invoke(request);
+            ClientTransactionUtil.invoke(request, getTxnId(), client, connection);
             state = COMMITTED;
         } catch (Exception e) {
             state = COMMIT_FAILED;
-            throw ExceptionUtil.rethrow(e);
+            throw rethrow(e);
         } finally {
             TRANSACTION_EXISTS.set(null);
         }
@@ -122,7 +122,7 @@ final class TransactionProxy {
             checkThread();
             try {
                 ClientMessage request = TransactionRollbackCodec.encodeRequest(txnId, threadId);
-                invoke(request);
+                ClientTransactionUtil.invoke(request, getTxnId(), client, connection);
             } catch (Exception exception) {
                 logger.warning("Exception while rolling back the transaction", exception);
             }
@@ -144,13 +144,4 @@ final class TransactionProxy {
         }
     }
 
-    private ClientMessage invoke(ClientMessage request) {
-        try {
-            final ClientInvocation clientInvocation = new ClientInvocation(client, request, connection);
-            final Future<ClientMessage> future = clientInvocation.invoke();
-            return future.get();
-        } catch (Exception e) {
-            throw ExceptionUtil.rethrow(e);
-        }
-    }
 }

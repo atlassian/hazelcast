@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,14 @@
 
 package com.hazelcast.client.map.impl.query;
 
+import com.hazelcast.client.config.ClientConfig;
 import com.hazelcast.client.test.TestHazelcastFactory;
-import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
 import com.hazelcast.query.Predicate;
-import com.hazelcast.query.SampleObjects;
+import com.hazelcast.query.SampleTestObjects;
 import com.hazelcast.test.HazelcastParallelClassRunner;
+import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.After;
@@ -39,7 +40,7 @@ import static org.junit.Assert.assertThat;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
-public class ClientQueryAdvancedTest {
+public class ClientQueryAdvancedTest extends HazelcastTestSupport {
 
     private final TestHazelcastFactory hazelcastFactory = new TestHazelcastFactory();
 
@@ -48,30 +49,30 @@ public class ClientQueryAdvancedTest {
         hazelcastFactory.terminateAll();
     }
 
-
+    /**
+     * Test for issue #5807.
+     */
     @Test
     public void queryIndexedComparableField_whenEqualsPredicateWithNullValueIsUsed_thenConverterUsesNullObject() {
-        //issue 5807
-        Config config = getConfig();
-        hazelcastFactory.newHazelcastInstance(config);
-        HazelcastInstance client = hazelcastFactory.newHazelcastClient();
-        final IMap<Integer, SampleObjects.Value> map = client.getMap("default");
+        hazelcastFactory.newHazelcastInstance(getConfig());
+        HazelcastInstance client = hazelcastFactory.newHazelcastClient(getClientConfig());
+        IMap<Integer, SampleTestObjects.Value> map = client.getMap("default");
 
         map.addIndex("type", false);
 
-        SampleObjects.ValueType valueType = new SampleObjects.ValueType("name");
-        SampleObjects.Value valueWithoutNull = new SampleObjects.Value("notNull", valueType, 1);
-        SampleObjects.Value valueWithNull = new SampleObjects.Value("null", null, 1);
+        SampleTestObjects.ValueType valueType = new SampleTestObjects.ValueType("name");
+        SampleTestObjects.Value valueWithoutNull = new SampleTestObjects.Value("notNull", valueType, 1);
+        SampleTestObjects.Value valueWithNull = new SampleTestObjects.Value("null", null, 1);
         map.put(1, valueWithoutNull);
         map.put(2, valueWithNull);
 
-        final Predicate nullPredicate = equal("type", null);
-        final Collection<SampleObjects.Value> emptyFieldValues = map.values(nullPredicate);
+        Predicate nullPredicate = equal("type", null);
+        Collection<SampleTestObjects.Value> emptyFieldValues = map.values(nullPredicate);
         assertThat(emptyFieldValues, hasSize(1));
         assertThat(emptyFieldValues, contains(valueWithNull));
     }
 
-    protected Config getConfig() {
-        return new Config();
+    protected ClientConfig getClientConfig() {
+        return new ClientConfig();
     }
 }

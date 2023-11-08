@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,16 +18,18 @@ package com.hazelcast.internal.cluster.impl;
 
 import com.hazelcast.config.NetworkConfig;
 import com.hazelcast.instance.Node;
+import com.hazelcast.internal.cluster.impl.SplitBrainJoinMessage.SplitBrainMergeCheckResult;
 import com.hazelcast.nio.Address;
-import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.util.Clock;
-import com.hazelcast.util.EmptyStatement;
 import com.hazelcast.util.RandomPicker;
 
 import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import static com.hazelcast.config.ConfigAccessor.getActiveMemberNetworkConfig;
+import static java.lang.Thread.currentThread;
 
 public class MulticastJoiner extends AbstractJoiner {
 
@@ -59,16 +61,16 @@ public class MulticastJoiner extends AbstractJoiner {
         while (shouldRetry() && (Clock.currentTimeMillis() - joinStartTime < maxJoinMillis)) {
 
             // clear master node
-            node.setMasterAddress(null);
+            clusterService.setMasterAddressToJoin(null);
 
             Address masterAddress = getTargetAddress();
             if (masterAddress == null) {
                 masterAddress = findMasterWithMulticast();
             }
-            node.setMasterAddress(masterAddress);
+            clusterService.setMasterAddressToJoin(masterAddress);
 
             if (masterAddress == null || thisAddress.equals(masterAddress)) {
-                node.setAsMaster();
+                clusterJoinManager.setThisMemberAsMaster();
                 return;
             }
 
@@ -83,7 +85,7 @@ public class MulticastJoiner extends AbstractJoiner {
 
         while (shouldRetry() && Clock.currentTimeMillis() - start < maxMasterJoinTime) {
 
-            Address master = node.getMasterAddress();
+            Address master = clusterService.getMasterAddress();
             if (master != null) {
                 if (logger.isFineEnabled()) {
                     logger.fine("Joining to master " + master);
@@ -96,11 +98,11 @@ public class MulticastJoiner extends AbstractJoiner {
             try {
                 Thread.sleep(JOIN_RETRY_INTERVAL);
             } catch (InterruptedException e) {
-                EmptyStatement.ignore(e);
+                currentThread().interrupt();
             }
 
             if (isBlacklisted(master)) {
-                node.setMasterAddress(null);
+                clusterService.setMasterAddressToJoin(null);
                 return;
             }
         }
@@ -109,38 +111,46 @@ public class MulticastJoiner extends AbstractJoiner {
     @Override
     public void searchForOtherClusters() {
         node.multicastService.send(node.createSplitBrainJoinMessage());
-        SplitBrainJoinMessage joinInfo;
+        SplitBrainJoinMessage splitBrainMsg;
         try {
-            while ((joinInfo = splitBrainJoinMessages.poll(3, TimeUnit.SECONDS)) != null) {
-                try {
-                    if (node.clusterService.getMember(joinInfo.getAddress()) != null) {
-                        if (logger.isFineEnabled()) {
-                            logger.fine("Ignoring merge join response, since " + joinInfo.getAddress()
-                                    + " is already a member.");
-                        }
-                        return;
+            while ((splitBrainMsg = splitBrainJoinMessages.poll(3, TimeUnit.SECONDS)) != null) {
+                if (logger.isFineEnabled()) {
+                    logger.fine("Received  " + splitBrainMsg);
+                }
+                Address targetAddress = splitBrainMsg.getAddress();
+                if (node.clusterService.getMember(targetAddress) != null) {
+                    if (logger.isFineEnabled()) {
+                        logger.fine("Ignoring merge join response, since " + targetAddress + " is already a member.");
                     }
+                    continue;
+                }
 
-                    if (joinInfo.getMemberCount() == 1) {
-                        // if the other cluster has just single member, that may be a newly starting node instead of a split node
-                        // wait 2 times 'WAIT_SECONDS_BEFORE_JOIN' seconds before processing merge JoinRequest
-                        Thread.sleep(2 * node.getProperties().getMillis(GroupProperty.WAIT_SECONDS_BEFORE_JOIN));
-                    }
+                SplitBrainJoinMessage request = node.createSplitBrainJoinMessage();
+                SplitBrainMergeCheckResult result = sendSplitBrainJoinMessageAndCheckResponse(targetAddress, request);
+                if (result == SplitBrainMergeCheckResult.LOCAL_NODE_SHOULD_MERGE) {
+                    logger.warning(node.getThisAddress() + " is merging [multicast] to " + targetAddress);
+                    startClusterMerge(targetAddress, clusterService.getMemberListVersion());
+                    return;
+                }
 
-                    SplitBrainJoinMessage response = sendSplitBrainJoinMessage(joinInfo.getAddress());
-                    if (shouldMerge(response)) {
-                        logger.warning(node.getThisAddress() + " is merging [multicast] to " + joinInfo.getAddress());
-                        startClusterMerge(joinInfo.getAddress());
-                    }
-                } catch (Exception e) {
-                    if (logger != null) {
-                        logger.warning(e);
-                    }
+                if (result == SplitBrainMergeCheckResult.REMOTE_NODE_SHOULD_MERGE) {
+                    // other side should join to us. broadcast a new SplitBrainJoinMessage.
+                    node.multicastService.send(node.createSplitBrainJoinMessage());
                 }
             }
-        } catch (InterruptedException ignored) {
-            EmptyStatement.ignore(ignored);
+        } catch (InterruptedException e) {
+            currentThread().interrupt();
+            logger.fine(e);
+        } catch (Exception e) {
+            logger.warning(e);
         }
+    }
+
+    @Override
+    public void reset() {
+        super.reset();
+        // since this node is going to merge with a detected cluster, clear the queued split brain join messages (if any)
+        splitBrainJoinMessages.clear();
     }
 
     @Override
@@ -148,8 +158,13 @@ public class MulticastJoiner extends AbstractJoiner {
         return "multicast";
     }
 
+    // for tests only
+    public int getSplitBrainMessagesCount() {
+        return splitBrainJoinMessages.size();
+    }
+
     void onReceivedJoinRequest(JoinRequest joinRequest) {
-        if (joinRequest.getUuid().compareTo(node.getThisUuid()) < 0) {
+        if (joinRequest.getUuid().compareTo(clusterService.getThisUuid()) < 0) {
             maxTryCount.incrementAndGet();
         }
     }
@@ -163,11 +178,12 @@ public class MulticastJoiner extends AbstractJoiner {
             while (node.isRunning() && currentTryCount.incrementAndGet() <= maxTryCount.get()) {
                 joinRequest.setTryCount(currentTryCount.get());
                 node.multicastService.send(joinRequest);
-                if (node.getMasterAddress() == null) {
+                Address masterAddress = clusterService.getMasterAddress();
+                if (masterAddress == null) {
                     //noinspection BusyWait
                     Thread.sleep(getPublishInterval());
                 } else {
-                    return node.getMasterAddress();
+                    return masterAddress;
                 }
             }
         } catch (final Exception e) {
@@ -181,7 +197,7 @@ public class MulticastJoiner extends AbstractJoiner {
     }
 
     private int calculateTryCount() {
-        final NetworkConfig networkConfig = config.getNetworkConfig();
+        final NetworkConfig networkConfig = getActiveMemberNetworkConfig(config);
         long timeoutMillis = TimeUnit.SECONDS.toMillis(networkConfig.getJoin().getMulticastConfig().getMulticastTimeoutSeconds());
         int avgPublishInterval = (PUBLISH_INTERVAL_MAX + PUBLISH_INTERVAL_MIN) / 2;
         int tryCount = (int) timeoutMillis / avgPublishInterval;

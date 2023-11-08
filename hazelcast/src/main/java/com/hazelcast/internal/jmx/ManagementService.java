@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,7 +44,7 @@ import static com.hazelcast.internal.jmx.MBeans.getObjectTypeOrNull;
 public class ManagementService implements DistributedObjectListener {
 
     static final String DOMAIN = "com.hazelcast";
-    private static final int INITIAL_CAPACITY = 3;
+    private static final int INITIAL_CAPACITY = 5;
 
     final HazelcastInstanceImpl instance;
     private final boolean enabled;
@@ -66,7 +66,7 @@ public class ManagementService implements DistributedObjectListener {
         MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
         InstanceMBean instanceMBean;
         try {
-            instanceMBean = new InstanceMBean(instance, this);
+            instanceMBean = createInstanceMBean(instance);
             mbs.registerMBean(instanceMBean, instanceMBean.objectName);
         } catch (Exception e) {
             instanceMBean = null;
@@ -78,6 +78,10 @@ public class ManagementService implements DistributedObjectListener {
         for (final DistributedObject distributedObject : instance.getDistributedObjects()) {
             registerDistributedObject(distributedObject);
         }
+    }
+
+    protected InstanceMBean createInstanceMBean(HazelcastInstanceImpl instance) {
+        return new InstanceMBean(instance, this);
     }
 
     public InstanceMBean getInstanceMBean() {
@@ -193,8 +197,7 @@ public class ManagementService implements DistributedObjectListener {
     }
 
     public static String quote(String text) {
-        return Pattern.compile("[:\",=*?]")
-                .matcher(text)
-                .find() ? ObjectName.quote(text) : text;
+        return Pattern.compile("[:\",=*?]").matcher(text).find() || text.indexOf('\n') >= 0
+                ? ObjectName.quote(text) : text;
     }
 }

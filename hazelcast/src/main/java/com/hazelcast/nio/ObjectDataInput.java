@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.hazelcast.nio;
 
+import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.nio.serialization.Data;
 
 import java.io.DataInput;
@@ -23,7 +24,7 @@ import java.io.IOException;
 import java.nio.ByteOrder;
 
 /**
- * Provides serialization methods for arrays of primitive types
+ * Provides serialization methods for arrays of primitive types.
  */
 public interface ObjectDataInput extends DataInput, VersionAware {
 
@@ -82,7 +83,7 @@ public interface ObjectDataInput extends DataInput, VersionAware {
     String[] readUTFArray() throws IOException;
 
     /**
-     * @param <T> type of the object in array to be read
+     * @param <T> type of the object to be read
      * @return object array read
      * @throws IOException if it reaches end of file before finish reading
      */
@@ -90,21 +91,21 @@ public interface ObjectDataInput extends DataInput, VersionAware {
 
     /**
      * Reads to stored Data as an object instead of a Data instance.
-     *
-     * The reason this method exists is that in some cases 'Data' is stored on serialization, but on deserialization the
-     * actual object instance is needed. Getting access to the Data is easy by calling the {@link #readData()} method. But
-     * deserializing the Data to an object instance is impossible because there is no reference to the
+     * <p>
+     * The reason this method exists is that in some cases {@link Data} is stored on serialization, but on deserialization
+     * the actual object instance is needed. Getting access to the {@link Data} is easy by calling the {@link #readData()}
+     * method. But de-serializing the {@link Data} to an object instance is impossible because there is no reference to the
      * {@link com.hazelcast.spi.serialization.SerializationService}.
      *
-     * @param <T>
+     * @param <T> type of the object to be read
      * @return the read Object
      * @throws IOException if it reaches end of file before finish reading
      */
     <T> T readDataAsObject() throws IOException;
 
     /**
-     * @param <T> type of the object in array to be read
-     * @param aClass The type of the class to use when reading
+     * @param <T>    type of the object to be read
+     * @param aClass the type of the class to use when reading
      * @return object array read
      * @throws IOException if it reaches end of file before finish reading
      */
@@ -117,7 +118,7 @@ public interface ObjectDataInput extends DataInput, VersionAware {
     Data readData() throws IOException;
 
     /**
-     * Returns class loader that internally used for objects
+     * Returns class loader that internally used for objects.
      *
      * @return classLoader
      */
@@ -128,4 +129,8 @@ public interface ObjectDataInput extends DataInput, VersionAware {
      */
     ByteOrder getByteOrder();
 
+    /**
+     * @return serialization service for this object
+     */
+    InternalSerializationService getSerializationService();
 }

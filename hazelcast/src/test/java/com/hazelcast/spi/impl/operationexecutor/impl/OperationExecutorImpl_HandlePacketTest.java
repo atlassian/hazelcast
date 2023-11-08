@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.spi.impl.operationexecutor.impl;
 
 import com.hazelcast.nio.Packet;
@@ -11,8 +27,7 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import static com.hazelcast.nio.Packet.FLAG_OP;
-import static com.hazelcast.nio.Packet.FLAG_RESPONSE;
+import static com.hazelcast.nio.Packet.FLAG_OP_RESPONSE;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -26,7 +41,7 @@ public class OperationExecutorImpl_HandlePacketTest extends OperationExecutorImp
     public void test_whenNullPacket() {
         initExecutor();
 
-        executor.handle(null);
+        executor.accept(null);
     }
 
     @Test
@@ -35,16 +50,17 @@ public class OperationExecutorImpl_HandlePacketTest extends OperationExecutorImp
 
         final NormalResponse normalResponse = new NormalResponse(null, 1, 0, false);
         final Packet packet = new Packet(serializationService.toBytes(normalResponse), 0)
-                .setAllFlags(FLAG_RESPONSE | FLAG_OP);
-        executor.handle(packet);
+                .setPacketType(Packet.Type.OPERATION)
+                .raiseFlags(FLAG_OP_RESPONSE);
+        executor.accept(packet);
 
         assertTrueEventually(new AssertTask() {
             @Override
             public void run() throws Exception {
-                DummyResponsePacketHandler responsePacketHandler
-                        = (DummyResponsePacketHandler) OperationExecutorImpl_HandlePacketTest.this.responsePacketHandler;
-                responsePacketHandler.packets.contains(packet);
-                responsePacketHandler.responses.contains(normalResponse);
+                DummyResponsePacketConsumer responsePacketConsumer
+                        = (DummyResponsePacketConsumer) OperationExecutorImpl_HandlePacketTest.this.responsePacketConsumer;
+                responsePacketConsumer.packets.contains(packet);
+                responsePacketConsumer.responses.contains(normalResponse);
             }
         });
     }
@@ -55,15 +71,15 @@ public class OperationExecutorImpl_HandlePacketTest extends OperationExecutorImp
 
         final DummyOperation operation = new DummyOperation(0);
         final Packet packet = new Packet(serializationService.toBytes(operation), operation.getPartitionId())
-                .setFlag(FLAG_OP);
-        executor.handle(packet);
+                .setPacketType(Packet.Type.OPERATION);
+        executor.accept(packet);
 
         assertTrueEventually(new AssertTask() {
             @Override
             public void run() throws Exception {
                 OperationRunner[] partitionHandlers = executor.getPartitionOperationRunners();
                 DummyOperationRunner handler = (DummyOperationRunner) partitionHandlers[operation.getPartitionId()];
-                assertTrue(handler.packets.contains(packet));
+                assertContains(handler.packets, packet);
             }
         });
     }
@@ -74,8 +90,8 @@ public class OperationExecutorImpl_HandlePacketTest extends OperationExecutorImp
 
         final DummyOperation operation = new DummyOperation(Operation.GENERIC_PARTITION_ID);
         final Packet packet = new Packet(serializationService.toBytes(operation), operation.getPartitionId())
-                .setFlag(FLAG_OP);
-        executor.handle(packet);
+                .setPacketType(Packet.Type.OPERATION);
+        executor.accept(packet);
 
         assertTrueEventually(new AssertTask() {
             @Override

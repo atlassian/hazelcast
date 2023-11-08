@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.osgi;
 
 import org.osgi.framework.Bundle;
@@ -22,12 +38,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 class TestBundleContext implements BundleContext {
 
-    private final AtomicInteger COUNTER = new AtomicInteger();
-    private final Object MUTEX = new Object();
+    private final AtomicInteger counter = new AtomicInteger();
+    private final Object mutex = new Object();
+
+    private final Map<String, List<ServiceReference>> serviceReferenceMap = new HashMap<String, List<ServiceReference>>();
 
     private final TestBundle testBundle;
-    private final Map<String, List<ServiceReference>> serviceReferenceMap =
-            new HashMap<String, List<ServiceReference>>();
     private final TestBundle.RegisterDeregisterListener registerDeregisterListener;
 
     TestBundleContext(TestBundle testBundle) {
@@ -61,7 +77,7 @@ class TestBundleContext implements BundleContext {
     @Override
     public ServiceRegistration registerService(String[] clazzes, Object service, Dictionary properties) {
         TestServiceReference serviceReference =
-                new TestServiceReference(testBundle, service, COUNTER.incrementAndGet());
+                new TestServiceReference(testBundle, service, counter.incrementAndGet());
         for (String clazz : clazzes) {
             registerServiceInternal(clazz, serviceReference);
         }
@@ -71,13 +87,13 @@ class TestBundleContext implements BundleContext {
     @Override
     public ServiceRegistration registerService(String clazz, Object service, Dictionary properties) {
         TestServiceReference serviceReference =
-                new TestServiceReference(testBundle, service, COUNTER.incrementAndGet());
+                new TestServiceReference(testBundle, service, counter.incrementAndGet());
         registerServiceInternal(clazz, serviceReference);
         return new TestServiceRegistration(serviceReference);
     }
 
     private void registerServiceInternal(String clazz, TestServiceReference serviceReference) {
-        synchronized (MUTEX) {
+        synchronized (mutex) {
             List<ServiceReference> serviceReferences = serviceReferenceMap.get(clazz);
             if (serviceReferences == null) {
                 serviceReferences = new ArrayList<ServiceReference>();
@@ -92,11 +108,11 @@ class TestBundleContext implements BundleContext {
 
     @Override
     public ServiceReference[] getServiceReferences(String clazz, String filter) throws InvalidSyntaxException {
-        // We simply ignore filter since we don't use filer in our tests
-        synchronized (MUTEX) {
+        // we simply ignore filter since we don't use filer in our tests
+        synchronized (mutex) {
             List<ServiceReference> serviceReferences = serviceReferenceMap.get(clazz);
             if (serviceReferences != null && !serviceReferences.isEmpty()) {
-                return serviceReferences.toArray(new ServiceReference[serviceReferences.size()]);
+                return serviceReferences.toArray(new ServiceReference[0]);
             }
         }
         return null;
@@ -104,11 +120,11 @@ class TestBundleContext implements BundleContext {
 
     @Override
     public ServiceReference[] getAllServiceReferences(String clazz, String filter) throws InvalidSyntaxException {
-        // We simply ignore filter since we don't use filer in our tests
-        synchronized (MUTEX) {
+        // we simply ignore filter since we don't use filer in our tests
+        synchronized (mutex) {
             List<ServiceReference> serviceReferences = serviceReferenceMap.get(clazz);
             if (serviceReferences != null && !serviceReferences.isEmpty()) {
-                return serviceReferences.toArray(new ServiceReference[serviceReferences.size()]);
+                return serviceReferences.toArray(new ServiceReference[0]);
             }
         }
         return null;
@@ -116,19 +132,19 @@ class TestBundleContext implements BundleContext {
 
     ServiceReference[] getAllServiceReferences() {
         List<ServiceReference> allServiceReferences = new ArrayList<ServiceReference>();
-        // We simply ignore filter since we don't use filer in our tests
-        synchronized (MUTEX) {
+        // we simply ignore filter since we don't use filer in our tests
+        synchronized (mutex) {
             for (Map.Entry<String, List<ServiceReference>> entry : serviceReferenceMap.entrySet()) {
                 List<ServiceReference> serviceReferences = entry.getValue();
                 allServiceReferences.addAll(serviceReferences);
             }
         }
-        return allServiceReferences.toArray(new ServiceReference[allServiceReferences.size()]);
+        return allServiceReferences.toArray(new ServiceReference[0]);
     }
 
     @Override
     public ServiceReference getServiceReference(String clazz) {
-        synchronized (MUTEX) {
+        synchronized (mutex) {
             List<ServiceReference> serviceReferences = serviceReferenceMap.get(clazz);
             if (serviceReferences == null || serviceReferences.isEmpty()) {
                 return null;
@@ -161,7 +177,7 @@ class TestBundleContext implements BundleContext {
     @Override
     public boolean ungetService(ServiceReference reference) {
         if (reference instanceof TestServiceReference) {
-            synchronized (MUTEX) {
+            synchronized (mutex) {
                 boolean removed = false;
                 for (Map.Entry<String, List<ServiceReference>> entry : serviceReferenceMap.entrySet()) {
                     List<ServiceReference> serviceReferences = entry.getValue();
@@ -238,5 +254,4 @@ class TestBundleContext implements BundleContext {
     public Filter createFilter(String filter) throws InvalidSyntaxException {
         throw new UnsupportedOperationException();
     }
-
 }

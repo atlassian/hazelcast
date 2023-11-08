@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -72,6 +72,7 @@ public class AnIdentifiedDataSerializable implements IdentifiedDataSerializable 
 
     private Data data;
 
+    @SuppressWarnings({"checkstyle:parameternumber", "checkstyle:executablestatementcount"})
     public AnIdentifiedDataSerializable(boolean bool, byte b, char c, double d, short s,
                                         float f, int i, long l, String str,
                                         boolean[] booleans, byte[] bytes, char[] chars, double[] doubles, short[] shorts,
@@ -120,8 +121,6 @@ public class AnIdentifiedDataSerializable implements IdentifiedDataSerializable 
     }
 
     public AnIdentifiedDataSerializable() {
-
-
     }
 
     @Override
@@ -239,58 +238,184 @@ public class AnIdentifiedDataSerializable implements IdentifiedDataSerializable 
         data = dataInput.readData();
     }
 
-
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
 
         AnIdentifiedDataSerializable that = (AnIdentifiedDataSerializable) o;
+        if (bool != that.bool) {
+            return false;
+        }
+        if (b != that.b) {
+            return false;
+        }
+        if (c != that.c) {
+            return false;
+        }
+        if (Double.compare(that.d, d) != 0) {
+            return false;
+        }
+        if (s != that.s) {
+            return false;
+        }
+        if (Float.compare(that.f, f) != 0) {
+            return false;
+        }
+        if (i != that.i) {
+            return false;
+        }
+        if (l != that.l) {
+            return false;
+        }
+        if (byteSize != that.byteSize) {
+            return false;
+        }
+        if (unsignedByte != that.unsignedByte) {
+            return false;
+        }
+        if (unsignedShort != that.unsignedShort) {
+            return false;
+        }
+        if (str != null ? !str.equals(that.str) : that.str != null) {
+            return false;
+        }
+        if (!Arrays.equals(booleans, that.booleans)) {
+            return false;
+        }
+        if (!Arrays.equals(bytes, that.bytes)) {
+            return false;
+        }
+        if (!Arrays.equals(chars, that.chars)) {
+            return false;
+        }
+        if (!Arrays.equals(doubles, that.doubles)) {
+            return false;
+        }
+        if (!Arrays.equals(shorts, that.shorts)) {
+            return false;
+        }
+        if (!Arrays.equals(floats, that.floats)) {
+            return false;
+        }
+        if (!Arrays.equals(ints, that.ints)) {
+            return false;
+        }
+        if (!Arrays.equals(longs, that.longs)) {
+            return false;
+        }
+        if (!Arrays.equals(strings, that.strings)) {
+            return false;
+        }
+        if (!Arrays.equals(booleansNull, that.booleansNull)) {
+            return false;
+        }
+        if (!Arrays.equals(bytesNull, that.bytesNull)) {
+            return false;
+        }
+        if (!Arrays.equals(charsNull, that.charsNull)) {
+            return false;
+        }
+        if (!Arrays.equals(doublesNull, that.doublesNull)) {
+            return false;
+        }
+        if (!Arrays.equals(shortsNull, that.shortsNull)) {
+            return false;
+        }
+        if (!Arrays.equals(floatsNull, that.floatsNull)) {
+            return false;
+        }
+        if (!Arrays.equals(intsNull, that.intsNull)) {
+            return false;
+        }
+        if (!Arrays.equals(longsNull, that.longsNull)) {
+            return false;
+        }
+        if (!Arrays.equals(stringsNull, that.stringsNull)) {
+            return false;
+        }
+        if (!Arrays.equals(bytesFully, that.bytesFully)) {
+            return false;
+        }
+        if (!Arrays.equals(bytesOffset, that.bytesOffset)) {
+            return false;
+        }
+        if (!Arrays.equals(strChars, that.strChars)) {
+            return false;
+        }
+        if (!Arrays.equals(strBytes, that.strBytes)) {
+            return false;
+        }
+        if (portableObject != null ? !portableObject.equals(that.portableObject) : that.portableObject != null) {
+            return false;
+        }
+        if (identifiedDataSerializableObject != null
+                ? !identifiedDataSerializableObject.equals(that.identifiedDataSerializableObject)
+                : that.identifiedDataSerializableObject != null) {
+            return false;
+        }
+        if (customStreamSerializableObject != null
+                ? !customStreamSerializableObject.equals(that.customStreamSerializableObject)
+                : that.customStreamSerializableObject != null) {
+            return false;
+        }
+        if (customByteArraySerializableObject != null
+                ? !customByteArraySerializableObject.equals(that.customByteArraySerializableObject)
+                : that.customByteArraySerializableObject != null) {
+            return false;
+        }
+        return !(data != null ? !data.equals(that.data) : that.data != null);
+    }
 
-        if (bool != that.bool) return false;
-        if (b != that.b) return false;
-        if (c != that.c) return false;
-        if (Double.compare(that.d, d) != 0) return false;
-        if (s != that.s) return false;
-        if (Float.compare(that.f, f) != 0) return false;
-        if (i != that.i) return false;
-        if (l != that.l) return false;
-        if (byteSize != that.byteSize) return false;
-        if (unsignedByte != that.unsignedByte) return false;
-        if (unsignedShort != that.unsignedShort) return false;
-        if (str != null ? !str.equals(that.str) : that.str != null) return false;
-        if (!Arrays.equals(booleans, that.booleans)) return false;
-        if (!Arrays.equals(bytes, that.bytes)) return false;
-        if (!Arrays.equals(chars, that.chars)) return false;
-        if (!Arrays.equals(doubles, that.doubles)) return false;
-        if (!Arrays.equals(shorts, that.shorts)) return false;
-        if (!Arrays.equals(floats, that.floats)) return false;
-        if (!Arrays.equals(ints, that.ints)) return false;
-        if (!Arrays.equals(longs, that.longs)) return false;
-        if (!Arrays.equals(strings, that.strings)) return false;
-        if (!Arrays.equals(booleansNull, that.booleansNull)) return false;
-        if (!Arrays.equals(bytesNull, that.bytesNull)) return false;
-        if (!Arrays.equals(charsNull, that.charsNull)) return false;
-        if (!Arrays.equals(doublesNull, that.doublesNull)) return false;
-        if (!Arrays.equals(shortsNull, that.shortsNull)) return false;
-        if (!Arrays.equals(floatsNull, that.floatsNull)) return false;
-        if (!Arrays.equals(intsNull, that.intsNull)) return false;
-        if (!Arrays.equals(longsNull, that.longsNull)) return false;
-        if (!Arrays.equals(stringsNull, that.stringsNull)) return false;
-        if (!Arrays.equals(bytesFully, that.bytesFully)) return false;
-        if (!Arrays.equals(bytesOffset, that.bytesOffset)) return false;
-        if (!Arrays.equals(strChars, that.strChars)) return false;
-        if (!Arrays.equals(strBytes, that.strBytes)) return false;
-        if (portableObject != null ? !portableObject.equals(that.portableObject) : that.portableObject != null)
-            return false;
-        if (identifiedDataSerializableObject != null ? !identifiedDataSerializableObject.equals(that.identifiedDataSerializableObject) : that.identifiedDataSerializableObject != null)
-            return false;
-        if (customStreamSerializableObject != null ? !customStreamSerializableObject.equals(that.customStreamSerializableObject) : that.customStreamSerializableObject != null)
-            return false;
-        if (customByteArraySerializableObject != null ? !customByteArraySerializableObject.equals(that.customByteArraySerializableObject) : that.customByteArraySerializableObject != null)
-            return false;
-        return  !(data != null ? !data.equals(that.data) : that.data != null);
-
+    @Override
+    public int hashCode() {
+        int result;
+        long temp;
+        result = (bool ? 1 : 0);
+        result = 31 * result + (int) b;
+        result = 31 * result + (int) c;
+        temp = Double.doubleToLongBits(d);
+        result = 31 * result + (int) (temp ^ (temp >>> 32));
+        result = 31 * result + (int) s;
+        result = 31 * result + (f != +0.0f ? Float.floatToIntBits(f) : 0);
+        result = 31 * result + i;
+        result = 31 * result + (int) (l ^ (l >>> 32));
+        result = 31 * result + (str != null ? str.hashCode() : 0);
+        result = 31 * result + Arrays.hashCode(booleans);
+        result = 31 * result + Arrays.hashCode(bytes);
+        result = 31 * result + Arrays.hashCode(chars);
+        result = 31 * result + Arrays.hashCode(doubles);
+        result = 31 * result + Arrays.hashCode(shorts);
+        result = 31 * result + Arrays.hashCode(floats);
+        result = 31 * result + Arrays.hashCode(ints);
+        result = 31 * result + Arrays.hashCode(longs);
+        result = 31 * result + Arrays.hashCode(strings);
+        result = 31 * result + Arrays.hashCode(booleansNull);
+        result = 31 * result + Arrays.hashCode(bytesNull);
+        result = 31 * result + Arrays.hashCode(charsNull);
+        result = 31 * result + Arrays.hashCode(doublesNull);
+        result = 31 * result + Arrays.hashCode(shortsNull);
+        result = 31 * result + Arrays.hashCode(floatsNull);
+        result = 31 * result + Arrays.hashCode(intsNull);
+        result = 31 * result + Arrays.hashCode(longsNull);
+        result = 31 * result + Arrays.hashCode(stringsNull);
+        result = 31 * result + (int) byteSize;
+        result = 31 * result + Arrays.hashCode(bytesFully);
+        result = 31 * result + Arrays.hashCode(bytesOffset);
+        result = 31 * result + Arrays.hashCode(strChars);
+        result = 31 * result + Arrays.hashCode(strBytes);
+        result = 31 * result + unsignedByte;
+        result = 31 * result + unsignedShort;
+        result = 31 * result + (portableObject != null ? portableObject.hashCode() : 0);
+        result = 31 * result + (identifiedDataSerializableObject != null ? identifiedDataSerializableObject.hashCode() : 0);
+        result = 31 * result + (customStreamSerializableObject != null ? customStreamSerializableObject.hashCode() : 0);
+        result = 31 * result + (customByteArraySerializableObject != null ? customByteArraySerializableObject.hashCode() : 0);
+        result = 31 * result + (data != null ? data.hashCode() : 0);
+        return result;
     }
 
     @Override

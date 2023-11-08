@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 package com.hazelcast.spring;
 
 import com.hazelcast.client.HazelcastClient;
-import com.hazelcast.client.impl.HazelcastClientProxy;
+import com.hazelcast.client.impl.clientside.HazelcastClientProxy;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
@@ -70,13 +70,11 @@ public class TestBeansApplicationContext extends HazelcastTestSupport {
         HazelcastClientProxy client = (HazelcastClientProxy) HazelcastClient.getAllHazelcastClients().iterator().next();
         assertNull(client.getClientConfig().getManagedContext());
 
-
         HazelcastInstance instance = (HazelcastInstance) context.getBean("instance");
         assertEquals(1, Hazelcast.getAllHazelcastInstances().size());
         assertEquals(instance, Hazelcast.getAllHazelcastInstances().iterator().next());
         assertNull(instance.getConfig().getManagedContext());
     }
-
 
     @Test
     public void testPlaceHolder() {
@@ -85,9 +83,8 @@ public class TestBeansApplicationContext extends HazelcastTestSupport {
         Config config = instance.getConfig();
         assertEquals("spring-group", config.getGroupConfig().getName());
         assertTrue(config.getNetworkConfig().getJoin().getTcpIpConfig().isEnabled());
-        assertEquals(6,config.getMapConfig("map1").getBackupCount());
+        assertEquals(6, config.getMapConfig("map1").getBackupCount());
         assertFalse(config.getMapConfig("map1").isStatisticsEnabled());
         assertEquals(64, config.getNativeMemoryConfig().getSize().getValue());
     }
-
 }

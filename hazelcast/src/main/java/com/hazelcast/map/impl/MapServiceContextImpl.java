@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,25 @@
 package com.hazelcast.map.impl;
 
 import com.hazelcast.cluster.ClusterState;
-import com.hazelcast.config.Config;
+import com.hazelcast.config.InMemoryFormat;
 import com.hazelcast.config.MapConfig;
+import com.hazelcast.config.MergePolicyConfig;
+import com.hazelcast.config.MetadataPolicy;
 import com.hazelcast.config.PartitioningStrategyConfig;
 import com.hazelcast.core.PartitioningStrategy;
+import com.hazelcast.internal.eviction.ExpirationManager;
+import com.hazelcast.internal.serialization.InternalSerializationService;
+import com.hazelcast.internal.util.InvocationUtil;
+import com.hazelcast.internal.util.LocalRetryableExecution;
+import com.hazelcast.internal.util.comparators.ValueComparator;
+import com.hazelcast.internal.util.comparators.ValueComparatorUtil;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.map.MapInterceptor;
 import com.hazelcast.map.impl.event.MapEventPublisher;
 import com.hazelcast.map.impl.event.MapEventPublisherImpl;
-import com.hazelcast.map.impl.eviction.ExpirationManager;
+import com.hazelcast.map.impl.eviction.MapClearExpiredRecordsTask;
+import com.hazelcast.map.impl.journal.MapEventJournal;
+import com.hazelcast.map.impl.journal.RingbufferMapEventJournalImpl;
 import com.hazelcast.map.impl.mapstore.MapDataStore;
 import com.hazelcast.map.impl.nearcache.MapNearCacheManager;
 import com.hazelcast.map.impl.operation.BasePutOperation;
@@ -33,14 +43,14 @@ import com.hazelcast.map.impl.operation.BaseRemoveOperation;
 import com.hazelcast.map.impl.operation.GetOperation;
 import com.hazelcast.map.impl.operation.MapOperationProvider;
 import com.hazelcast.map.impl.operation.MapOperationProviders;
-import com.hazelcast.map.impl.operation.MapPartitionDestroyTask;
+import com.hazelcast.map.impl.operation.MapPartitionDestroyOperation;
 import com.hazelcast.map.impl.query.AccumulationExecutor;
 import com.hazelcast.map.impl.query.AggregationResult;
 import com.hazelcast.map.impl.query.AggregationResultProcessor;
 import com.hazelcast.map.impl.query.CallerRunsAccumulationExecutor;
 import com.hazelcast.map.impl.query.CallerRunsPartitionScanExecutor;
-import com.hazelcast.map.impl.query.MapQueryEngine;
-import com.hazelcast.map.impl.query.MapQueryEngineImpl;
+import com.hazelcast.map.impl.query.QueryEngine;
+import com.hazelcast.map.impl.query.QueryEngineImpl;
 import com.hazelcast.map.impl.query.ParallelAccumulationExecutor;
 import com.hazelcast.map.impl.query.ParallelPartitionScanExecutor;
 import com.hazelcast.map.impl.query.PartitionScanExecutor;
@@ -49,12 +59,22 @@ import com.hazelcast.map.impl.query.QueryResult;
 import com.hazelcast.map.impl.query.QueryResultProcessor;
 import com.hazelcast.map.impl.query.QueryRunner;
 import com.hazelcast.map.impl.query.ResultProcessorRegistry;
+import com.hazelcast.map.impl.querycache.NodeQueryCacheContext;
+import com.hazelcast.map.impl.querycache.QueryCacheContext;
+import com.hazelcast.map.impl.record.Record;
 import com.hazelcast.map.impl.recordstore.DefaultRecordStore;
+import com.hazelcast.map.impl.recordstore.EventJournalWriterRecordStoreMutationObserver;
+import com.hazelcast.map.impl.recordstore.JsonMetadataRecordStoreMutationObserver;
 import com.hazelcast.map.impl.recordstore.RecordStore;
+import com.hazelcast.map.impl.recordstore.RecordStoreMutationObserver;
 import com.hazelcast.map.listener.MapPartitionLostListener;
 import com.hazelcast.map.merge.MergePolicyProvider;
 import com.hazelcast.monitor.impl.LocalMapStatsImpl;
 import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.nio.serialization.DataType;
+import com.hazelcast.query.impl.DefaultIndexProvider;
+import com.hazelcast.query.impl.IndexCopyBehavior;
+import com.hazelcast.query.impl.IndexProvider;
 import com.hazelcast.query.impl.getters.Extractors;
 import com.hazelcast.query.impl.predicates.QueryOptimizer;
 import com.hazelcast.spi.EventFilter;
@@ -63,24 +83,25 @@ import com.hazelcast.spi.EventService;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.impl.eventservice.impl.TrueEventFilter;
-import com.hazelcast.spi.impl.operationservice.InternalOperationService;
 import com.hazelcast.spi.partition.IPartitionService;
 import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.util.ConcurrencyUtil;
 import com.hazelcast.util.ConstructorFunction;
 import com.hazelcast.util.ContextMutexFactory;
-import com.hazelcast.util.ExceptionUtil;
 import com.hazelcast.util.executor.ManagedExecutorService;
+import com.hazelcast.util.function.Predicate;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -90,26 +111,26 @@ import static com.hazelcast.map.impl.MapListenerFlagOperator.setAndGetListenerFl
 import static com.hazelcast.map.impl.MapService.SERVICE_NAME;
 import static com.hazelcast.query.impl.predicates.QueryOptimizerFactory.newOptimizer;
 import static com.hazelcast.spi.ExecutionService.QUERY_EXECUTOR;
+import static com.hazelcast.spi.Operation.GENERIC_PARTITION_ID;
 import static com.hazelcast.spi.properties.GroupProperty.AGGREGATION_ACCUMULATION_PARALLEL_EVALUATION;
+import static com.hazelcast.spi.properties.GroupProperty.INDEX_COPY_BEHAVIOR;
+import static com.hazelcast.spi.properties.GroupProperty.OPERATION_CALL_TIMEOUT_MILLIS;
 import static com.hazelcast.spi.properties.GroupProperty.QUERY_PREDICATE_PARALLEL_EVALUATION;
+import static java.lang.Thread.currentThread;
 
 /**
- * Default implementation of map service context.
+ * Default implementation of {@link MapServiceContext}.
  */
+@SuppressWarnings("WeakerAccess")
 class MapServiceContextImpl implements MapServiceContext {
+
     protected static final long DESTROY_TIMEOUT_SECONDS = 30;
 
-    protected final NodeEngine nodeEngine;
-    protected final PartitionContainer[] partitionContainers;
-    protected final ConcurrentMap<String, MapContainer> mapContainers;
-    protected final AtomicReference<Collection<Integer>> ownedPartitions;
-    protected final ConstructorFunction<String, MapContainer> mapConstructor = new ConstructorFunction<String, MapContainer>() {
-        public MapContainer createNew(String mapName) {
-            final MapServiceContext mapServiceContext = getService().getMapServiceContext();
-            final Config config = nodeEngine.getConfig();
-            return new MapContainer(mapName, config, mapServiceContext);
-        }
-    };
+    protected final ConcurrentMap<String, MapContainer> mapContainers = new ConcurrentHashMap<String, MapContainer>();
+    protected final AtomicReference<Collection<Integer>> ownedPartitions = new AtomicReference<Collection<Integer>>();
+    protected final IndexProvider indexProvider = new DefaultIndexProvider();
+    protected final ContextMutexFactory contextMutexFactory = new ContextMutexFactory();
+
     /**
      * Per node global write behind queue item counter.
      * Creating here because we want to have a counter per node.
@@ -117,62 +138,91 @@ class MapServiceContextImpl implements MapServiceContext {
      * getting this into account.
      */
     protected final AtomicInteger writeBehindQueueItemCounter = new AtomicInteger(0);
+
+    protected final NodeEngine nodeEngine;
+    protected final InternalSerializationService serializationService;
+    protected final ConstructorFunction<String, MapContainer> mapConstructor;
+    protected final PartitionContainer[] partitionContainers;
+    protected final MapClearExpiredRecordsTask clearExpiredRecordsTask;
     protected final ExpirationManager expirationManager;
     protected final MapNearCacheManager mapNearCacheManager;
     protected final LocalMapStatsProvider localMapStatsProvider;
     protected final MergePolicyProvider mergePolicyProvider;
-    protected final MapQueryEngine mapQueryEngine;
+    protected final QueryEngine queryEngine;
     protected final QueryRunner mapQueryRunner;
     protected final PartitionScanRunner partitionScanRunner;
     protected final QueryOptimizer queryOptimizer;
-    protected final ContextMutexFactory contextMutexFactory = new ContextMutexFactory();
     protected final PartitioningStrategyFactory partitioningStrategyFactory;
-    protected MapEventPublisher mapEventPublisher;
-    protected MapService mapService;
-    protected EventService eventService;
-    protected MapOperationProviders operationProviders;
-    protected ResultProcessorRegistry resultProcessorRegistry;
+    protected final QueryCacheContext queryCacheContext;
+    protected final MapEventJournal eventJournal;
+    protected final MapEventPublisher mapEventPublisher;
+    protected final EventService eventService;
+    protected final MapOperationProviders operationProviders;
+    protected final ResultProcessorRegistry resultProcessorRegistry;
+    protected ILogger logger;
 
+    protected MapService mapService;
+
+    @SuppressWarnings("checkstyle:executablestatementcount")
     MapServiceContextImpl(NodeEngine nodeEngine) {
         this.nodeEngine = nodeEngine;
+        this.serializationService = ((InternalSerializationService) nodeEngine.getSerializationService());
+        this.mapConstructor = createMapConstructor();
+        this.queryCacheContext = new NodeQueryCacheContext(this);
         this.partitionContainers = createPartitionContainers();
-        this.mapContainers = new ConcurrentHashMap<String, MapContainer>();
-        this.ownedPartitions = new AtomicReference<Collection<Integer>>();
-        this.expirationManager = new ExpirationManager(partitionContainers, nodeEngine);
+        this.clearExpiredRecordsTask = new MapClearExpiredRecordsTask(partitionContainers, nodeEngine);
+        this.expirationManager = new ExpirationManager(clearExpiredRecordsTask, nodeEngine);
         this.mapNearCacheManager = createMapNearCacheManager();
         this.localMapStatsProvider = createLocalMapStatsProvider();
         this.mergePolicyProvider = new MergePolicyProvider(nodeEngine);
         this.mapEventPublisher = createMapEventPublisherSupport();
+        this.eventJournal = createEventJournal();
         this.queryOptimizer = newOptimizer(nodeEngine.getProperties());
-        this.resultProcessorRegistry = createResultProcessorRegistry(nodeEngine.getSerializationService());
+        this.resultProcessorRegistry = createResultProcessorRegistry(serializationService);
         this.partitionScanRunner = createPartitionScanRunner();
-        this.mapQueryEngine = createMapQueryEngine();
+        this.queryEngine = createMapQueryEngine();
         this.mapQueryRunner = createMapQueryRunner(nodeEngine, queryOptimizer, resultProcessorRegistry, partitionScanRunner);
         this.eventService = nodeEngine.getEventService();
         this.operationProviders = createOperationProviders();
         this.partitioningStrategyFactory = new PartitioningStrategyFactory(nodeEngine.getConfigClassLoader());
+        this.logger = nodeEngine.getLogger(getClass());
     }
 
+    ConstructorFunction<String, MapContainer> createMapConstructor() {
+        return new ConstructorFunction<String, MapContainer>() {
+            @Override
+            public MapContainer createNew(String mapName) {
+                MapServiceContext mapServiceContext = getService().getMapServiceContext();
+                return new MapContainer(mapName, nodeEngine.getConfig(), mapServiceContext);
+            }
+        };
+    }
+
+    // this method is overridden in another context
     MapNearCacheManager createMapNearCacheManager() {
         return new MapNearCacheManager(this);
     }
 
-    // this method is overridden in another context.
+    // this method is overridden in another context
     MapOperationProviders createOperationProviders() {
         return new MapOperationProviders(this);
     }
 
-    // this method is overridden in another context.
+    // this method is overridden in another context
     MapEventPublisherImpl createMapEventPublisherSupport() {
         return new MapEventPublisherImpl(this);
     }
 
-    private LocalMapStatsProvider createLocalMapStatsProvider() {
+    private MapEventJournal createEventJournal() {
+        return new RingbufferMapEventJournalImpl(getNodeEngine(), this);
+    }
+
+    protected LocalMapStatsProvider createLocalMapStatsProvider() {
         return new LocalMapStatsProvider(this);
     }
 
-    private MapQueryEngineImpl createMapQueryEngine() {
-        return new MapQueryEngineImpl(this);
+    private QueryEngineImpl createMapQueryEngine() {
+        return new QueryEngineImpl(this);
     }
 
     private PartitionScanRunner createPartitionScanRunner() {
@@ -185,8 +235,10 @@ class MapServiceContextImpl implements MapServiceContext {
         boolean parallelEvaluation = nodeEngine.getProperties().getBoolean(QUERY_PREDICATE_PARALLEL_EVALUATION);
         PartitionScanExecutor partitionScanExecutor;
         if (parallelEvaluation) {
+            int opTimeoutInMillis = nodeEngine.getProperties().getInteger(OPERATION_CALL_TIMEOUT_MILLIS);
             ManagedExecutorService queryExecutorService = nodeEngine.getExecutionService().getExecutor(QUERY_EXECUTOR);
-            partitionScanExecutor = new ParallelPartitionScanExecutor(partitionScanRunner, queryExecutorService);
+            partitionScanExecutor = new ParallelPartitionScanExecutor(partitionScanRunner, queryExecutorService,
+                    opTimeoutInMillis);
         } else {
             partitionScanExecutor = new CallerRunsPartitionScanExecutor(partitionScanRunner);
         }
@@ -206,15 +258,16 @@ class MapServiceContextImpl implements MapServiceContext {
 
     private AggregationResultProcessor createAggregationResultProcessor(SerializationService ss) {
         boolean parallelAccumulation = nodeEngine.getProperties().getBoolean(AGGREGATION_ACCUMULATION_PARALLEL_EVALUATION);
+        int opTimeoutInMillis = nodeEngine.getProperties().getInteger(OPERATION_CALL_TIMEOUT_MILLIS);
         AccumulationExecutor accumulationExecutor;
         if (parallelAccumulation) {
             ManagedExecutorService queryExecutorService = nodeEngine.getExecutionService().getExecutor(QUERY_EXECUTOR);
-            accumulationExecutor = new ParallelAccumulationExecutor(queryExecutorService, ss);
+            accumulationExecutor = new ParallelAccumulationExecutor(queryExecutorService, ss, opTimeoutInMillis);
         } else {
             accumulationExecutor = new CallerRunsAccumulationExecutor(ss);
         }
 
-        return new AggregationResultProcessor(accumulationExecutor);
+        return new AggregationResultProcessor(accumulationExecutor, serializationService);
     }
 
     private PartitionContainer[] createPartitionContainers() {
@@ -227,7 +280,6 @@ class MapServiceContextImpl implements MapServiceContext {
         return ConcurrencyUtil.getOrPutSynchronized(mapContainers, mapName, contextMutexFactory, mapConstructor);
     }
 
-
     @Override
     public Map<String, MapContainer> getMapContainers() {
         return mapContainers;
@@ -235,6 +287,8 @@ class MapServiceContextImpl implements MapServiceContext {
 
     @Override
     public PartitionContainer getPartitionContainer(int partitionId) {
+        assert partitionId != GENERIC_PARTITION_ID : "Cannot be called with GENERIC_PARTITION_ID";
+
         return partitionContainers[partitionId];
     }
 
@@ -242,33 +296,63 @@ class MapServiceContextImpl implements MapServiceContext {
     public void initPartitionsContainers() {
         final int partitionCount = nodeEngine.getPartitionService().getPartitionCount();
         for (int i = 0; i < partitionCount; i++) {
-            partitionContainers[i] = new PartitionContainer(getService(), i);
+            partitionContainers[i] = createPartitionContainer(getService(), i);
         }
     }
 
-    @Override
-    public void clearMapsHavingLesserBackupCountThan(int partitionId, int backupCount) {
-        PartitionContainer container = getPartitionContainer(partitionId);
-        if (container != null) {
-            Iterator<RecordStore> iter = container.getMaps().values().iterator();
-            while (iter.hasNext()) {
-                RecordStore recordStore = iter.next();
-                if (backupCount > recordStore.getMapContainer().getTotalBackupCount()) {
-                    recordStore.clearPartition(false);
-                    iter.remove();
-                }
+    protected PartitionContainer createPartitionContainer(MapService service, int partitionId) {
+        return new PartitionContainer(service, partitionId);
+    }
+
+    /**
+     * Removes all record stores from all partitions.
+     *
+     * Calls {@link #removeRecordStoresFromPartitionMatchingWith} internally and
+     *
+     * @param onShutdown           {@code true} if this method is called during map service shutdown,
+     *                             otherwise set {@code false}
+     * @param onRecordStoreDestroy {@code true} if this method is called during to destroy record store,
+     *                             otherwise set {@code false}
+     */
+    protected void removeAllRecordStoresOfAllMaps(boolean onShutdown, boolean onRecordStoreDestroy) {
+        for (PartitionContainer partitionContainer : partitionContainers) {
+            if (partitionContainer != null) {
+                removeRecordStoresFromPartitionMatchingWith(allRecordStores(),
+                        partitionContainer.getPartitionId(), onShutdown, onRecordStoreDestroy);
             }
         }
     }
 
-    @Override
-    public void clearPartitionData(int partitionId) {
-        final PartitionContainer container = partitionContainers[partitionId];
-        if (container != null) {
-            for (RecordStore mapPartition : container.getMaps().values()) {
-                mapPartition.clearPartition(false);
+    /**
+     * @return predicate that matches with all record stores of all maps
+     */
+    private static Predicate<RecordStore> allRecordStores() {
+        return new Predicate<RecordStore>() {
+            @Override
+            public boolean test(RecordStore recordStore) {
+                return true;
             }
-            container.getMaps().clear();
+        };
+    }
+
+    @Override
+    public void removeRecordStoresFromPartitionMatchingWith(Predicate<RecordStore> predicate,
+                                                            int partitionId,
+                                                            boolean onShutdown,
+                                                            boolean onRecordStoreDestroy) {
+
+        PartitionContainer container = partitionContainers[partitionId];
+        if (container == null) {
+            return;
+        }
+
+        Iterator<RecordStore> partitionIterator = container.getMaps().values().iterator();
+        while (partitionIterator.hasNext()) {
+            RecordStore partition = partitionIterator.next();
+            if (predicate.test(partition)) {
+                partition.clearPartition(onShutdown, onRecordStoreDestroy);
+                partitionIterator.remove();
+            }
         }
     }
 
@@ -280,16 +364,6 @@ class MapServiceContextImpl implements MapServiceContext {
     @Override
     public void setService(MapService mapService) {
         this.mapService = mapService;
-    }
-
-    @Override
-    public void clearPartitions(boolean onShutdown) {
-        final PartitionContainer[] containers = partitionContainers;
-        for (PartitionContainer container : containers) {
-            if (container != null) {
-                container.clear(onShutdown);
-            }
-        }
     }
 
     @Override
@@ -321,44 +395,60 @@ class MapServiceContextImpl implements MapServiceContext {
 
     @Override
     public void destroyMap(String mapName) {
+        // on LiteMembers we don't have a MapContainer, but we may have a Near Cache and listeners
+        mapNearCacheManager.destroyNearCache(mapName);
+        nodeEngine.getEventService().deregisterAllListeners(SERVICE_NAME, mapName);
+
         MapContainer mapContainer = mapContainers.get(mapName);
         if (mapContainer == null) {
             return;
         }
-        mapContainer.getMapStoreContext().stop();
-        mapNearCacheManager.destroyNearCache(mapName);
-        nodeEngine.getEventService().deregisterAllListeners(SERVICE_NAME, mapName);
-        localMapStatsProvider.destroyLocalMapStatsImpl(mapContainer.getName());
 
+        nodeEngine.getWanReplicationService().removeWanEventCounters(MapService.SERVICE_NAME, mapName);
+        mapContainer.getMapStoreContext().stop();
+        localMapStatsProvider.destroyLocalMapStatsImpl(mapContainer.getName());
         destroyPartitionsAndMapContainer(mapContainer);
     }
 
+    /**
+     * Destroys the map data on local partition threads and waits for
+     * {@value #DESTROY_TIMEOUT_SECONDS} seconds
+     * for each partition segment destruction to complete.
+     *
+     * @param mapContainer the map container to destroy
+     */
     private void destroyPartitionsAndMapContainer(MapContainer mapContainer) {
-        Semaphore semaphore = new Semaphore(0);
-        InternalOperationService operationService = (InternalOperationService) nodeEngine.getOperationService();
+        final List<LocalRetryableExecution> executions = new ArrayList<LocalRetryableExecution>();
+
         for (PartitionContainer container : partitionContainers) {
-            MapPartitionDestroyTask partitionDestroyTask = new MapPartitionDestroyTask(container, mapContainer, semaphore);
-            operationService.execute(partitionDestroyTask);
+            final MapPartitionDestroyOperation op = new MapPartitionDestroyOperation(container, mapContainer);
+            executions.add(InvocationUtil.executeLocallyWithRetry(nodeEngine, op));
         }
 
-        try {
-            semaphore.tryAcquire(partitionContainers.length, DESTROY_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        } catch (Throwable t) {
-            throw ExceptionUtil.rethrow(t);
+        for (LocalRetryableExecution execution : executions) {
+            try {
+                if (!execution.awaitCompletion(DESTROY_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                    logger.warning("Map partition was not destroyed in expected time, possible leak");
+                }
+            } catch (InterruptedException e) {
+                currentThread().interrupt();
+                nodeEngine.getLogger(getClass()).warning(e);
+            }
         }
     }
 
     @Override
     public void reset() {
-        clearPartitions(false);
+        removeAllRecordStoresOfAllMaps(false, false);
         mapNearCacheManager.reset();
     }
 
     @Override
     public void shutdown() {
-        clearPartitions(true);
+        removeAllRecordStoresOfAllMaps(true, false);
         mapNearCacheManager.shutdown();
         mapContainers.clear();
+        expirationManager.onShutdown();
     }
 
     @Override
@@ -386,14 +476,23 @@ class MapServiceContextImpl implements MapServiceContext {
         return partitions;
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * The method will set the owned partition set in a CAS loop because
+     * this method can be called concurrently.
+     */
     @Override
     public void reloadOwnedPartitions() {
-        IPartitionService partitionService = nodeEngine.getPartitionService();
-        Collection<Integer> partitions = partitionService.getMemberPartitions(nodeEngine.getThisAddress());
-        if (partitions == null) {
-            partitions = Collections.emptySet();
+        final IPartitionService partitionService = nodeEngine.getPartitionService();
+        for (; ; ) {
+            final Collection<Integer> expected = ownedPartitions.get();
+            final Collection<Integer> partitions = partitionService.getMemberPartitions(nodeEngine.getThisAddress());
+            final Set<Integer> newSet = Collections.unmodifiableSet(new LinkedHashSet<Integer>(partitions));
+            if (ownedPartitions.compareAndSet(expected, newSet)) {
+                return;
+            }
         }
-        ownedPartitions.set(Collections.unmodifiableSet(new LinkedHashSet<Integer>(partitions)));
     }
 
     @Override
@@ -417,13 +516,25 @@ class MapServiceContextImpl implements MapServiceContext {
     }
 
     @Override
+    public Object getMergePolicy(String name) {
+        MapContainer mapContainer = getMapContainer(name);
+        MergePolicyConfig mergePolicyConfig = mapContainer.getMapConfig().getMergePolicyConfig();
+        return mergePolicyProvider.getMergePolicy(mergePolicyConfig.getPolicy());
+    }
+
+    @Override
     public MapEventPublisher getMapEventPublisher() {
         return mapEventPublisher;
     }
 
     @Override
-    public MapQueryEngine getMapQueryEngine(String mapName) {
-        return mapQueryEngine;
+    public MapEventJournal getEventJournal() {
+        return eventJournal;
+    }
+
+    @Override
+    public QueryEngine getQueryEngine(String mapName) {
+        return queryEngine;
     }
 
     @Override
@@ -443,17 +554,17 @@ class MapServiceContextImpl implements MapServiceContext {
 
     @Override
     public Object toObject(Object data) {
-        return nodeEngine.toObject(data);
+        return serializationService.toObject(data);
     }
 
     @Override
     public Data toData(Object object, PartitioningStrategy partitionStrategy) {
-        return nodeEngine.getSerializationService().toData(object, partitionStrategy);
+        return serializationService.toData(object, partitionStrategy);
     }
 
     @Override
     public Data toData(Object object) {
-        return nodeEngine.toData(object);
+        return serializationService.toData(object, DataType.HEAP);
     }
 
     @Override
@@ -499,6 +610,11 @@ class MapServiceContextImpl implements MapServiceContext {
     }
 
     @Override
+    public MapClearExpiredRecordsTask getClearExpiredRecordsTask() {
+        return clearExpiredRecordsTask;
+    }
+
+    @Override
     public Object interceptRemove(String mapName, Object value) {
         MapContainer mapContainer = getMapContainer(mapName);
         List<MapInterceptor> interceptors = mapContainer.getInterceptorRegistry().getInterceptors();
@@ -521,8 +637,8 @@ class MapServiceContextImpl implements MapServiceContext {
         InterceptorRegistry interceptorRegistry = mapContainer.getInterceptorRegistry();
         List<MapInterceptor> interceptors = interceptorRegistry.getInterceptors();
         if (!interceptors.isEmpty()) {
+            value = toObject(value);
             for (MapInterceptor interceptor : interceptors) {
-                value = toObject(value);
                 interceptor.afterRemove(value);
             }
         }
@@ -533,7 +649,6 @@ class MapServiceContextImpl implements MapServiceContext {
         MapContainer mapContainer = getMapContainer(mapName);
         mapContainer.getInterceptorRegistry().register(id, interceptor);
     }
-
 
     @Override
     public String generateInterceptorId(String mapName, MapInterceptor interceptor) {
@@ -546,7 +661,7 @@ class MapServiceContextImpl implements MapServiceContext {
         mapContainer.getInterceptorRegistry().deregister(id);
     }
 
-    // todo interceptors should get a wrapped object which includes the serialized version
+    // TODO: interceptors should get a wrapped object which includes the serialized version
     @Override
     public Object interceptGet(String mapName, Object value) {
         MapContainer mapContainer = getMapContainer(mapName);
@@ -640,6 +755,11 @@ class MapServiceContextImpl implements MapServiceContext {
     }
 
     @Override
+    public IndexProvider getIndexProvider(MapConfig mapConfig) {
+        return indexProvider;
+    }
+
+    @Override
     public Extractors getExtractors(String mapName) {
         MapContainer mapContainer = getMapContainer(mapName);
         return mapContainer.getExtractors();
@@ -647,17 +767,20 @@ class MapServiceContextImpl implements MapServiceContext {
 
     @Override
     public void incrementOperationStats(long startTime, LocalMapStatsImpl localMapStats, String mapName, Operation operation) {
-        final long duration = System.currentTimeMillis() - startTime;
+        final long durationNanos = System.nanoTime() - startTime;
         if (operation instanceof BasePutOperation) {
-            localMapStats.incrementPuts(duration);
+            localMapStats.incrementPutLatencyNanos(durationNanos);
         } else if (operation instanceof BaseRemoveOperation) {
-            localMapStats.incrementRemoves(duration);
+            localMapStats.incrementRemoveLatencyNanos(durationNanos);
         } else if (operation instanceof GetOperation) {
-            localMapStats.incrementGets(duration);
+            localMapStats.incrementGetLatencyNanos(durationNanos);
         }
     }
 
+    @Override
     public RecordStore createRecordStore(MapContainer mapContainer, int partitionId, MapKeyLoader keyLoader) {
+        assert partitionId != GENERIC_PARTITION_ID : "Cannot be called with GENERIC_PARTITION_ID";
+
         ILogger logger = nodeEngine.getLogger(DefaultRecordStore.class);
         return new DefaultRecordStore(mapContainer, partitionId, keyLoader, logger);
     }
@@ -684,11 +807,7 @@ class MapServiceContextImpl implements MapServiceContext {
 
     @Override
     public void onClusterStateChange(ClusterState newState) {
-        if (newState == ClusterState.PASSIVE) {
-            expirationManager.stop();
-        } else {
-            expirationManager.start();
-        }
+        expirationManager.onClusterStateChange(newState);
     }
 
     @Override
@@ -706,4 +825,59 @@ class MapServiceContextImpl implements MapServiceContext {
         return mapNearCacheManager;
     }
 
+    @Override
+    public String addListenerAdapter(ListenerAdapter listenerAdaptor, EventFilter eventFilter, String mapName) {
+        EventRegistration registration = getNodeEngine().getEventService().
+                registerListener(MapService.SERVICE_NAME, mapName, eventFilter, listenerAdaptor);
+        return registration.getId();
+    }
+
+    @Override
+    public String addLocalListenerAdapter(ListenerAdapter adapter, String mapName) {
+        EventService eventService = getNodeEngine().getEventService();
+        EventRegistration registration = eventService.registerLocalListener(MapService.SERVICE_NAME, mapName, adapter);
+        return registration.getId();
+    }
+
+    @Override
+    public QueryCacheContext getQueryCacheContext() {
+        return queryCacheContext;
+    }
+
+    @Override
+    public IndexCopyBehavior getIndexCopyBehavior() {
+        return nodeEngine.getProperties().getEnum(INDEX_COPY_BEHAVIOR, IndexCopyBehavior.class);
+    }
+
+    @Override
+    public Collection<RecordStoreMutationObserver<Record>> createRecordStoreMutationObservers(String mapName, int partitionId) {
+        Collection<RecordStoreMutationObserver<Record>> observers = new LinkedList<RecordStoreMutationObserver<Record>>();
+        addEventJournalUpdaterObserver(observers, mapName, partitionId);
+        addMetadataInitializerObserver(observers, mapName, partitionId);
+
+        return observers;
+    }
+
+    protected void addMetadataInitializerObserver(Collection<RecordStoreMutationObserver<Record>> observers,
+                                                  String mapName, int partitionId) {
+        MapContainer mapContainer = getMapContainer(mapName);
+        MetadataPolicy policy = mapContainer.getMapConfig().getMetadataPolicy();
+        if (policy == MetadataPolicy.CREATE_ON_UPDATE) {
+            RecordStoreMutationObserver<Record> observer = new JsonMetadataRecordStoreMutationObserver(serializationService,
+                    JsonMetadataInitializer.INSTANCE);
+            observers.add(observer);
+        }
+    }
+
+    private void addEventJournalUpdaterObserver(Collection<RecordStoreMutationObserver<Record>> observers, String mapName, int
+            partitionId) {
+        RecordStoreMutationObserver<Record> observer = new EventJournalWriterRecordStoreMutationObserver(getEventJournal(),
+                getMapContainer(mapName), partitionId);
+        observers.add(observer);
+    }
+
+    @Override
+    public ValueComparator getValueComparatorOf(InMemoryFormat inMemoryFormat) {
+        return ValueComparatorUtil.getValueComparatorOf(inMemoryFormat);
+    }
 }

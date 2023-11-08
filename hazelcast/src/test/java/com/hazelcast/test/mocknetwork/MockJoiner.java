@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -12,82 +12,90 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
  */
 
 package com.hazelcast.test.mocknetwork;
 
 import com.hazelcast.instance.Node;
 import com.hazelcast.internal.cluster.impl.AbstractJoiner;
-import com.hazelcast.internal.cluster.impl.ClusterJoinManager;
 import com.hazelcast.internal.cluster.impl.SplitBrainJoinMessage;
+import com.hazelcast.internal.cluster.impl.SplitBrainJoinMessage.SplitBrainMergeCheckResult;
 import com.hazelcast.nio.Address;
 import com.hazelcast.util.Clock;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Set;
+import java.util.concurrent.CopyOnWriteArraySet;
 
 class MockJoiner extends AbstractJoiner {
 
     private static final long JOIN_ADDRESS_TIMEOUT_IN_MILLIS = 5000;
 
-
+    // blacklisted addresses
+    private final Set<Address> blacklist;
     private final TestNodeRegistry registry;
 
-    MockJoiner(Node node, TestNodeRegistry registry) {
+    MockJoiner(Node node, TestNodeRegistry registry, Set<Address> initiallyBlockedAddresses) {
         super(node);
         this.registry = registry;
+        this.blacklist = new CopyOnWriteArraySet<Address>(initiallyBlockedAddresses);
     }
 
     public void doJoin() {
-        synchronized (registry) {
-            registry.registerNode(node);
+        registry.registerNode(node);
 
-            ClusterJoinManager clusterJoinManager = node.clusterService.getClusterJoinManager();
-            final long joinStartTime = Clock.currentTimeMillis();
-            final long maxJoinMillis = getMaxJoinMillis();
+        final long joinStartTime = Clock.currentTimeMillis();
+        final long maxJoinMillis = getMaxJoinMillis();
 
-            Address previousJoinAddress = null;
-            long joinAddressTimeout = 0;
-            while (shouldRetry() && (Clock.currentTimeMillis() - joinStartTime < maxJoinMillis)) {
-                try {
-                    Address joinAddress = getJoinAddress();
-                    verifyInvariant(joinAddress != null, "joinAddress should not be null");
+        Address previousJoinAddress = null;
+        long joinAddressTimeout = 0;
+        while (Clock.currentTimeMillis() - joinStartTime < maxJoinMillis) {
+            synchronized (registry) {
+                Address joinAddress = getJoinAddress();
+                verifyInvariant(joinAddress != null, "joinAddress should not be null");
 
-                    if (!joinAddress.equals(previousJoinAddress)) {
-                        previousJoinAddress = joinAddress;
-                        joinAddressTimeout = Clock.currentTimeMillis() + JOIN_ADDRESS_TIMEOUT_IN_MILLIS;
-                    }
+                if (!joinAddress.equals(previousJoinAddress)) {
+                    previousJoinAddress = joinAddress;
+                    joinAddressTimeout = Clock.currentTimeMillis() + JOIN_ADDRESS_TIMEOUT_IN_MILLIS;
+                }
 
-                    if (node.getThisAddress().equals(joinAddress)) {
-                        logger.fine("This node is found as master, no need to join.");
-                        node.setAsMaster();
-                        break;
-                    }
-
-                    logger.fine("Sending join request to " + joinAddress);
-                    if (!clusterJoinManager.sendJoinRequest(joinAddress, true)) {
-                        logger.fine("Could not send join request to " + joinAddress);
-                        node.setMasterAddress(null);
-                    }
-
-                    if (Clock.currentTimeMillis() > joinAddressTimeout) {
-                        logger.warning("Resetting master address because join address timeout");
-                        previousJoinAddress = null;
-                        joinAddressTimeout = 0;
-                        node.setMasterAddress(null);
-                    }
-
-                    Thread.sleep(500);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
+                if (node.getThisAddress().equals(joinAddress)) {
+                    logger.fine("This node is found as master, no need to join.");
+                    clusterJoinManager.setThisMemberAsMaster();
                     break;
                 }
+
+                logger.fine("Sending join request to " + joinAddress);
+                if (!clusterJoinManager.sendJoinRequest(joinAddress, true)) {
+                    logger.fine("Could not send join request to " + joinAddress);
+                    clusterService.setMasterAddressToJoin(null);
+                }
+
+                if (Clock.currentTimeMillis() > joinAddressTimeout) {
+                    logger.warning("Resetting master address because join address timeout");
+                    previousJoinAddress = null;
+                    joinAddressTimeout = 0;
+                    clusterService.setMasterAddressToJoin(null);
+                }
+            }
+            if (!shouldRetry()) {
+                break;
+            }
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+                break;
             }
         }
     }
 
     private Address getJoinAddress() {
+        final Address targetAddress = getTargetAddress();
+        if (targetAddress != null) {
+            return targetAddress;
+        }
         Address joinAddress = node.getMasterAddress();
         logger.fine("Known master address is: " + joinAddress);
         if (joinAddress == null) {
@@ -131,8 +139,13 @@ class MockJoiner extends AbstractJoiner {
                 continue;
             }
 
-            if (!foundNode.joined()) {
+            if (!foundNode.getClusterService().isJoined()) {
                 logger.fine("Node for " + address + " is not joined yet.");
+                continue;
+            }
+
+            if (isBlacklisted(address)) {
+                logger.fine("Node for " + address + " is blacklisted and should not be joined.");
                 continue;
             }
 
@@ -146,10 +159,12 @@ class MockJoiner extends AbstractJoiner {
         Collection<Address> possibleAddresses = new ArrayList<Address>(registry.getJoinAddresses());
         possibleAddresses.remove(node.getThisAddress());
         possibleAddresses.removeAll(node.getClusterService().getMemberAddresses());
+        SplitBrainJoinMessage request = node.createSplitBrainJoinMessage();
         for (Address address : possibleAddresses) {
-            SplitBrainJoinMessage  response = sendSplitBrainJoinMessage(address);
-            if (shouldMerge(response)) {
-                startClusterMerge(address);
+            SplitBrainMergeCheckResult result = sendSplitBrainJoinMessageAndCheckResponse(address, request);
+            if (result == SplitBrainMergeCheckResult.LOCAL_NODE_SHOULD_MERGE) {
+                startClusterMerge(address, request.getMemberListVersion());
+                return;
             }
         }
     }
@@ -166,16 +181,18 @@ class MockJoiner extends AbstractJoiner {
 
     @Override
     public void blacklist(Address address, boolean permanent) {
+        // blacklist is always temporary in MockJoiner
+        blacklist.add(address);
     }
 
     @Override
     public boolean unblacklist(Address address) {
-        return false;
+        return blacklist.remove(address);
     }
 
     @Override
     public boolean isBlacklisted(Address address) {
-        return false;
+        return blacklist.contains(address);
     }
 
     private static void verifyInvariant(boolean check, String msg) {

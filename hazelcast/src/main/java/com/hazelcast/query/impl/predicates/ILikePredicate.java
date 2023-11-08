@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.hazelcast.query.impl.predicates;
 
-import com.hazelcast.nio.serialization.impl.BinaryInterface;
+import com.hazelcast.nio.serialization.BinaryInterface;
 
 import java.util.regex.Pattern;
 
@@ -40,7 +40,7 @@ public class ILikePredicate extends LikePredicate {
 
     @Override
     protected int getFlags() {
-        return Pattern.CASE_INSENSITIVE;
+        return super.getFlags() | Pattern.CASE_INSENSITIVE;
     }
 
     @Override

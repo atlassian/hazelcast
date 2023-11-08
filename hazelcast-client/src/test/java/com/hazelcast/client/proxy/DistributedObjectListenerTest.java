@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,13 @@
 
 package com.hazelcast.client.proxy;
 
+import com.hazelcast.client.config.ClientConfig;
 import com.hazelcast.client.test.TestHazelcastFactory;
 import com.hazelcast.core.DistributedObject;
 import com.hazelcast.core.DistributedObjectEvent;
 import com.hazelcast.core.DistributedObjectListener;
 import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.core.IMap;
 import com.hazelcast.core.ITopic;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
@@ -34,7 +36,9 @@ import org.junit.runner.RunWith;
 
 import java.util.Collection;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Future;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
@@ -68,6 +72,7 @@ public class DistributedObjectListenerTest extends HazelcastTestSupport {
         final String name = randomString();
         final ITopic<Object> topic = instance.getTopic(name);
         assertOpenEventually(createdLatch, 10);
+        assertEquals(1, client.getDistributedObjects().size());
         topic.destroy();
         assertOpenEventually(destroyedLatch, 10);
         assertTrueAllTheTime(new AssertTask() {
@@ -77,6 +82,112 @@ public class DistributedObjectListenerTest extends HazelcastTestSupport {
                 assertTrue(distributedObjects.isEmpty());
             }
         }, 5);
+    }
+
+
+    @Test
+    public void testGetDistributedObjectsAfterRemove_FromNode() {
+        HazelcastInstance server = hazelcastFactory.newHazelcastInstance();
+        IMap firstMap = server.getMap("firstMap");
+        server.getMap("secondMap");
+
+        HazelcastInstance client = hazelcastFactory.newHazelcastClient();
+        assertEquals(2, client.getDistributedObjects().size());
+
+        firstMap.destroy();
+
+        assertEquals(1, client.getDistributedObjects().size());
+
+    }
+
+    @Test
+    public void testGetDistributedObjectsAfterRemove_fromClient() {
+        hazelcastFactory.newHazelcastInstance();
+        HazelcastInstance client1 = hazelcastFactory.newHazelcastClient();
+        IMap<Object, Object> firstMap = client1.getMap("firstMap");
+        client1.getMap("secondMap");
+
+        HazelcastInstance client2 = hazelcastFactory.newHazelcastClient();
+        assertEquals(2, client1.getDistributedObjects().size());
+        assertEquals(2, client2.getDistributedObjects().size());
+
+        firstMap.destroy();
+
+        assertEquals(1, client1.getDistributedObjects().size());
+        assertEquals(1, client2.getDistributedObjects().size());
+    }
+
+    @Test
+    public void getDistributedObjects_ShouldNotRecreateProxy_AfterDestroy() {
+        final HazelcastInstance member = hazelcastFactory.newHazelcastInstance();
+        HazelcastInstance client = hazelcastFactory.newHazelcastClient();
+        Future destroyProxyFuture = spawn(new Runnable() {
+            @Override
+            public void run() {
+                for (int i = 0; i < 1000; i++) {
+                    IMap<Object, Object> map = member.getMap("map-" + i);
+                    map.destroy();
+                }
+            }
+        });
+        while (!destroyProxyFuture.isDone()) {
+            client.getDistributedObjects();
+        }
+        assertEquals(0, client.getDistributedObjects().size());
+    }
+
+    @Test
+    public void distributedObjectsCreatedBack_whenClusterRestart_withSingleNode() {
+        final HazelcastInstance instance = hazelcastFactory.newHazelcastInstance();
+
+        ClientConfig clientConfig = new ClientConfig();
+        clientConfig.getNetworkConfig().setConnectionAttemptLimit(100);
+        HazelcastInstance client = hazelcastFactory.newHazelcastClient(clientConfig);
+
+        client.getMap("test");
+
+        Collection<DistributedObject> distributedObjects = instance.getDistributedObjects();
+        assertEquals(1, distributedObjects.size());
+
+        instance.shutdown();
+
+        final HazelcastInstance instance2 = hazelcastFactory.newHazelcastInstance();
+
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run() throws Exception {
+                Collection<DistributedObject> distributedObjects = instance2.getDistributedObjects();
+                assertEquals(1, distributedObjects.size());
+            }
+        });
+    }
+
+    @Test
+    public void distributedObjectsCreatedBack_whenClusterRestart_withMultipleNode() {
+        final HazelcastInstance instance1 = hazelcastFactory.newHazelcastInstance();
+        final HazelcastInstance instance2 = hazelcastFactory.newHazelcastInstance();
+
+        ClientConfig clientConfig = new ClientConfig();
+        clientConfig.getNetworkConfig().setConnectionAttemptLimit(100);
+        HazelcastInstance client = hazelcastFactory.newHazelcastClient(clientConfig);
+
+        client.getMap("test");
+
+        instance1.shutdown();
+        instance2.shutdown();
+
+        final HazelcastInstance newClusterInstance1 = hazelcastFactory.newHazelcastInstance();
+        final HazelcastInstance newClusterInstance2 = hazelcastFactory.newHazelcastInstance();
+
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run() throws Exception {
+                Collection<DistributedObject> distributedObjects1 = newClusterInstance1.getDistributedObjects();
+                assertEquals(1, distributedObjects1.size());
+                Collection<DistributedObject> distributedObjects2 = newClusterInstance2.getDistributedObjects();
+                assertEquals(1, distributedObjects2.size());
+            }
+        });
     }
 
 }

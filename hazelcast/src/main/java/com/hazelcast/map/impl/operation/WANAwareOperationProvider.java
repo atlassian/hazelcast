@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,18 @@
 
 package com.hazelcast.map.impl.operation;
 
+import com.hazelcast.core.EntryView;
 import com.hazelcast.map.EntryProcessor;
 import com.hazelcast.map.impl.MapEntries;
 import com.hazelcast.map.impl.MapServiceContext;
+import com.hazelcast.map.impl.query.Query;
+import com.hazelcast.map.merge.MapMergePolicy;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.query.Predicate;
 import com.hazelcast.spi.OperationFactory;
+import com.hazelcast.spi.merge.SplitBrainMergePolicy;
+import com.hazelcast.spi.merge.SplitBrainMergeTypes.MapMergeTypes;
+import com.hazelcast.wan.WANReplicationQueueFullException;
 
 import java.util.List;
 import java.util.Set;
@@ -47,9 +53,9 @@ public class WANAwareOperationProvider extends MapOperationProviderDelegator {
     }
 
     @Override
-    public MapOperation createPutOperation(String name, Data key, Data value, long ttl) {
+    public MapOperation createPutOperation(String name, Data key, Data value, long ttl, long maxIdle) {
         checkWanReplicationQueues(name);
-        return getDelegate().createPutOperation(name, key, value, ttl);
+        return getDelegate().createPutOperation(name, key, value, ttl, maxIdle);
     }
 
     @Override
@@ -59,27 +65,33 @@ public class WANAwareOperationProvider extends MapOperationProviderDelegator {
     }
 
     @Override
-    public MapOperation createSetOperation(String name, Data dataKey, Data value, long ttl) {
+    public MapOperation createSetOperation(String name, Data dataKey, Data value, long ttl, long maxIdle) {
         checkWanReplicationQueues(name);
-        return getDelegate().createSetOperation(name, dataKey, value, ttl);
+        return getDelegate().createSetOperation(name, dataKey, value, ttl, maxIdle);
     }
 
     @Override
-    public MapOperation createPutIfAbsentOperation(String name, Data key, Data value, long ttl) {
+    public MapOperation createPutIfAbsentOperation(String name, Data key, Data value, long ttl, long maxIdle) {
         checkWanReplicationQueues(name);
-        return getDelegate().createPutIfAbsentOperation(name, key, value, ttl);
+        return getDelegate().createPutIfAbsentOperation(name, key, value, ttl, maxIdle);
     }
 
     @Override
-    public MapOperation createPutTransientOperation(String name, Data key, Data value, long ttl) {
+    public MapOperation createPutTransientOperation(String name, Data key, Data value, long ttl, long maxIdle) {
         checkWanReplicationQueues(name);
-        return getDelegate().createPutTransientOperation(name, key, value, ttl);
+        return getDelegate().createPutTransientOperation(name, key, value, ttl, maxIdle);
     }
 
     @Override
     public MapOperation createRemoveOperation(String name, Data key, boolean disableWanReplicationEvent) {
         checkWanReplicationQueues(name);
         return getDelegate().createRemoveOperation(name, key, disableWanReplicationEvent);
+    }
+
+    @Override
+    public MapOperation createSetTtlOperation(String name, Data key, long ttl) {
+        checkWanReplicationQueues(name);
+        return getDelegate().createSetTtlOperation(name, key, ttl);
     }
 
     @Override
@@ -107,15 +119,27 @@ public class WANAwareOperationProvider extends MapOperationProviderDelegator {
     }
 
     @Override
-    public MapOperation createDeleteOperation(String name, Data key) {
+    public MapOperation createDeleteOperation(String name, Data key, boolean disableWanReplicationEvent) {
         checkWanReplicationQueues(name);
-        return getDelegate().createDeleteOperation(name, key);
+        return getDelegate().createDeleteOperation(name, key, disableWanReplicationEvent);
     }
 
     @Override
     public MapOperation createEntryOperation(String name, Data dataKey, EntryProcessor entryProcessor) {
         checkWanReplicationQueues(name);
         return getDelegate().createEntryOperation(name, dataKey, entryProcessor);
+    }
+
+    @Override
+    public MapOperation createQueryOperation(Query query) {
+        checkWanReplicationQueues(query.getMapName());
+        return getDelegate().createQueryOperation(query);
+    }
+
+    @Override
+    public MapOperation createQueryPartitionOperation(Query query) {
+        checkWanReplicationQueues(query.getMapName());
+        return getDelegate().createQueryPartitionOperation(query);
     }
 
     @Override
@@ -149,6 +173,21 @@ public class WANAwareOperationProvider extends MapOperationProviderDelegator {
     }
 
     @Override
+    public MapOperation createLegacyMergeOperation(String name, EntryView<Data, Data> mergingEntry, MapMergePolicy policy,
+                                                   boolean disableWanReplicationEvent) {
+        checkWanReplicationQueues(name);
+        return getDelegate().createLegacyMergeOperation(name, mergingEntry, policy, disableWanReplicationEvent);
+    }
+
+    @Override
+    public MapOperation createMergeOperation(String name, MapMergeTypes mergingValue,
+                                             SplitBrainMergePolicy<Data, MapMergeTypes> mergePolicy,
+                                             boolean disableWanReplicationEvent) {
+        checkWanReplicationQueues(name);
+        return getDelegate().createMergeOperation(name, mergingValue, mergePolicy, disableWanReplicationEvent);
+    }
+
+    @Override
     public OperationFactory createPartitionWideEntryOperationFactory(String name, EntryProcessor entryProcessor) {
         checkWanReplicationQueues(name);
         return getDelegate().createPartitionWideEntryOperationFactory(name, entryProcessor);
@@ -159,8 +198,7 @@ public class WANAwareOperationProvider extends MapOperationProviderDelegator {
                                                                                   EntryProcessor entryProcessor,
                                                                                   Predicate predicate) {
         checkWanReplicationQueues(name);
-        return getDelegate()
-                .createPartitionWideEntryWithPredicateOperationFactory(name, entryProcessor, predicate);
+        return getDelegate().createPartitionWideEntryWithPredicateOperationFactory(name, entryProcessor, predicate);
     }
 
     @Override
@@ -169,6 +207,14 @@ public class WANAwareOperationProvider extends MapOperationProviderDelegator {
         return getDelegate().createMultipleEntryOperationFactory(name, keys, entryProcessor);
     }
 
+    /**
+     * Checks if WAN replication is enabled for the provided map {@code name}
+     * and if the WAN queues have reached their capacity.
+     *
+     * @param name the map name
+     * @throws WANReplicationQueueFullException if WAN replication is enabled and queue
+     *                                          capacity has been reached
+     */
     private void checkWanReplicationQueues(String name) {
         mapServiceContext.getMapContainer(name).checkWanReplicationQueues();
     }

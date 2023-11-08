@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,12 +39,14 @@ import static com.hazelcast.util.CollectionUtil.addToValueList;
 import static com.hazelcast.util.CollectionUtil.getItemAtPositionOrNull;
 import static com.hazelcast.util.CollectionUtil.isEmpty;
 import static com.hazelcast.util.CollectionUtil.isNotEmpty;
+import static com.hazelcast.util.CollectionUtil.nullToEmpty;
 import static com.hazelcast.util.CollectionUtil.objectToDataCollection;
 import static com.hazelcast.util.CollectionUtil.toIntArray;
 import static com.hazelcast.util.CollectionUtil.toIntegerList;
 import static com.hazelcast.util.CollectionUtil.toLongArray;
 import static java.util.Arrays.asList;
 import static java.util.Collections.EMPTY_LIST;
+import static java.util.Collections.emptyList;
 import static java.util.Collections.singletonList;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -90,7 +92,7 @@ public class CollectionUtilTest extends HazelcastTestSupport {
 
         assertEquals(1, map.size());
         assertEquals(2, list.size());
-        assertTrue(list.contains(42));
+        assertContains(list, 42);
     }
 
     @Test
@@ -103,7 +105,7 @@ public class CollectionUtilTest extends HazelcastTestSupport {
 
         List<Integer> list = map.get("nonExistingKey");
         assertEquals(1, list.size());
-        assertTrue(list.contains(42));
+        assertContains(list, 42);
     }
 
     @Test
@@ -238,19 +240,30 @@ public class CollectionUtilTest extends HazelcastTestSupport {
     }
 
     @Test(expected = NullPointerException.class)
-    public void testToIntegerList_whenNull(){
+    public void testToIntegerList_whenNull() {
         toIntegerList(null);
     }
 
     @Test
-    public void testToIntegerList_whenEmpty(){
+    public void testToIntegerList_whenEmpty() {
         List<Integer> result = toIntegerList(new int[0]);
         assertEquals(0, result.size());
     }
 
     @Test
-    public void testToIntegerList_whenNotEmpty(){
-        List<Integer> result = toIntegerList(new int[]{1,2,3,4});
-        assertEquals(asList(1,2,3,4), result);
+    public void testToIntegerList_whenNotEmpty() {
+        List<Integer> result = toIntegerList(new int[]{1, 2, 3, 4});
+        assertEquals(asList(1, 2, 3, 4), result);
+    }
+
+    @Test
+    public void testNullToEmpty_whenNull() {
+        assertEquals(emptyList(), nullToEmpty(null));
+    }
+
+    @Test
+    public void testNullToEmpty_whenNotNull() {
+        List<Integer> result = asList(1, 2, 3, 4, 5);
+        assertEquals(result, nullToEmpty(result));
     }
 }

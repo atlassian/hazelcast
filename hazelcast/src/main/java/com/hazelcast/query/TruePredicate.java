@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,8 @@ package com.hazelcast.query;
 
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.BinaryInterface;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
-import com.hazelcast.nio.serialization.impl.BinaryInterface;
 import com.hazelcast.query.impl.predicates.PredicateDataSerializerHook;
 
 import java.io.IOException;
@@ -27,14 +27,24 @@ import java.util.Map;
 
 /**
  * A {@link com.hazelcast.query.Predicate} which always returns true.
+ *
+ * @param <K> map key type
+ * @param <V> map value type
  */
 @BinaryInterface
-public class TruePredicate implements IdentifiedDataSerializable, Predicate {
+public class TruePredicate<K, V> implements IdentifiedDataSerializable, Predicate<K, V> {
 
     /**
      * An instance of the TruePredicate.
      */
     public static final TruePredicate INSTANCE = new TruePredicate();
+
+    private static final long serialVersionUID = 1L;
+
+    @SuppressWarnings("unchecked")
+    public static <K, V> TruePredicate<K, V> truePredicate() {
+        return INSTANCE;
+    }
 
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
@@ -63,4 +73,15 @@ public class TruePredicate implements IdentifiedDataSerializable, Predicate {
     public int getId() {
         return PredicateDataSerializerHook.TRUE_PREDICATE;
     }
+
+    @Override
+    public boolean equals(Object o) {
+        return o instanceof TruePredicate;
+    }
+
+    @Override
+    public int hashCode() {
+        return getClass().hashCode();
+    }
+
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.hazelcast.internal.partition.impl;
 
 import com.hazelcast.internal.partition.MigrationInfo;
 
+import java.util.Collection;
 import java.util.EventListener;
 
 /**
@@ -50,6 +51,14 @@ public abstract class InternalMigrationListener implements EventListener {
     }
 
     public void onMigrationRollback(MigrationParticipant participant, MigrationInfo migrationInfo) {
+
+    }
+
+    public void onPromotionStart(MigrationParticipant participant, Collection<MigrationInfo> migrationInfos) {
+
+    }
+
+    public void onPromotionComplete(MigrationParticipant participant, Collection<MigrationInfo> migrationInfos, boolean success) {
 
     }
 

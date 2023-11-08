@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,21 +20,25 @@ import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.SemaphoreAcquireCodec;
 import com.hazelcast.client.impl.protocol.codec.SemaphoreAvailablePermitsCodec;
 import com.hazelcast.client.impl.protocol.codec.SemaphoreDrainPermitsCodec;
+import com.hazelcast.client.impl.protocol.codec.SemaphoreIncreasePermitsCodec;
 import com.hazelcast.client.impl.protocol.codec.SemaphoreInitCodec;
 import com.hazelcast.client.impl.protocol.codec.SemaphoreReducePermitsCodec;
 import com.hazelcast.client.impl.protocol.codec.SemaphoreReleaseCodec;
 import com.hazelcast.client.impl.protocol.codec.SemaphoreTryAcquireCodec;
+import com.hazelcast.client.spi.ClientContext;
 import com.hazelcast.core.ISemaphore;
 
 import java.util.concurrent.TimeUnit;
+
+import static java.lang.Thread.currentThread;
 
 /**
  * Proxy implementation of {@link ISemaphore}.
  */
 public class ClientSemaphoreProxy extends PartitionSpecificClientProxy implements ISemaphore {
 
-    public ClientSemaphoreProxy(String serviceName, String objectId) {
-        super(serviceName, objectId);
+    public ClientSemaphoreProxy(String serviceName, String objectId, ClientContext context) {
+        super(serviceName, objectId, context);
     }
 
     @Override
@@ -86,6 +90,13 @@ public class ClientSemaphoreProxy extends PartitionSpecificClientProxy implement
     }
 
     @Override
+    public void increasePermits(int increase) {
+        checkNegative(increase);
+        ClientMessage request = SemaphoreIncreasePermitsCodec.encodeRequest(name, increase);
+        invokeOnPartition(request);
+    }
+
+    @Override
     public void release() {
         ClientMessage request = SemaphoreReleaseCodec.encodeRequest(name, 1);
         invokeOnPartition(request);
@@ -112,6 +123,7 @@ public class ClientSemaphoreProxy extends PartitionSpecificClientProxy implement
         try {
             return tryAcquire(permits, 0, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
+            currentThread().interrupt();
             return false;
         }
     }

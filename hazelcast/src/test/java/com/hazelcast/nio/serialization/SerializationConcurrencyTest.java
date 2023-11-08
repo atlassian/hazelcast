@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,29 +34,30 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/**
- * @author mdogan 1/4/13
- */
 @RunWith(HazelcastSerialClassRunner.class)
 @Category(QuickTest.class)
 public class SerializationConcurrencyTest {
 
-    static final short FACTORY_ID = 1;
+    public static final short FACTORY_ID = 1;
 
     @Test
     public void test() throws IOException, InterruptedException {
-        final PortableFactory portableFactory = new PortableFactory() {
+        PortableFactory portableFactory = new PortableFactory() {
+            @Override
             public Portable create(int classId) {
                 switch (classId) {
                     case 1:
                         return new PortablePerson();
                     case 2:
                         return new PortableAddress();
+                    default:
+                        throw new IllegalArgumentException();
                 }
-                throw new IllegalArgumentException();
             }
         };
-        final SerializationService ss = new DefaultSerializationServiceBuilder().addPortableFactory(FACTORY_ID, portableFactory).build();
+        final SerializationService ss = new DefaultSerializationServiceBuilder()
+                .addPortableFactory(FACTORY_ID, portableFactory)
+                .build();
 
         final int k = 10;
         final AtomicBoolean error = new AtomicBoolean(false);
@@ -89,7 +90,8 @@ public class SerializationConcurrencyTest {
                             Data dataPortableAddress = ss.toData(portableAddress);
                             Assert.assertEquals(portableAddress, ss.toObject(dataPortableAddress));
 
-                            PortablePerson portablePerson = new PortablePerson(63 + rnd(), 167L + rnd(), "ahmet", portableAddress);
+                            PortablePerson portablePerson = new PortablePerson(
+                                    63 + rnd(), 167L + rnd(), "ahmet", portableAddress);
                             Data dataPortablePerson = ss.toData(portablePerson);
                             Assert.assertEquals(portablePerson, ss.toObject(dataPortablePerson));
                         }
@@ -114,7 +116,7 @@ public class SerializationConcurrencyTest {
         }
     }
 
-    static class Address implements DataSerializable {
+    public static class Address implements DataSerializable {
 
         private String street;
 
@@ -128,11 +130,13 @@ public class SerializationConcurrencyTest {
             this.no = no;
         }
 
+        @Override
         public void writeData(ObjectDataOutput out) throws IOException {
             out.writeUTF(street);
             out.writeInt(no);
         }
 
+        @Override
         public void readData(ObjectDataInput in) throws IOException {
             street = in.readUTF();
             no = in.readInt();
@@ -140,13 +144,21 @@ public class SerializationConcurrencyTest {
 
         @Override
         public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
 
             Address address = (Address) o;
 
-            if (no != address.no) return false;
-            if (street != null ? !street.equals(address.street) : address.street != null) return false;
+            if (no != address.no) {
+                return false;
+            }
+            if (street != null ? !street.equals(address.street) : address.street != null) {
+                return false;
+            }
 
             return true;
         }
@@ -159,7 +171,7 @@ public class SerializationConcurrencyTest {
         }
     }
 
-    static class Person implements DataSerializable {
+    public static class Person implements DataSerializable {
 
         private int age;
 
@@ -182,6 +194,7 @@ public class SerializationConcurrencyTest {
             this.address = address;
         }
 
+        @Override
         public void writeData(ObjectDataOutput out) throws IOException {
             out.writeUTF(name);
             out.writeObject(address);
@@ -190,6 +203,7 @@ public class SerializationConcurrencyTest {
             out.writeDouble(weight);
         }
 
+        @Override
         public void readData(ObjectDataInput in) throws IOException {
             name = in.readUTF();
             address = in.readObject();
@@ -200,16 +214,30 @@ public class SerializationConcurrencyTest {
 
         @Override
         public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
 
             Person person = (Person) o;
 
-            if (age != person.age) return false;
-            if (height != person.height) return false;
-            if (Double.compare(person.weight, weight) != 0) return false;
-            if (address != null ? !address.equals(person.address) : person.address != null) return false;
-            if (name != null ? !name.equals(person.name) : person.name != null) return false;
+            if (age != person.age) {
+                return false;
+            }
+            if (height != person.height) {
+                return false;
+            }
+            if (Double.compare(person.weight, weight) != 0) {
+                return false;
+            }
+            if (address != null ? !address.equals(person.address) : person.address != null) {
+                return false;
+            }
+            if (name != null ? !name.equals(person.name) : person.name != null) {
+                return false;
+            }
 
             return true;
         }
@@ -228,7 +256,7 @@ public class SerializationConcurrencyTest {
         }
     }
 
-    static class PortableAddress implements Portable {
+    public static class PortableAddress implements Portable {
 
         private String street;
 
@@ -242,15 +270,18 @@ public class SerializationConcurrencyTest {
             this.no = no;
         }
 
+        @Override
         public int getClassId() {
             return 2;
         }
 
+        @Override
         public void writePortable(PortableWriter writer) throws IOException {
             writer.writeInt("no", no);
             writer.writeUTF("street", street);
         }
 
+        @Override
         public void readPortable(PortableReader reader) throws IOException {
             street = reader.readUTF("street");
             no = reader.readInt("no");
@@ -258,14 +289,20 @@ public class SerializationConcurrencyTest {
 
         @Override
         public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
 
             PortableAddress that = (PortableAddress) o;
-
-            if (no != that.no) return false;
-            if (street != null ? !street.equals(that.street) : that.street != null) return false;
-
+            if (no != that.no) {
+                return false;
+            }
+            if (street != null ? !street.equals(that.street) : that.street != null) {
+                return false;
+            }
             return true;
         }
 
@@ -276,12 +313,13 @@ public class SerializationConcurrencyTest {
             return result;
         }
 
+        @Override
         public int getFactoryId() {
             return FACTORY_ID;
         }
     }
 
-    static class PortablePerson implements Portable {
+    public static class PortablePerson implements Portable {
 
         private int age;
 
@@ -301,10 +339,12 @@ public class SerializationConcurrencyTest {
             this.address = address;
         }
 
+        @Override
         public int getClassId() {
             return 1;
         }
 
+        @Override
         public void writePortable(PortableWriter writer) throws IOException {
             writer.writeLong("height", height);
             writer.writeInt("age", age);
@@ -312,6 +352,7 @@ public class SerializationConcurrencyTest {
             writer.writePortable("address", address);
         }
 
+        @Override
         public void readPortable(PortableReader reader) throws IOException {
             name = reader.readUTF("name");
             address = reader.readPortable("address");
@@ -321,15 +362,27 @@ public class SerializationConcurrencyTest {
 
         @Override
         public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
 
             PortablePerson that = (PortablePerson) o;
 
-            if (age != that.age) return false;
-            if (height != that.height) return false;
-            if (address != null ? !address.equals(that.address) : that.address != null) return false;
-            if (name != null ? !name.equals(that.name) : that.name != null) return false;
+            if (age != that.age) {
+                return false;
+            }
+            if (height != that.height) {
+                return false;
+            }
+            if (address != null ? !address.equals(that.address) : that.address != null) {
+                return false;
+            }
+            if (name != null ? !name.equals(that.name) : that.name != null) {
+                return false;
+            }
 
             return true;
         }
@@ -343,6 +396,7 @@ public class SerializationConcurrencyTest {
             return result;
         }
 
+        @Override
         public int getFactoryId() {
             return FACTORY_ID;
         }

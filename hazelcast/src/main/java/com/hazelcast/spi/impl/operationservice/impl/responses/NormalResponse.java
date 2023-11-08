@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import com.hazelcast.nio.serialization.Data;
 
 import java.io.IOException;
 
+import static com.hazelcast.nio.Bits.INT_SIZE_IN_BYTES;
 import static com.hazelcast.spi.impl.SpiDataSerializerHook.NORMAL_RESPONSE;
 
 /**
@@ -39,6 +40,11 @@ import static com.hazelcast.spi.impl.SpiDataSerializerHook.NORMAL_RESPONSE;
  * @author mdogan 4/10/13
  */
 public class NormalResponse extends Response {
+    public static final int OFFSET_BACKUP_ACKS = RESPONSE_SIZE_IN_BYTES;
+    public static final int OFFSET_IS_DATA = OFFSET_BACKUP_ACKS + 1;
+    public static final int OFFSET_NOT_DATA = OFFSET_IS_DATA + 1;
+    public static final int OFFSET_DATA_LENGTH = OFFSET_IS_DATA + 1;
+    public static final int OFFSET_DATA_PAYLOAD = OFFSET_DATA_LENGTH + INT_SIZE_IN_BYTES;
 
     private Object value;
 
@@ -80,6 +86,7 @@ public class NormalResponse extends Response {
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
         super.writeData(out);
+
         // acks fit in a byte.
         out.writeByte(backupAcks);
 

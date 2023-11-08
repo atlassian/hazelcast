@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
 package com.hazelcast.map.impl.operation;
 
 import com.hazelcast.map.impl.MapDataSerializerHook;
-import com.hazelcast.map.impl.recordstore.Storage;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
@@ -27,13 +26,17 @@ import com.hazelcast.spi.partition.IPartitionService;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.List;
 
 /**
- * Triggers map store load of all given keys.
+ * Triggers loading values for the given keys from the defined
+ * {@link com.hazelcast.core.MapLoader}.
+ * The values are loaded asynchronously and the loaded key-value pairs are sent to
+ * the partition threads to update the record stores.
+ * <p>
+ * This operation is executed on the partition thread and loads values for keys
+ * provided by the {@link com.hazelcast.map.impl.MapKeyLoader.Role#SENDER}.
  */
 public class LoadAllOperation extends MapOperation implements PartitionAwareOperation, MutatingOperation {
 
@@ -54,28 +57,22 @@ public class LoadAllOperation extends MapOperation implements PartitionAwareOper
     @Override
     public void run() throws Exception {
         keys = selectThisPartitionsKeys();
-
-        if (!replaceExistingValues) {
-            removeExistingKeys(keys);
-        }
-
-        recordStore.loadAllFromStore(keys);
+        recordStore.loadAllFromStore(keys, replaceExistingValues);
     }
 
-    private void removeExistingKeys(Collection<Data> keys) {
-        if (keys == null || keys.isEmpty()) {
-            return;
-        }
-        Storage storage = recordStore.getStorage();
-        Iterator<Data> iterator = keys.iterator();
-        while (iterator.hasNext()) {
-            Data key = iterator.next();
-            if (storage.containsKey(key)) {
-                iterator.remove();
-            }
-        }
+    @Override
+    public void afterRun() throws Exception {
+        super.afterRun();
+
+        invalidateNearCache(keys);
     }
 
+    /**
+     * Filters the {@link #keys} list for keys matching the partition on
+     * which this operation is executed.
+     *
+     * @return the filtered key list
+     */
     private List<Data> selectThisPartitionsKeys() {
         final IPartitionService partitionService = mapServiceContext.getNodeEngine().getPartitionService();
         final int partitionId = getPartitionId();

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,14 +27,16 @@ import static java.util.Collections.unmodifiableSet;
 
 /**
  * Container for configured Hazelcast properties ({@see HazelcastProperty}).
- * <p/>
+ * <p>
  * A {@link HazelcastProperty} can be set as:
- * <p><ul>
- * <li>an environmental variable using {@link System#setProperty(String, String)}</li>
+ * <ul>
+ * <li>a system property using {@link System#setProperty(String, String)}</li>
  * <li>the programmatic configuration using {@link Config#setProperty(String, String)}</li>
- * <li>the XML configuration
- * {@see http://docs.hazelcast.org/docs/latest-dev/manual/html-single/hazelcast-documentation.html#system-properties}</li>
- * </ul></p>
+ * <li>the XML configuration</li>
+ * </ul>
+ *
+ * @see <a href="http://docs.hazelcast.org/docs/latest-dev/manual/html-single/hazelcast-documentation.html#system-properties">
+ * System properties documentaiton</a>
  */
 public class HazelcastProperties {
 
@@ -43,12 +45,12 @@ public class HazelcastProperties {
 
     /**
      * Creates a container with configured Hazelcast properties.
-     * <p/>
-     * Uses the environmental value if no value is defined in the configuration.
-     * Uses the default value if no environmental value is defined.
+     * <p>
+     * Uses the system property value if no value is defined in the configuration.
+     * Uses the default value if no system property value is defined.
      *
-     * @param config {@link Config} used to configure the {@link HazelcastProperty} values.
-     *               Properties in config are allowed to be null.
+     * @param config {@link Config} used to configure the {@link HazelcastProperty} values;
+     *               properties in config are allowed to be {@code null}
      */
     public HazelcastProperties(Config config) {
         this(config.getProperties());
@@ -56,12 +58,12 @@ public class HazelcastProperties {
 
     /**
      * Creates a container with configured Hazelcast properties.
-     * <p/>
-     * Uses the environmental value if no value is defined in the configuration.
-     * Uses the default value if no environmental value is defined.
+     * <p>
+     * Uses the system property value if no value is defined in the configuration.
+     * Uses the default value if no system property value is defined.
      *
-     * @param nullableProperties {@link Properties} used to configure the {@link HazelcastProperty} values.
-     *                           Properties are allowed to be null.
+     * @param nullableProperties {@link Properties} used to configure the {@link HazelcastProperty} values;
+     *                           properties are allowed to be {@code null}
      */
     @SuppressWarnings("unchecked")
     public HazelcastProperties(Properties nullableProperties) {
@@ -75,7 +77,7 @@ public class HazelcastProperties {
     /**
      * Returns an immutable set of all keys in this HazelcastProperties.
      *
-     * @return set of keys.
+     * @return set of keys
      */
     public Set<String> keySet() {
         return keys;
@@ -85,8 +87,8 @@ public class HazelcastProperties {
      * Returns the value for the given key.
      *
      * @param key the key
-     * @return the value for the given key, or null if no value is found.
-     * @throws NullPointerException if key is null.
+     * @return the value for the given key, or {@code null} if no value is found
+     * @throws NullPointerException if key is {@code null}
      */
     public String get(String key) {
         return (String) properties.get(key);
@@ -96,7 +98,7 @@ public class HazelcastProperties {
      * Returns the configured value of a {@link HazelcastProperty} as String.
      *
      * @param property the {@link HazelcastProperty} to get the value from
-     * @return the value or <tt>null</tt> if nothing has been configured
+     * @return the value or {@code null} if nothing has been configured
      */
     public String getString(HazelcastProperty property) {
         String value = properties.getProperty(property.getName());
@@ -132,6 +134,30 @@ public class HazelcastProperties {
         }
 
         return property.getDefaultValue();
+    }
+
+    /**
+     * Returns true if value for given key is provided (either as a HazelcastProperty or a System property). Default values are
+     * not taken into account.
+     *
+     * @param property the {@link HazelcastProperty} to check
+     * @return {@code true} if the value was explicitly provided
+     */
+    public boolean containsKey(HazelcastProperty property) {
+        if (property == null) {
+            return false;
+        }
+        return containsKey(property.getName())
+                || containsKey(property.getParent())
+                || containsKey(property.getDeprecatedName());
+    }
+
+    private boolean containsKey(String propertyName) {
+        if (propertyName == null) {
+            return false;
+        }
+        return properties.containsKey(propertyName)
+                || System.getProperty(propertyName) != null;
     }
 
     /**
@@ -178,6 +204,17 @@ public class HazelcastProperties {
     }
 
     /**
+     * Returns the configured double value of a {@link HazelcastProperty}.
+     *
+     * @param property the {@link HazelcastProperty} to get the value from
+     * @return the value as double
+     * @throws NumberFormatException if the value cannot be parsed
+     */
+    public double getDouble(HazelcastProperty property) {
+        return Double.valueOf(getString(property));
+    }
+
+    /**
      * Returns the configured value of a {@link HazelcastProperty} converted to nanoseconds.
      *
      * @param property the {@link HazelcastProperty} to get the value from
@@ -202,6 +239,33 @@ public class HazelcastProperties {
     }
 
     /**
+     * Returns the configured value of a {@link HazelcastProperty} converted to milliseconds if
+     * it is positive, otherwise returns its default value.
+     *
+     * @param property the {@link HazelcastProperty} to get the value from
+     * @return the value in milliseconds if it is positive, otherwise its default value.
+     * @throws IllegalArgumentException if the {@link HazelcastProperty} has no {@link TimeUnit}
+     */
+    public long getPositiveMillisOrDefault(HazelcastProperty property) {
+        return getPositiveMillisOrDefault(property, Long.parseLong(property.getDefaultValue()));
+    }
+
+    /**
+     * Returns the configured value of a {@link HazelcastProperty} converted to milliseconds if
+     * it is positive, otherwise returns the passed default value.
+     *
+     * @param property the {@link HazelcastProperty} to get the value from
+     * @param defaultValue the default value to return if property has non positive value.
+     * @return the value in milliseconds if it is positive, otherwise the passed default value.
+     * @throws IllegalArgumentException if the {@link HazelcastProperty} has no {@link TimeUnit}
+     */
+    public long getPositiveMillisOrDefault(HazelcastProperty property, long defaultValue) {
+        long millis = getMillis(property);
+        return millis > 0 ? millis : defaultValue;
+    }
+
+
+    /**
      * Returns the configured value of a {@link HazelcastProperty} converted to seconds.
      *
      * @param property the {@link HazelcastProperty} to get the value from
@@ -215,7 +279,7 @@ public class HazelcastProperties {
 
     /**
      * Returns the configured enum value of a {@link GroupProperty}.
-     * <p/>
+     * <p>
      * The case of the enum is ignored.
      *
      * @param property the {@link GroupProperty} to get the value from

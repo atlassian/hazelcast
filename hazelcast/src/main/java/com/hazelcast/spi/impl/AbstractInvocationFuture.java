@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.hazelcast.spi.impl;
 import com.hazelcast.core.ExecutionCallback;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.spi.InternalCompletableFuture;
+import com.hazelcast.internal.util.executor.UnblockableThread;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import java.util.concurrent.CancellationException;
@@ -39,11 +40,13 @@ import static java.util.concurrent.locks.LockSupport.unpark;
 
 /**
  * Custom implementation of {@link java.util.concurrent.CompletableFuture}.
- *
- * The long term goal is that this whole class can be ripped out and replaced by {@link java.util.concurrent.CompletableFuture}
- * from the JDK. So we need to be very careful with adding more functionality to this class because the more we add, the more
+ * <p>
+ * The long term goal is that this whole class can be ripped out and replaced
+ * by {@link java.util.concurrent.CompletableFuture} from the JDK. So we need
+ * to be very careful with adding more functionality to this class because
+ * the more we add, the more
  * difficult the replacement will be.
- *
+ * <p>
  * TODO:
  * - thread value protection
  *
@@ -69,22 +72,27 @@ public abstract class AbstractInvocationFuture<V> implements InternalCompletable
     protected final ILogger logger;
 
     /**
-     * This field contain the state of the future. If the future is not complete, the state can be:
+     * This field contain the state of the future. If the future is not
+     * complete, the state can be:
      * <ol>
      * <li>{@link #VOID}: no response is available.</li>
-     * <li>Thread instance: no response is available and a thread has blocked on completion (e.g. future.get)</li>
-     * <li>{@link ExecutionCallback} instance: no response is available and 1 {@link #andThen(ExecutionCallback)}
-     * was done using the default executor</li>
-     * <li>{@link WaitNode} instance: in case of multiple andThen registrations or
-     * future.gets or andThen with custom Executor. </li>
+     * <li>Thread instance: no response is available and a thread has
+     * blocked on completion (e.g. future.get)</li>
+     * <li>{@link ExecutionCallback} instance: no response is available
+     * and 1 {@link #andThen(ExecutionCallback)} was done using the default
+     * executor</li>
+     * <li>{@link WaitNode} instance: in case of multiple andThen
+     * registrations or future.gets or andThen with custom Executor. </li>
      * </ol>
      * If the state is anything else, it is completed.
      * <p>
-     * The reason why a single future.get or registered ExecutionCallback doesn't create a WaitNode is that we don't
-     * want to cause additional litter since most of our API calls are a get or a single ExecutionCallback.
+     * The reason why a single future.get or registered ExecutionCallback
+     * doesn't create a WaitNode is that we don't want to cause additional
+     * litter since most of our API calls are a get or a single ExecutionCallback.
      * <p>
-     * The state field is replaced using a cas, so registration or setting a response is an atomic operation and
-     * therefore not prone to data-races. There is no need to use synchronized blocks.
+     * The state field is replaced using a cas, so registration or setting a
+     * response is an atomic operation and therefore not prone to data-races.
+     * There is no need to use synchronized blocks.
      */
     private volatile Object state = VOID;
 
@@ -201,12 +209,12 @@ public abstract class AbstractInvocationFuture<V> implements InternalCompletable
     }
 
     @Override
-    public final void andThen(ExecutionCallback<V> callback) {
+    public void andThen(ExecutionCallback<V> callback) {
         andThen(callback, defaultExecutor);
     }
 
     @Override
-    public final void andThen(ExecutionCallback<V> callback, Executor executor) {
+    public void andThen(ExecutionCallback<V> callback, Executor executor) {
         isNotNull(callback, "callback");
         isNotNull(executor, "executor");
 
@@ -255,13 +263,13 @@ public abstract class AbstractInvocationFuture<V> implements InternalCompletable
 
             });
         } catch (RejectedExecutionException e) {
-            logger.warning("Execution of callback: " + callback + " is rejected!", e);
+            callback.onFailure(e);
         }
     }
 
     // this method should not be needed; but there is a difference between client and server how it handles async throwables
     protected Throwable unwrap(Throwable throwable) {
-        if (throwable instanceof ExecutionException) {
+        if (throwable instanceof ExecutionException && throwable.getCause() != null) {
             return throwable.getCause();
         }
         return throwable;
@@ -278,13 +286,17 @@ public abstract class AbstractInvocationFuture<V> implements InternalCompletable
     protected abstract TimeoutException newTimeoutException(long timeout, TimeUnit unit);
 
     /**
-     * Registers a waiter (thread/ExecutionCallback) that gets notified when the future completes.
+     * Registers a waiter (thread/ExecutionCallback) that gets notified when
+     * the future completes.
      *
      * @param waiter   the waiter
-     * @param executor the {@link Executor} to use in case of an {@link ExecutionCallback}.
-     * @return VOID if the registration was a success, anything else but void is the response.
+     * @param executor the {@link Executor} to use in case of an
+     *                 {@link ExecutionCallback}.
+     * @return VOID if the registration was a success, anything else but void
+     * is the response.
      */
     private Object registerWaiter(Object waiter, Executor executor) {
+        assert !(waiter instanceof UnblockableThread) : "Waiting for response on this thread is illegal";
         WaitNode waitNode = null;
         for (; ; ) {
             final Object oldState = state;
@@ -342,13 +354,14 @@ public abstract class AbstractInvocationFuture<V> implements InternalCompletable
     }
 
     /**
-     * Can be called multiple times, but only the first answer will lead to the future getting triggered. All subsequent
-     * complete calls are ignored.
+     * Can be called multiple times, but only the first answer will lead to the
+     * future getting triggered. All subsequent complete calls are ignored.
      *
      * @param value The type of response to offer.
-     * @return <tt>true</tt> if offered response, either a final response or an internal response,
-     * is set/applied, <tt>false</tt> otherwise. If <tt>false</tt> is returned, that means offered response is ignored
-     * because a final response is already set to this future.
+     * @return <tt>true</tt> if offered response, either a final response or an
+     * internal response, is set/applied, <tt>false</tt> otherwise. If <tt>false</tt>
+     * is returned, that means offered response is ignored because a final response
+     * is already set to this future.
      */
     @Override
     public final boolean complete(Object value) {
@@ -359,10 +372,15 @@ public abstract class AbstractInvocationFuture<V> implements InternalCompletable
                 return false;
             }
             if (compareAndSetState(oldState, value)) {
+                onComplete();
                 unblockAll(oldState, defaultExecutor);
                 return true;
             }
         }
+    }
+
+    protected void onComplete() {
+
     }
 
     // it can be that this future is already completed, e.g. when an invocation already
@@ -370,7 +388,7 @@ public abstract class AbstractInvocationFuture<V> implements InternalCompletable
     private void warnIfSuspiciousDoubleCompletion(Object s0, Object s1) {
         if (s0 != s1 && !(s0 instanceof CancellationException) && !(s1 instanceof CancellationException)) {
             logger.warning(String.format("Future.complete(Object) on completed future. "
-                    + "Request: %s, current value: %s, offered value: %s",
+                            + "Request: %s, current value: %s, offered value: %s",
                     invocationToString(), s0, s1));
         }
     }
@@ -386,17 +404,20 @@ public abstract class AbstractInvocationFuture<V> implements InternalCompletable
     }
 
     /**
-     * Linked nodes to record waiting {@link Thread} or {@link ExecutionCallback} instances using a Treiber stack.
-     *
-     * A waiter is something that gets triggered when a response comes in. There are 2 types of waiters:
+     * Linked nodes to record waiting {@link Thread} or {@link ExecutionCallback}
+     * instances using a Treiber stack.
+     * <p>
+     * A waiter is something that gets triggered when a response comes in. There
+     * are 2 types of waiters:
      * <ol>
      * <li>Thread: when a future.get is done.</li>
      * <li>ExecutionCallback: when a future.andThen is done</li>
      * </ol>
      * The waiter is either a Thread or an ExecutionCallback.
-     *
-     * The {@link WaitNode} is effectively immutable. Once the WaitNode is set in the 'state' field, it will not be modified.
-     * Also updating the state, introduces a happens before relation so the 'next' field can be read safely.
+     * <p>
+     * The {@link WaitNode} is effectively immutable. Once the WaitNode is set in
+     * the 'state' field, it will not be modified. Also updating the state,
+     * introduces a happens before relation so the 'next' field can be read safely.
      */
     static final class WaitNode {
         final Object waiter;

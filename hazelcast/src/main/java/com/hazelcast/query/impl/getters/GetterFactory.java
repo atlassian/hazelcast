@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,8 +23,12 @@ import java.lang.reflect.Method;
 import java.util.Collection;
 
 import static com.hazelcast.query.impl.getters.AbstractMultiValueGetter.validateModifier;
+import static com.hazelcast.query.impl.getters.NullGetter.NULL_GETTER;
+import static com.hazelcast.query.impl.getters.NullMultiValueGetter.NULL_MULTIVALUE_GETTER;
 
 public final class GetterFactory {
+
+    private static final String ANY_POSTFIX = "[any]";
 
     private GetterFactory() {
     }
@@ -37,21 +41,44 @@ public final class GetterFactory {
             validateModifier(modifierSuffix);
             Object currentObject = getCurrentObject(object, parentGetter);
             if (currentObject == null) {
-                return NullGetter.NULL_GETTER;
+                return NULL_GETTER;
             }
-            Collection collection = (Collection) field.get(currentObject);
-            returnType = getCollectionType(collection);
+            if (currentObject instanceof MultiResult) {
+                MultiResult multiResult = (MultiResult) currentObject;
+                returnType = extractTypeFromMultiResult(field, multiResult);
+            } else {
+                Collection collection = (Collection) field.get(currentObject);
+                returnType = getCollectionType(collection);
+            }
             if (returnType == null) {
-                return NullGetter.NULL_GETTER;
+                if (modifierSuffix.equals(ANY_POSTFIX)) {
+                    return NULL_MULTIVALUE_GETTER;
+                }
+                return NULL_GETTER;
             }
         } else if (isExtractingFromArray(fieldType, modifierSuffix)) {
             validateModifier(modifierSuffix);
             Object currentObject = getCurrentObject(object, parentGetter);
             if (currentObject == null) {
-                return NullGetter.NULL_GETTER;
+                return NULL_GETTER;
             }
         }
         return new FieldGetter(parentGetter, field, modifierSuffix, returnType);
+    }
+
+    private static Class<?> extractTypeFromMultiResult(Field field, MultiResult multiResult) throws Exception {
+        Class<?> returnType = null;
+        for (Object o : multiResult.getResults()) {
+            if (o == null) {
+                continue;
+            }
+            Collection collection = (Collection) field.get(o);
+            returnType = getCollectionType(collection);
+            if (returnType != null) {
+                break;
+            }
+        }
+        return returnType;
     }
 
     public static Getter newMethodGetter(Object object, Getter parentGetter, Method method, String modifierSuffix)
@@ -62,21 +89,44 @@ public final class GetterFactory {
             validateModifier(modifierSuffix);
             Object currentObject = getCurrentObject(object, parentGetter);
             if (currentObject == null) {
-                return NullGetter.NULL_GETTER;
+                return NULL_GETTER;
             }
-            Collection collection = (Collection) method.invoke(currentObject);
-            returnType = getCollectionType(collection);
+            if (currentObject instanceof MultiResult) {
+                MultiResult multiResult = (MultiResult) currentObject;
+                returnType = extractTypeFromMultiResult(method, multiResult);
+            } else {
+                Collection collection = (Collection) method.invoke(currentObject);
+                returnType = getCollectionType(collection);
+            }
             if (returnType == null) {
-                return NullGetter.NULL_GETTER;
+                if (modifierSuffix.equals(ANY_POSTFIX)) {
+                    return NULL_MULTIVALUE_GETTER;
+                }
+                return NULL_GETTER;
             }
         } else if (isExtractingFromArray(methodReturnType, modifierSuffix)) {
             validateModifier(modifierSuffix);
             Object currentObject = getCurrentObject(object, parentGetter);
             if (currentObject == null) {
-                return NullGetter.NULL_GETTER;
+                return NULL_GETTER;
             }
         }
         return new MethodGetter(parentGetter, method, modifierSuffix, returnType);
+    }
+
+    private static Class<?> extractTypeFromMultiResult(Method method, MultiResult multiResult) throws Exception {
+        Class<?> returnType = null;
+        for (Object o : multiResult.getResults()) {
+            if (o == null) {
+                continue;
+            }
+            Collection collection = (Collection) method.invoke(o);
+            returnType = getCollectionType(collection);
+            if (returnType != null) {
+                break;
+            }
+        }
+        return returnType;
     }
 
     public static Getter newThisGetter(Getter parent, Object object) {
@@ -89,28 +139,14 @@ public final class GetterFactory {
         }
         Object targetObject = CollectionUtil.getItemAtPositionOrNull(collection, 0);
         if (targetObject == null) {
+            for (Object object : collection) {
+                if (object != null) {
+                    return object.getClass();
+                }
+            }
             return null;
         }
         return targetObject.getClass();
-    }
-
-    private static Object unwrapMultiResult(Object currentObject) {
-        if (currentObject instanceof MultiResult) {
-            currentObject = getFirstObjectFromMultiResult(currentObject);
-        }
-        return currentObject;
-    }
-
-    private static Object getFirstObjectFromMultiResult(Object currentObject) {
-        MultiResult multiResult = (MultiResult) currentObject;
-        if (multiResult.isEmpty()) {
-            return null;
-        }
-        currentObject = multiResult.getResults().iterator().next();
-        if (currentObject == null) {
-            return null;
-        }
-        return currentObject;
     }
 
     private static boolean isExtractingFromCollection(Class<?> type, String modifierSuffix) {
@@ -122,8 +158,7 @@ public final class GetterFactory {
     }
 
     private static Object getCurrentObject(Object obj, Getter parent) throws Exception {
-        Object currentObject = parent == null ? obj : parent.getValue(obj);
-        return unwrapMultiResult(currentObject);
+        return parent == null ? obj : parent.getValue(obj);
     }
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,8 @@ import com.hazelcast.spi.Operation;
 
 import java.util.concurrent.TimeUnit;
 
+import static com.hazelcast.map.impl.recordstore.RecordStore.DEFAULT_MAX_IDLE;
+
 public class MapSetMessageTask
         extends AbstractMapPutMessageTask<MapSetCodec.RequestParameters> {
 
@@ -37,7 +39,7 @@ public class MapSetMessageTask
     protected Operation prepareOperation() {
         MapOperationProvider operationProvider = getMapOperationProvider(parameters.name);
         MapOperation op = operationProvider.createSetOperation(parameters.name, parameters.key,
-                parameters.value, parameters.ttl);
+                parameters.value, parameters.ttl, DEFAULT_MAX_IDLE);
         op.setThreadId(parameters.threadId);
         return op;
     }

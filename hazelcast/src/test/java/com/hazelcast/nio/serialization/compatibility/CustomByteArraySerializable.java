@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,8 @@
 
 package com.hazelcast.nio.serialization.compatibility;
 
-
 public class CustomByteArraySerializable {
+
     int i;
     float f;
 
@@ -28,16 +28,26 @@ public class CustomByteArraySerializable {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
 
         CustomByteArraySerializable that = (CustomByteArraySerializable) o;
-
-        if (i != that.i) return false;
+        if (i != that.i) {
+            return false;
+        }
         return Float.compare(that.f, f) == 0;
-
     }
 
+    @Override
+    public int hashCode() {
+        int result = i;
+        result = 31 * result + (f != +0.0f ? Float.floatToIntBits(f) : 0);
+        return result;
+    }
 
     @Override
     public String toString() {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,11 +45,21 @@ public class LazyMapEntryTest extends HazelcastTestSupport {
     private InternalSerializationService serializationService = new DefaultSerializationServiceBuilder().build();
 
     @Test
-    public void testSerialization() throws IOException, ClassNotFoundException {
+    public void testJavaSerialization() throws IOException, ClassNotFoundException {
         Data keyData = serializationService.toData("keyData");
         Data valueData = serializationService.toData("valueData");
         entry.init(serializationService, keyData, valueData, null);
         LazyMapEntry copy = TestJavaSerializationUtils.serializeAndDeserialize(entry);
+
+        assertEquals(entry, copy);
+    }
+
+    @Test
+    public void testIdentifiedDataSerializableSerialization() throws IOException, ClassNotFoundException {
+        Data keyData = serializationService.toData("keyData");
+        Data valueData = serializationService.toData("valueData");
+        entry.init(serializationService, keyData, valueData, null);
+        LazyMapEntry copy = serializationService.toObject(serializationService.toData(entry));
 
         assertEquals(entry, copy);
     }

@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.mapreduce.aggregation;
 
 import com.hazelcast.core.IMap;
@@ -24,7 +40,7 @@ public class DistinctAggregationTest extends AbstractAggregationTest {
     @Test
     public void testDistinctAggregationWithPredicates() {
         String mapName = randomMapName();
-        IMap<Integer, Car> map = HAZELCAST_INSTANCE.getMap(mapName);
+        IMap<Integer, Car> map = hazelcastInstance.getMap(mapName);
 
         Car vw1999 = Car.newCar(1999, "VW");
         Car bmw2000 = Car.newCar(2000, "BMW");
@@ -42,6 +58,7 @@ public class DistinctAggregationTest extends AbstractAggregationTest {
     }
 
     private static class Car implements Serializable {
+
         private int buildYear;
         private String brand;
 
@@ -54,14 +71,19 @@ public class DistinctAggregationTest extends AbstractAggregationTest {
 
         @Override
         public boolean equals(Object o) {
-            if (this == o) return true;
-            if (!(o instanceof Car)) return false;
+            if (this == o) {
+                return true;
+            }
+            if (!(o instanceof Car)) {
+                return false;
+            }
 
             Car car = (Car) o;
 
-            if (buildYear != car.buildYear) return false;
+            if (buildYear != car.buildYear) {
+                return false;
+            }
             return brand.equals(car.brand);
-
         }
 
         @Override

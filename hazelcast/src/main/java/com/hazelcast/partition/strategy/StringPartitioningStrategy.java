@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,9 @@
 package com.hazelcast.partition.strategy;
 
 import com.hazelcast.core.PartitioningStrategy;
+import com.hazelcast.nio.serialization.SerializableByConvention;
 
+@SerializableByConvention
 public class StringPartitioningStrategy implements PartitioningStrategy {
 
     public static final StringPartitioningStrategy INSTANCE = new StringPartitioningStrategy();

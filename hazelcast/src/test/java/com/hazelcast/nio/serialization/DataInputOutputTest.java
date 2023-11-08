@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -69,7 +69,10 @@ public class DataInputOutputTest {
 
     private void testDataStreams(Object object, ByteOrder byteOrder, boolean allowUnsafe) throws IOException {
         InternalSerializationService ss = createSerializationServiceBuilder()
-                .setUseNativeByteOrder(false).setAllowUnsafe(allowUnsafe).setByteOrder(byteOrder).build();
+                .setUseNativeByteOrder(false)
+                .setAllowUnsafe(allowUnsafe)
+                .setByteOrder(byteOrder)
+                .build();
 
         ByteArrayOutputStream bout = new ByteArrayOutputStream();
         ObjectDataOutput out = createObjectDataOutputStream(bout, ss);
@@ -94,6 +97,7 @@ public class DataInputOutputTest {
         Assert.assertEquals(object, object2);
     }
 
+    // overridden in EE
     protected SerializationServiceBuilder createSerializationServiceBuilder() {
         return new DefaultSerializationServiceBuilder();
     }

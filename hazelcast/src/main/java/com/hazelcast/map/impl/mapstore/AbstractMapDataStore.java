@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,10 @@
 
 package com.hazelcast.map.impl.mapstore;
 
+import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.map.impl.MapStoreWrapper;
 import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.spi.serialization.SerializationService;
+import com.hazelcast.nio.serialization.DataType;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -29,15 +30,15 @@ import java.util.Map;
 /**
  * Abstract map data store contains common functionality of map data stores.
  *
- * @param <K> key type for map data store.
- * @param <V> value type for map data store.
+ * @param <K> key type for map data store
+ * @param <V> value type for map data store
  */
 public abstract class AbstractMapDataStore<K, V> implements MapDataStore<K, V> {
 
     private final MapStoreWrapper store;
-    private final SerializationService serializationService;
+    private final InternalSerializationService serializationService;
 
-    protected AbstractMapDataStore(MapStoreWrapper store, SerializationService serializationService) {
+    protected AbstractMapDataStore(MapStoreWrapper store, InternalSerializationService serializationService) {
         if (store == null || serializationService == null) {
             throw new NullPointerException();
         }
@@ -61,6 +62,8 @@ public abstract class AbstractMapDataStore<K, V> implements MapDataStore<K, V> {
     }
 
     /**
+     * {@inheritDoc}
+     *
      * Directly removes keys from map store as in write-through mode.
      * It works same for write-behind and write-through stores.
      */
@@ -77,15 +80,22 @@ public abstract class AbstractMapDataStore<K, V> implements MapDataStore<K, V> {
         return serializationService.toObject(obj);
     }
 
-    protected Data toData(Object obj) {
-        return serializationService.toData(obj);
+    protected Data toHeapData(Object obj) {
+        return serializationService.toData(obj, DataType.HEAP);
     }
 
     public MapStoreWrapper getStore() {
         return store;
     }
 
-    protected List<Object> convertToObjectKeys(Collection keys) {
+    /**
+     * Deserialises all of the items in the provided collection if they
+     * are not deserialised already.
+     *
+     * @param keys the items to be deserialised
+     * @return the list of deserialised items
+     */
+    private List<Object> convertToObjectKeys(Collection keys) {
         if (keys == null || keys.isEmpty()) {
             return Collections.emptyList();
         }

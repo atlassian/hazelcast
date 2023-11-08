@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
 
 package com.hazelcast.cache.impl;
 
-import com.hazelcast.cache.CacheUtil;
 import com.hazelcast.cache.HazelcastCacheManager;
 import com.hazelcast.cache.ICache;
 import com.hazelcast.config.CacheConfig;
@@ -25,7 +24,6 @@ import com.hazelcast.core.HazelcastInstanceNotActiveException;
 import com.hazelcast.core.LifecycleEvent;
 import com.hazelcast.core.LifecycleListener;
 import com.hazelcast.core.LifecycleService;
-import com.hazelcast.util.EmptyStatement;
 
 import javax.cache.CacheException;
 import javax.cache.CacheManager;
@@ -36,8 +34,6 @@ import javax.cache.spi.CachingProvider;
 import java.lang.ref.WeakReference;
 import java.net.URI;
 import java.util.Collections;
-import java.util.Iterator;
-import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -45,42 +41,45 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static com.hazelcast.cache.CacheUtil.getPrefix;
+import static com.hazelcast.util.EmptyStatement.ignore;
 import static com.hazelcast.util.Preconditions.checkNotNull;
+import static com.hazelcast.util.SetUtil.createLinkedHashSet;
 
 /**
+ * Abstract {@link HazelcastCacheManager} (also indirect {@link CacheManager})
+ * implementation to provide shared functionality to server and client cache
+ * managers.
  * <p>
- * Abstract {@link HazelcastCacheManager} (also {@link CacheManager} as indirect) implementation
- * provides shared functionality to server and client cache managers.
- * There are two cache managers which can be accessed via their providers.
+ * There are two cache managers which can be accessed via their providers:
  * <ul>
- *     <li>Client: HazelcastClientCacheManager.</li>
- *     <li>Server: HazelcastServerCacheManager.</li>
+ * <li>Client: HazelcastClientCacheManager</li>
+ * <li>Server: HazelcastServerCacheManager</li>
  * </ul>
- * </p>
- * <p>
- *    {@link AbstractHazelcastCacheManager} manages the lifecycle of the caches created or accessed through itself.
- * </p>
+ * {@link AbstractHazelcastCacheManager} manages the lifecycle of the caches
+ * created or accessed through itself.
+ *
  * @see HazelcastCacheManager
  * @see CacheManager
  */
-public abstract class AbstractHazelcastCacheManager
-        implements HazelcastCacheManager {
+@SuppressWarnings("WeakerAccess")
+public abstract class AbstractHazelcastCacheManager implements HazelcastCacheManager {
 
-    protected final ConcurrentMap<String, ICacheInternal<?, ?>> caches =
-            new ConcurrentHashMap<String, ICacheInternal<?, ?>>();
-    protected final URI uri;
-    protected final WeakReference<ClassLoader> classLoaderReference;
-    protected final Properties properties;
-    protected final String cacheNamePrefix;
-    protected final boolean isDefaultURI;
-    protected final boolean isDefaultClassLoader;
+    protected final ConcurrentMap<String, ICacheInternal<?, ?>> caches
+            = new ConcurrentHashMap<String, ICacheInternal<?, ?>>();
 
     protected final CachingProvider cachingProvider;
     protected final HazelcastInstance hazelcastInstance;
+    protected final boolean isDefaultURI;
+    protected final boolean isDefaultClassLoader;
+    protected final URI uri;
+    protected final Properties properties;
 
     private final AtomicBoolean isClosed = new AtomicBoolean(false);
     private final AtomicBoolean isDestroyed = new AtomicBoolean(false);
 
+    private final WeakReference<ClassLoader> classLoaderReference;
+    private final String cacheNamePrefix;
     private final String lifecycleListenerRegistrationId;
 
     public AbstractHazelcastCacheManager(CachingProvider cachingProvider, HazelcastInstance hazelcastInstance,
@@ -99,42 +98,42 @@ public abstract class AbstractHazelcastCacheManager
         this.classLoaderReference = new WeakReference<ClassLoader>(localClassLoader);
 
         this.properties = properties == null ? new Properties() : new Properties(properties);
-
-        this.cacheNamePrefix = cacheNamePrefix();
-
+        this.cacheNamePrefix = getCacheNamePrefix();
         this.lifecycleListenerRegistrationId = registerLifecycleListener();
     }
 
-    private <K, V, C extends Configuration<K, V>> ICacheInternal<K, V> createCacheInternal(String cacheName,
-            C configuration) throws IllegalArgumentException {
-        checkIfManagerNotClosed();
+    @SuppressWarnings("unchecked")
+    private <K, V, C extends Configuration<K, V>> ICacheInternal<K, V> createCacheInternal(String cacheName, C configuration)
+            throws IllegalArgumentException {
+        ensureOpen();
         checkNotNull(cacheName, "cacheName must not be null");
         checkNotNull(configuration, "configuration must not be null");
 
         CacheConfig<K, V> newCacheConfig = createCacheConfig(cacheName, configuration);
+        validateCacheConfig(newCacheConfig);
+
         if (caches.containsKey(newCacheConfig.getNameWithPrefix())) {
-            throw new CacheException("A cache named " + cacheName + " already exists.");
+            throw new CacheException("A cache named '" + cacheName + "' already exists");
         }
-        // Create cache config on all nodes as sync
-        CacheConfig<K, V> currentCacheConfig = createCacheConfig(cacheName, newCacheConfig, true, true);
-        // Create cache proxy object with cache config
+        // create cache config on all nodes as sync
+        createCacheConfig(cacheName, newCacheConfig);
+        // create cache proxy object with cache config
         ICacheInternal<K, V> cacheProxy = createCacheProxy(newCacheConfig);
-        if (currentCacheConfig == null) {
-            // Put created cache config.
-            // Single thread region because "createConfigOnPartition" is single threaded by partition thread
-            addCacheConfigIfAbsent(newCacheConfig);
-            // Put created cache. No need to a "putIfAbsent" as this is a single threaded region
-            caches.put(newCacheConfig.getNameWithPrefix(), cacheProxy);
-            // Register listeners
+        // add created cache config to local configurations map
+        addCacheConfigIfAbsent(newCacheConfig);
+        ICacheInternal<?, ?> existingCache = caches.putIfAbsent(newCacheConfig.getNameWithPrefix(), cacheProxy);
+        if (existingCache == null) {
+            // register listeners on new cache
             registerListeners(newCacheConfig, cacheProxy);
             return cacheProxy;
+        } else {
+            CacheConfig<?, ?> config = existingCache.getConfiguration(CacheConfig.class);
+            if (config.equals(newCacheConfig)) {
+                return (ICacheInternal<K, V>) existingCache;
+            } else {
+                throw new CacheException("A cache named " + cacheName + " already exists");
+            }
         }
-        ICacheInternal<?, ?> cache = getOrPutIfAbsent(currentCacheConfig.getNameWithPrefix(), cacheProxy);
-        CacheConfig config = cache.getConfiguration(CacheConfig.class);
-        if (config.equals(newCacheConfig)) {
-            return (ICacheInternal<K, V>) cache;
-        }
-        throw new CacheException("A cache named " + cacheName + " already exists.");
     }
 
     @Override
@@ -146,15 +145,6 @@ public abstract class AbstractHazelcastCacheManager
     public <K, V, C extends Configuration<K, V>> ICache<K, V> createCache(String cacheName, C configuration)
             throws IllegalArgumentException {
         return createCacheInternal(cacheName, configuration);
-    }
-
-    private ICacheInternal<?, ?> getOrPutIfAbsent(String nameWithPrefix, ICacheInternal cacheProxy) {
-        ICacheInternal<?, ?> cache = caches.get(nameWithPrefix);
-        if (cache == null) {
-            ICacheInternal<?, ?> iCache = caches.putIfAbsent(nameWithPrefix, cacheProxy);
-            cache = iCache != null ? iCache : cacheProxy;
-        }
-        return cache;
     }
 
     @Override
@@ -178,8 +168,9 @@ public abstract class AbstractHazelcastCacheManager
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public <K, V> ICache<K, V> getCache(String cacheName, Class<K> keyType, Class<V> valueType) {
-        checkIfManagerNotClosed();
+        ensureOpen();
         checkNotNull(keyType, "keyType can not be null");
         checkNotNull(valueType, "valueType can not be null");
         ICacheInternal<?, ?> cache = getCacheUnchecked(cacheName);
@@ -189,21 +180,21 @@ public abstract class AbstractHazelcastCacheManager
                 if (configuration.getValueType() != null && configuration.getValueType().equals(valueType)) {
                     return ensureOpenIfAvailable((ICacheInternal<K, V>) cache);
                 } else {
-                    throw new ClassCastException(
-                            "Incompatible cache value types specified, expected " + configuration.getValueType() + " but "
-                                    + valueType + " was specified");
+                    throw new ClassCastException("Incompatible cache value types specified, expected "
+                            + configuration.getValueType() + " but " + valueType + " was specified");
                 }
             } else {
-                throw new ClassCastException(
-                        "Incompatible cache key types specified, expected " + configuration.getKeyType() + " but " + keyType
-                                + " was specified");
+                throw new ClassCastException("Incompatible cache key types specified, expected "
+                        + configuration.getKeyType() + " but " + keyType + " was specified");
             }
         }
         return null;
     }
 
-    public <K, V>  ICache<K, V> getOrCreateCache(String cacheName, CacheConfig<K, V> cacheConfig) {
-        checkIfManagerNotClosed();
+    // used in EE
+    @SuppressWarnings({"unchecked", "unused"})
+    public <K, V> ICache<K, V> getOrCreateCache(String cacheName, CacheConfig<K, V> cacheConfig) {
+        ensureOpen();
         String cacheNameWithPrefix = getCacheNameWithPrefix(cacheName);
         ICacheInternal<?, ?> cache = caches.get(cacheNameWithPrefix);
         if (cache == null) {
@@ -213,42 +204,35 @@ public abstract class AbstractHazelcastCacheManager
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public <K, V> ICache<K, V> getCache(String cacheName) {
-        checkIfManagerNotClosed();
+        ensureOpen();
         ICacheInternal<?, ?> cache = getCacheUnchecked(cacheName);
         if (cache != null) {
-            Configuration<?, ?> configuration = cache.getConfiguration(CacheConfig.class);
-            if (Object.class.equals(configuration.getKeyType()) && Object.class.equals(configuration.getValueType())) {
-                return ensureOpenIfAvailable((ICacheInternal<K, V>) cache);
-            } else {
-                throw new IllegalArgumentException(
-                        "Cache " + cacheName + " was " + "defined with specific types Cache<" + configuration.getKeyType() + ", "
-                                + configuration.getValueType() + "> "
-                                + "in which case CacheManager.getCache(String, Class, Class) must be used");
-            }
+            return ensureOpenIfAvailable((ICacheInternal<K, V>) cache);
         }
         return null;
     }
 
-    protected <K, V> ICacheInternal<K, V> ensureOpenIfAvailable(ICacheInternal<K, V> cache) {
+    private <K, V> ICacheInternal<K, V> ensureOpenIfAvailable(ICacheInternal<K, V> cache) {
         if (cache != null && cache.isClosed() && !cache.isDestroyed()) {
             cache.open();
         }
         return cache;
     }
 
-    protected <K, V> ICacheInternal<?, ?> getCacheUnchecked(String cacheName) {
+    private <K, V> ICacheInternal<?, ?> getCacheUnchecked(String cacheName) {
         String cacheNameWithPrefix = getCacheNameWithPrefix(cacheName);
         ICacheInternal<?, ?> cache = caches.get(cacheNameWithPrefix);
         if (cache == null) {
-            CacheConfig<K, V> cacheConfig = findCacheConfig(cacheNameWithPrefix, cacheName, true, true);
+            CacheConfig<K, V> cacheConfig = findCacheConfig(cacheNameWithPrefix, cacheName);
             if (cacheConfig == null) {
-                // No cache found
+                // no cache found
                 return null;
             }
-            // Create the cache proxy which already exists in the cluster as config
+            // create the cache proxy which already exists in the cluster as config
             ICacheInternal<K, V> cacheProxy = createCacheProxy(cacheConfig);
-            // Put created cache config.
+            // put created cache config
             addCacheConfigIfAbsent(cacheConfig);
             cache = caches.putIfAbsent(cacheNameWithPrefix, cacheProxy);
             if (cache == null) {
@@ -256,22 +240,22 @@ public abstract class AbstractHazelcastCacheManager
                 cache = cacheProxy;
             }
         }
+        if (cache != null) {
+            cache.setCacheManager(this);
+        }
         return cache;
     }
 
     @Override
     public Iterable<String> getCacheNames() {
+        ensureOpen();
         Set<String> names;
-        if (isClosed()) {
-            names = Collections.emptySet();
-        } else {
-            names = new LinkedHashSet<String>();
-            for (Map.Entry<String, ICacheInternal<?, ?>> entry : caches.entrySet()) {
-                String nameWithPrefix = entry.getKey();
-                int index = nameWithPrefix.indexOf(cacheNamePrefix) + cacheNamePrefix.length();
-                final String name = nameWithPrefix.substring(index);
-                names.add(name);
-            }
+        names = createLinkedHashSet(caches.size());
+        for (Map.Entry<String, ICacheInternal<?, ?>> entry : caches.entrySet()) {
+            String nameWithPrefix = entry.getKey();
+            int index = nameWithPrefix.indexOf(cacheNamePrefix) + cacheNamePrefix.length();
+            String name = nameWithPrefix.substring(index);
+            names.add(name);
         }
         return Collections.unmodifiableCollection(names);
     }
@@ -283,7 +267,7 @@ public abstract class AbstractHazelcastCacheManager
 
     @Override
     public void removeCache(String cacheName, boolean destroy) {
-        checkIfManagerNotClosed();
+        ensureOpen();
         checkNotNull(cacheName, "cacheName cannot be null");
         String cacheNameWithPrefix = getCacheNameWithPrefix(cacheName);
         ICacheInternal<?, ?> cache = caches.remove(cacheNameWithPrefix);
@@ -295,12 +279,14 @@ public abstract class AbstractHazelcastCacheManager
 
     /**
      * Removes the local copy of the cache configuration if one exists.
-     * Default implementation does not require it. But client implementation overrides this to track a local copy
-     * of the config.
+     * <p>
+     * The default implementation does not require it, but client
+     * implementation overrides this to track a local copy of the
+     * config.
      *
-     * @param cacheName cache name.
+     * @param cacheNameWithPrefix the cache name
      */
-    protected void removeCacheConfigFromLocal(String cacheName) {
+    protected void removeCacheConfigFromLocal(String cacheNameWithPrefix) {
     }
 
     private String registerLifecycleListener() {
@@ -319,10 +305,11 @@ public abstract class AbstractHazelcastCacheManager
         try {
             lifecycleService.removeLifecycleListener(lifecycleListenerRegistrationId);
         } catch (HazelcastInstanceNotActiveException e) {
-            // if hazelcastInstance is terminated already,
-            // `lifecycleService.removeLifecycleListener` will throw HazelcastInstanceNotActiveException.
-            // We can safely ignore this exception. See TerminatedLifecycleService.
-            EmptyStatement.ignore(e);
+            // if hazelcastInstance is already terminated,
+            // `lifecycleService.removeLifecycleListener()` will throw a
+            // HazelcastInstanceNotActiveException, which we can safely ignore
+            // (see TerminatedLifecycleService)
+            ignore(e);
         }
     }
 
@@ -337,11 +324,10 @@ public abstract class AbstractHazelcastCacheManager
             cache.close();
         }
         postClose();
-        // TODO do we need to clear it as "caches.clear();"
     }
 
     /**
-     * Destroy all managed caches.
+     * Destroys all managed caches.
      */
     @Override
     public void destroy() {
@@ -368,24 +354,28 @@ public abstract class AbstractHazelcastCacheManager
         return isClosed.get() || !hazelcastInstance.getLifecycleService().isRunning();
     }
 
-    protected void checkIfManagerNotClosed() {
+    protected void ensureOpen() {
         if (isClosed()) {
-            throw new IllegalStateException();
+            throw new IllegalStateException("CacheManager " + cacheNamePrefix + " is already closed.");
         }
     }
 
     /**
-     * This method calculates a fixed string based on the URI and classloader using the formula:
-     * <p>/hz[/uri][/classloader]/</p>
-     * <p>URI and classloader are dropped if they have default values.</p>
+     * Calculates a fixed string based on the URI and classloader.
+     * <p>
+     * Uses the formula:
+     * <pre><code>
+     * /hz[/uri][/classloader]/
+     * </code></pre>
+     * <p>
+     * URI and classloader are dropped if they have default values.
      *
-     * @return the calculated cache prefix.
+     * @return the calculated cache prefix
      */
-    protected String cacheNamePrefix() {
-        String cacheNamePrefix =
-                CacheUtil.getPrefix(
-                        isDefaultURI ? null : uri,
-                        isDefaultClassLoader ? null : getClassLoader());
+    private String getCacheNamePrefix() {
+        String cacheNamePrefix = getPrefix(
+                isDefaultURI ? null : uri,
+                isDefaultClassLoader ? null : getClassLoader());
         if (cacheNamePrefix == null) {
             return HazelcastCacheManager.CACHE_MANAGER_PREFIX;
         } else {
@@ -398,16 +388,16 @@ public abstract class AbstractHazelcastCacheManager
         return cacheNamePrefix + name;
     }
 
-    protected <K, V, C extends Configuration<K, V>> CacheConfig<K, V> createCacheConfig(String cacheName,
-                                                                                        C configuration) {
+    @SuppressWarnings("unchecked")
+    protected <K, V, C extends Configuration<K, V>> CacheConfig<K, V> createCacheConfig(String cacheName, C configuration) {
         CacheConfig<K, V> cacheConfig;
         if (configuration instanceof CompleteConfiguration) {
-            cacheConfig = new CacheConfig<K, V>((CompleteConfiguration) configuration);
+            cacheConfig = new CacheConfig<K, V>((CompleteConfiguration<K, V>) configuration);
         } else {
             cacheConfig = new CacheConfig<K, V>();
             cacheConfig.setStoreByValue(configuration.isStoreByValue());
-            final Class<K> keyType = configuration.getKeyType();
-            final Class<V> valueType = configuration.getValueType();
+            Class<K> keyType = configuration.getKeyType();
+            Class<V> valueType = configuration.getValueType();
             cacheConfig.setTypes(keyType, valueType);
         }
         cacheConfig.setName(cacheName);
@@ -416,11 +406,8 @@ public abstract class AbstractHazelcastCacheManager
         return cacheConfig;
     }
 
-    protected <K, V> void registerListeners(CacheConfig<K, V> cacheConfig, ICache<K, V> source) {
-        Iterator<CacheEntryListenerConfiguration<K, V>> iterator =
-                cacheConfig.getCacheEntryListenerConfigurations().iterator();
-        while (iterator.hasNext()) {
-            CacheEntryListenerConfiguration<K, V> listenerConfig = iterator.next();
+    private <K, V> void registerListeners(CacheConfig<K, V> cacheConfig, ICache<K, V> source) {
+        for (CacheEntryListenerConfiguration<K, V> listenerConfig : cacheConfig.getCacheEntryListenerConfigurations()) {
             ((ICacheInternal<K, V>) source).registerCacheEntryListener(listenerConfig, false);
         }
     }
@@ -430,25 +417,19 @@ public abstract class AbstractHazelcastCacheManager
         return "HazelcastCacheManager{hazelcastInstance=" + hazelcastInstance + ", cachingProvider=" + cachingProvider + '}';
     }
 
+    protected abstract <K, V> void validateCacheConfig(CacheConfig<K, V> cacheConfig);
+
     protected abstract <K, V> void addCacheConfigIfAbsent(CacheConfig<K, V> cacheConfig);
 
     protected abstract <K, V> ICacheInternal<K, V> createCacheProxy(CacheConfig<K, V> cacheConfig);
 
-    protected abstract <K, V> CacheConfig<K, V> findCacheConfig(String cacheName,
-                                                                String simpleCacheName,
-                                                                boolean createAlsoOnOthers,
-                                                                boolean syncCreate);
+    protected abstract <K, V> CacheConfig<K, V> findCacheConfig(String cacheName, String simpleCacheName);
 
-    protected abstract <K, V> CacheConfig<K, V> createCacheConfig(String cacheName,
-                                                                  CacheConfig<K, V> config,
-                                                                  boolean createAlsoOnOthers,
-                                                                  boolean syncCreate);
+    protected abstract <K, V> void createCacheConfig(String cacheName, CacheConfig<K, V> config);
 
-    protected abstract <K, V> CacheConfig<K, V> getCacheConfig(String cacheName,
-                                                               String simpleCacheName);
+    protected abstract <K, V> CacheConfig<K, V> getCacheConfig(String cacheName, String simpleCacheName);
 
     protected abstract void postClose();
 
     protected abstract void onShuttingDown();
-
 }

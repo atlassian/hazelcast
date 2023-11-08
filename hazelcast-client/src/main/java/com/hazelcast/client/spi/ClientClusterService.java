@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ import java.util.Collection;
 /**
  * Cluster service for Hazelcast clients.
  *
- * Allows to retrieve Hazelcast members of the cluster, e.g. by their {@link Address} or uuid.
+ * Allows to retrieve Hazelcast members of the cluster, e.g. by their {@link Address} or UUID.
  */
 public interface ClientClusterService {
 
@@ -45,10 +45,10 @@ public interface ClientClusterService {
     Member getMember(Address address);
 
     /**
-     * Gets the member with the given uuid.
+     * Gets the member with the given UUID.
      *
-     * @param uuid The uuid of the member.
-     * @return The member that was found, or null if not found. If uuid is null, null is returned.
+     * @param uuid The UUID of the member.
+     * @return The member that was found, or null if not found. If UUID is null, null is returned.
      */
     Member getMember(String uuid);
 
@@ -83,6 +83,7 @@ public interface ClientClusterService {
 
     /**
      * Gets the number of members that satisfy the given {@link com.hazelcast.core.MemberSelector} instance.
+     *
      * @param selector {@link com.hazelcast.core.MemberSelector} instance that filters members to be counted.
      * @return the number of members that satisfy the given {@link com.hazelcast.core.MemberSelector} instance.
      */
@@ -97,7 +98,7 @@ public interface ClientClusterService {
 
     /**
      * @param listener The listener to be registered.
-     * @return The registration id.
+     * @return The registration ID
      */
     String addMembershipListener(MembershipListener listener);
 
@@ -107,11 +108,5 @@ public interface ClientClusterService {
      */
     boolean removeMembershipListener(String registrationId);
 
-    /**
-     * The owner connection is opened to owner member of the client in the cluster.
-     * If the owner member dies, other members of the cluster assumes this client is dead.
-     *
-     * @return The address of the owner connection.
-     */
-    Address getOwnerConnectionAddress();
+    void reset();
 }

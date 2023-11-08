@@ -1,14 +1,30 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.ringbuffer.impl;
 
 import com.hazelcast.config.Config;
 import com.hazelcast.config.RingbufferConfig;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.ringbuffer.Ringbuffer;
+import com.hazelcast.ringbuffer.StaleSequenceException;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestThread;
 import com.hazelcast.test.annotation.NightlyTest;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -48,11 +64,10 @@ public class RingbufferAddReadOneStressTest extends HazelcastTestSupport {
         test(ringbufferConfig);
     }
 
-    @Ignore //https://github.com/hazelcast/hazelcast/issues/6895
-    @Test
+    @Test(timeout = 15 * 60 * 1000)
     public void whenShortTTLAndBigBuffer() throws Exception {
         RingbufferConfig ringbufferConfig = new RingbufferConfig("foo")
-                .setCapacity(20 * 1000 * 1000)
+                .setCapacity(10 * 1000 * 1000)
                 .setTimeToLiveSeconds(2);
         test(ringbufferConfig);
     }
@@ -143,7 +158,21 @@ public class RingbufferAddReadOneStressTest extends HazelcastTestSupport {
             long prev = System.currentTimeMillis();
 
             for (; ; ) {
-                Long item = ringbuffer.readOne(seq);
+                Long item = null;
+
+                while (item == null) {
+                    try {
+                        item = ringbuffer.readOne(seq);
+                    } catch (StaleSequenceException e) {
+                        // this consumer is used in a stress test and can fall behind the producer if it gets delayed
+                        // by any reason. This is ok, just jump to the the middle of the ringbuffer.
+                        System.out.println(getName() + " has fallen behind, catching up...");
+                        final long tail = ringbuffer.tailSequence();
+                        final long head = ringbuffer.headSequence();
+                        seq = tail >= head ? ((tail + head) / 2) : head;
+                    }
+                }
+
                 if (item.equals(Long.MIN_VALUE)) {
                     break;
                 }

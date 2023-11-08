@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,8 @@
 
 package com.hazelcast.query.impl;
 
-import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.query.Predicate;
 
-import java.io.IOException;
 import java.util.AbstractSet;
 import java.util.Iterator;
 import java.util.List;
@@ -28,40 +26,25 @@ import java.util.NoSuchElementException;
 import java.util.Set;
 
 import static com.hazelcast.util.Preconditions.isNotNull;
+
 /**
  * And Result set for Predicates.
  */
 public class AndResultSet extends AbstractSet<QueryableEntry> {
+
+    private static final int SIZE_UNINITIALIZED = -1;
+
     private final Set<QueryableEntry> setSmallest;
     private final List<Set<QueryableEntry>> otherIndexedResults;
     private final List<Predicate> lsNoIndexPredicates;
+    private int cachedSize;
 
     public AndResultSet(Set<QueryableEntry> setSmallest, List<Set<QueryableEntry>> otherIndexedResults,
                         List<Predicate> lsNoIndexPredicates) {
         this.setSmallest = isNotNull(setSmallest, "setSmallest");
         this.otherIndexedResults = otherIndexedResults;
         this.lsNoIndexPredicates = lsNoIndexPredicates;
-    }
-
-    public byte[] toByteArray(ObjectDataOutput out) throws IOException {
-        for (QueryableEntry entry : setSmallest) {
-            if (otherIndexedResults != null) {
-                for (Set<QueryableEntry> otherIndexedResult : otherIndexedResults) {
-                    if (!otherIndexedResult.contains(entry)) {
-                        break;
-                    }
-                }
-            }
-            if (lsNoIndexPredicates != null) {
-                for (Predicate noIndexPredicate : lsNoIndexPredicates) {
-                    if (!noIndexPredicate.apply(entry)) {
-                        break;
-                    }
-                }
-            }
-            out.writeData(entry.getKeyData());
-        }
-        return out.toByteArray();
+        this.cachedSize = SIZE_UNINITIALIZED;
     }
 
     @Override
@@ -103,7 +86,7 @@ public class AndResultSet extends AbstractSet<QueryableEntry> {
                 return true;
             }
 
-            for (; it.hasNext();) {
+            while (it.hasNext()) {
                 QueryableEntry entry = it.next();
 
                 if (checkOtherIndexedResults(entry) && checkNoIndexPredicates(entry)) {
@@ -161,6 +144,29 @@ public class AndResultSet extends AbstractSet<QueryableEntry> {
 
     @Override
     public int size() {
-        return setSmallest.size();
+        if (cachedSize == SIZE_UNINITIALIZED) {
+            int calculatedSize = 0;
+            for (Iterator<QueryableEntry> it = iterator(); it.hasNext(); it.next()) {
+                calculatedSize++;
+            }
+            cachedSize = calculatedSize;
+        }
+        return cachedSize;
     }
+
+    /**
+     * @return returns estimated size without calculating the full
+     * result set in full-result scan.
+     */
+    public int estimatedSize() {
+        if (cachedSize == SIZE_UNINITIALIZED) {
+            if (setSmallest == null) {
+                return 0;
+            } else {
+                return setSmallest.size();
+            }
+        }
+        return cachedSize;
+    }
+
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,7 +33,6 @@ public class AnInnerPortable implements Portable {
     }
 
     public AnInnerPortable() {
-
     }
 
     @Override
@@ -60,14 +59,18 @@ public class AnInnerPortable implements Portable {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
 
         AnInnerPortable that = (AnInnerPortable) o;
-
-        if (anInt != that.anInt) return false;
+        if (anInt != that.anInt) {
+            return false;
+        }
         return Float.compare(that.aFloat, aFloat) == 0;
-
     }
 
     @Override

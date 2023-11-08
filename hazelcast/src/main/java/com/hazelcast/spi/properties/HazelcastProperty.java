@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -140,7 +140,7 @@ public final class HazelcastProperty {
     }
 
     /**
-     * Sets the environmental value of the property.
+     * Sets the system property value of the property.
      *
      * @param value the value to set
      */
@@ -149,7 +149,7 @@ public final class HazelcastProperty {
     }
 
     /**
-     * Gets the environmental value of the property.
+     * Gets the system property value of the property.
      *
      * @return the value of the property
      */

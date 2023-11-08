@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import com.hazelcast.instance.BuildInfoProvider;
 import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.nio.Address;
 import com.hazelcast.test.HazelcastParallelClassRunner;
+import com.hazelcast.test.RequireAssertEnabled;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
 import com.hazelcast.version.MemberVersion;
@@ -29,25 +30,41 @@ import org.junit.runner.RunWith;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
 
 import static com.hazelcast.util.UuidUtil.newUnsecureUuidString;
-import static org.hamcrest.Matchers.sameInstance;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
 public class MemberMapTest {
 
-    private static final MemberVersion VERSION = MemberVersion.of(BuildInfoProvider.BUILD_INFO.getVersion());
+    private static final MemberVersion VERSION = MemberVersion.of(BuildInfoProvider.getBuildInfo().getVersion());
+
+    @Test(expected = AssertionError.class)
+    @RequireAssertEnabled
+    public void testConstructor_whenMapsHaveDifferentMembers_thenThrowAssertionError() {
+        Map<Address, MemberImpl> addressMap = new HashMap<Address, MemberImpl>();
+        Map<String, MemberImpl> uuidMap = new HashMap<String, MemberImpl>();
+
+        MemberImpl addressMember = newMember(5701);
+        MemberImpl uuidMember = newMember(5702);
+
+        addressMap.put(addressMember.getAddress(), addressMember);
+        uuidMap.put(uuidMember.getUuid(), uuidMember);
+
+        new MemberMap(0, addressMap, uuidMap);
+    }
 
     @Test
-    public void createEmpty() throws Exception {
+    public void createEmpty() {
         MemberMap map = MemberMap.empty();
         assertTrue(map.getMembers().isEmpty());
         assertTrue(map.getAddresses().isEmpty());
@@ -55,35 +72,23 @@ public class MemberMapTest {
     }
 
     @Test
-    public void createSingleton() throws Exception {
+    public void createSingleton() {
         MemberImpl member = newMember(5000);
         MemberMap map = MemberMap.singleton(member);
         assertEquals(1, map.getMembers().size());
         assertEquals(1, map.getAddresses().size());
         assertEquals(1, map.size());
-        assertTrue(map.contains(member.getAddress()));
-        assertTrue(map.contains(member.getUuid()));
-        assertThat(member, sameInstance(map.getMember(member.getAddress())));
-        assertThat(member, sameInstance(map.getMember(member.getUuid())));
+        assertContains(map, member.getAddress());
+        assertContains(map, member.getUuid());
+        assertSame(member, map.getMember(member.getAddress()));
+        assertSame(member, map.getMember(member.getUuid()));
 
         assertMemberSet(map);
     }
 
-    private void assertMemberSet(MemberMap map) {
-        for (MemberImpl m : map.getMembers()) {
-            assertTrue(map.contains(m.getUuid()));
-            assertTrue(map.contains(m.getAddress()));
-            assertEquals(m, map.getMember(m.getAddress()));
-            assertEquals(m, map.getMember(m.getUuid()));
-        }
-    }
-
     @Test
-    public void createNew() throws Exception {
-        MemberImpl[] members = new MemberImpl[5];
-        for (int i = 0; i < members.length; i++) {
-            members[i] = newMember(5000 + i);
-        }
+    public void createNew() {
+        MemberImpl[] members = newMembers(5);
 
         MemberMap map = MemberMap.createNew(members);
         assertEquals(members.length, map.getMembers().size());
@@ -91,39 +96,44 @@ public class MemberMapTest {
         assertEquals(members.length, map.size());
 
         for (MemberImpl member : members) {
-            assertTrue(map.contains(member.getAddress()));
-            assertTrue(map.contains(member.getUuid()));
-            assertThat(member, sameInstance(map.getMember(member.getAddress())));
-            assertThat(member, sameInstance(map.getMember(member.getUuid())));
+            assertContains(map, member.getAddress());
+            assertContains(map, member.getUuid());
+            assertSame(member, map.getMember(member.getAddress()));
+            assertSame(member, map.getMember(member.getUuid()));
         }
 
         assertMemberSet(map);
     }
 
     @Test(expected = IllegalArgumentException.class)
-    public void create_failsWithDuplicateAddress() throws Exception {
+    public void create_failsWithDuplicateAddress() {
         MemberImpl member1 = newMember(5000);
         MemberImpl member2 = newMember(5000);
         MemberMap.createNew(member1, member2);
     }
 
     @Test(expected = IllegalArgumentException.class)
-    public void create_failsWithDuplicateUuid() throws Exception {
+    public void create_failsWithDuplicateUuid() {
         MemberImpl member1 = newMember(5000);
-        MemberImpl member2 = new MemberImpl(newAddress(5001), VERSION, false, member1.getUuid(), null);
+        MemberImpl member2 = new MemberImpl.Builder(newAddress(5001))
+                .version(VERSION)
+                .uuid(member1.getUuid()).build();
         MemberMap.createNew(member1, member2);
     }
 
     @Test
-    public void cloneExcluding() throws Exception {
-        MemberImpl[] members = new MemberImpl[6];
-        for (int i = 0; i < members.length; i++) {
-            members[i] = newMember(5000 + i);
-        }
+    public void cloneExcluding() {
+        MemberImpl[] members = newMembers(6);
 
         MemberImpl exclude0 = members[0];
-        MemberImpl exclude1 = new MemberImpl(newAddress(6000), VERSION, false, members[1].getUuid(), null);
-        MemberImpl exclude2 = new MemberImpl(members[2].getAddress(), VERSION, false, newUnsecureUuidString(), null);
+        MemberImpl exclude1 = new MemberImpl.Builder(newAddress(6000))
+                .version(VERSION)
+                .uuid(members[1].getUuid())
+                .build();
+        MemberImpl exclude2 = new MemberImpl.Builder(members[2].getAddress())
+                .version(VERSION)
+                .uuid(newUnsecureUuidString())
+                .build();
 
         MemberMap map = MemberMap.cloneExcluding(MemberMap.createNew(members), exclude0, exclude1, exclude2);
 
@@ -134,124 +144,278 @@ public class MemberMapTest {
 
         for (int i = 0; i < numOfExcludedMembers; i++) {
             MemberImpl member = members[i];
-            assertFalse(map.contains(member.getAddress()));
-            assertFalse(map.contains(member.getUuid()));
+            assertNotContains(map, member.getAddress());
+            assertNotContains(map, member.getUuid());
             assertNull(map.getMember(member.getAddress()));
             assertNull(map.getMember(member.getUuid()));
         }
 
         for (int i = numOfExcludedMembers; i < members.length; i++) {
             MemberImpl member = members[i];
-            assertTrue(map.contains(member.getAddress()));
-            assertTrue(map.contains(member.getUuid()));
-            assertThat(member, sameInstance(map.getMember(member.getAddress())));
-            assertThat(member, sameInstance(map.getMember(member.getUuid())));
+            assertContains(map, member.getAddress());
+            assertContains(map, member.getUuid());
+            assertSame(member, map.getMember(member.getAddress()));
+            assertSame(member, map.getMember(member.getUuid()));
         }
 
         assertMemberSet(map);
     }
 
     @Test
-    public void cloneExcluding_emptyMap() throws Exception {
+    public void cloneExcluding_emptyMap() {
         MemberMap empty = MemberMap.empty();
         MemberMap map = MemberMap.cloneExcluding(empty, newMember(5000));
 
         assertEquals(0, map.size());
-        assertThat(empty, sameInstance(map));
+        assertSame(empty, map);
     }
 
-
     @Test
-    public void cloneAdding() throws Exception {
-        MemberImpl[] members = new MemberImpl[5];
-        for (int i = 0; i < members.length; i++) {
-            members[i] = newMember(5000 + i);
-        }
+    public void cloneAdding() {
+        MemberImpl[] members = newMembers(5);
 
-        MemberMap map = MemberMap.cloneAdding(MemberMap.createNew(members[0], members[1], members[2]),
-                members[3], members[4]);
+        MemberMap map = MemberMap.cloneAdding(MemberMap.createNew(members[0], members[1], members[2]), members[3], members[4]);
         assertEquals(members.length, map.getMembers().size());
         assertEquals(members.length, map.getAddresses().size());
         assertEquals(members.length, map.size());
 
         for (MemberImpl member : members) {
-            assertTrue(map.contains(member.getAddress()));
-            assertTrue(map.contains(member.getUuid()));
-            assertThat(member, sameInstance(map.getMember(member.getAddress())));
-            assertThat(member, sameInstance(map.getMember(member.getUuid())));
+            assertContains(map, member.getAddress());
+            assertContains(map, member.getUuid());
+            assertSame(member, map.getMember(member.getAddress()));
+            assertSame(member, map.getMember(member.getUuid()));
         }
 
         assertMemberSet(map);
     }
 
     @Test(expected = IllegalArgumentException.class)
-    public void cloneAdding_failsWithDuplicateAddress() throws Exception {
-        MemberImpl[] members = new MemberImpl[3];
-        for (int i = 0; i < members.length; i++) {
-            members[i] = newMember(5000 + i);
-        }
+    public void cloneAdding_failsWithDuplicateAddress() {
+        MemberImpl[] members = newMembers(3);
 
         MemberImpl member = newMember(5000);
         MemberMap.cloneAdding(MemberMap.createNew(members), member);
     }
 
     @Test(expected = IllegalArgumentException.class)
-    public void cloneAdding_failsWithDuplicateUuid() throws Exception {
-        MemberImpl[] members = new MemberImpl[3];
-        for (int i = 0; i < members.length; i++) {
-            members[i] = newMember(5000 + i);
-        }
+    public void cloneAdding_failsWithDuplicateUuid() {
+        MemberImpl[] members = newMembers(3);
 
-        MemberImpl member = new MemberImpl(newAddress(6000), VERSION, false, members[1].getUuid(), null);
+        MemberImpl member = new MemberImpl.Builder(newAddress(6000))
+                .version(VERSION)
+                .uuid(members[1].getUuid())
+                .build();
         MemberMap.cloneAdding(MemberMap.createNew(members), member);
     }
 
     @Test
-    public void getMembers_ordered() throws Exception {
-        MemberImpl[] members = new MemberImpl[10];
-        for (int i = 0; i < members.length; i++) {
-            members[i] = newMember(5000 + i);
-        }
+    public void getMembers_ordered() {
+        MemberImpl[] members = newMembers(10);
 
         MemberMap map = MemberMap.createNew(members);
         Set<MemberImpl> memberSet = map.getMembers();
 
-        int k = 0;
+        int index = 0;
         for (MemberImpl member : memberSet) {
-            assertSame(members[k++], member);
+            assertSame(members[index++], member);
         }
     }
 
     @Test(expected = UnsupportedOperationException.class)
-    public void getMembers_unmodifiable() throws Exception {
-        MemberImpl[] members = new MemberImpl[5];
-        for (int i = 0; i < members.length; i++) {
-            members[i] = newMember(5000 + i);
-        }
-
+    public void getMembers_unmodifiable() {
+        MemberImpl[] members = newMembers(5);
         MemberMap map = MemberMap.createNew(members);
 
         map.getMembers().add(newMember(9000));
     }
 
     @Test(expected = UnsupportedOperationException.class)
-    public void getAddresses_unmodifiable() throws Exception {
-        MemberImpl[] members = new MemberImpl[5];
-        for (int i = 0; i < members.length; i++) {
-            members[i] = newMember(5000 + i);
-        }
-
+    public void getAddresses_unmodifiable() {
+        MemberImpl[] members = newMembers(5);
         MemberMap map = MemberMap.createNew(members);
 
         map.getAddresses().add(newAddress(9000));
     }
 
-    private MemberImpl newMember(int port) throws UnknownHostException {
-        return new MemberImpl(newAddress(port), VERSION, false, newUnsecureUuidString(), null);
+    @Test
+    public void getMember_withAddressAndUuid_whenFound() {
+        MemberImpl[] members = newMembers(3);
+        MemberMap map = MemberMap.createNew(members);
+
+        MemberImpl member = members[0];
+        assertEquals(member, map.getMember(member.getAddress(), member.getUuid()));
     }
 
-    private Address newAddress(int port) throws UnknownHostException {
-        return new Address(InetAddress.getLocalHost(), port);
+    @Test
+    public void getMember_withAddressAndUuid_whenOnlyAddressFound() {
+        MemberImpl[] members = newMembers(3);
+        MemberMap map = MemberMap.createNew(members);
+
+        assertNull(map.getMember(members[0].getAddress(), newUnsecureUuidString()));
     }
 
+    @Test
+    public void getMember_withAddressAndUuid_whenOnlyUuidFound() {
+        MemberImpl[] members = newMembers(3);
+        MemberMap map = MemberMap.createNew(members);
+
+        assertNull(map.getMember(newAddress(6000), members[0].getUuid()));
+    }
+
+    @Test
+    public void getMember_withAddressAndUuid_whenNotFound() {
+        MemberImpl[] members = newMembers(3);
+        MemberMap map = MemberMap.createNew(members);
+
+        assertNull(map.getMember(newAddress(6000), newUnsecureUuidString()));
+    }
+
+    @Test
+    public void tailMemberSet_inclusive() {
+        MemberImpl[] members = newMembers(7);
+        MemberMap map = MemberMap.createNew(members);
+
+        MemberImpl member = members[3];
+        Set<MemberImpl> set = map.tailMemberSet(member, true);
+
+        assertEquals(4, set.size());
+        int k = 3;
+        for (MemberImpl m : set) {
+            assertEquals(members[k++], m);
+        }
+    }
+
+    @Test
+    public void tailMemberSet_exclusive() {
+        MemberImpl[] members = newMembers(7);
+        MemberMap map = MemberMap.createNew(members);
+
+        MemberImpl member = members[3];
+        Set<MemberImpl> set = map.tailMemberSet(member, false);
+
+        assertEquals(3, set.size());
+        int k = 4;
+        for (MemberImpl m : set) {
+            assertEquals(members[k++], m);
+        }
+    }
+
+    @Test
+    public void headMemberSet_inclusive() {
+        MemberImpl[] members = newMembers(7);
+        MemberMap map = MemberMap.createNew(members);
+
+        MemberImpl member = members[3];
+        Set<MemberImpl> set = map.headMemberSet(member, true);
+
+        assertEquals(4, set.size());
+        int k = 0;
+        for (MemberImpl m : set) {
+            assertEquals(members[k++], m);
+        }
+    }
+
+    @Test
+    public void headMemberSet_exclusive() {
+        MemberImpl[] members = newMembers(7);
+        MemberMap map = MemberMap.createNew(members);
+
+        MemberImpl member = members[3];
+        Set<MemberImpl> set = map.headMemberSet(member, false);
+
+        assertEquals(3, set.size());
+        int k = 0;
+        for (MemberImpl m : set) {
+            assertEquals(members[k++], m);
+        }
+    }
+
+    @Test
+    public void isBeforeThan_success() {
+        MemberImpl[] members = newMembers(5);
+        MemberMap map = MemberMap.createNew(members);
+
+        assertTrue(map.isBeforeThan(members[1].getAddress(), members[3].getAddress()));
+    }
+
+    @Test
+    public void isBeforeThan_fail() {
+        MemberImpl[] members = newMembers(5);
+        MemberMap map = MemberMap.createNew(members);
+
+        assertFalse(map.isBeforeThan(members[4].getAddress(), members[1].getAddress()));
+    }
+
+    @Test
+    public void isBeforeThan_whenFirstAddressNotExist() {
+        MemberImpl[] members = newMembers(5);
+        MemberMap map = MemberMap.createNew(members);
+
+        map.isBeforeThan(newAddress(6000), members[0].getAddress());
+    }
+
+    @Test
+    public void isBeforeThan_whenSecondAddressNotExist() {
+        MemberImpl[] members = newMembers(5);
+        MemberMap map = MemberMap.createNew(members);
+
+        map.isBeforeThan(members[0].getAddress(), newAddress(6000));
+    }
+
+    @Test
+    public void isBeforeThan_whenAddressesNotExist() {
+        MemberImpl[] members = newMembers(5);
+        MemberMap map = MemberMap.createNew(members);
+
+        map.isBeforeThan(newAddress(6000), newAddress(7000));
+    }
+
+    static MemberImpl[] newMembers(int count) {
+        MemberImpl[] members = new MemberImpl[count];
+        for (int i = 0; i < members.length; i++) {
+            members[i] = newMember(5000 + i);
+        }
+        return members;
+    }
+
+    static MemberImpl newMember(int port) {
+        return new MemberImpl.Builder(newAddress(port))
+                .version(VERSION)
+                .uuid(newUnsecureUuidString())
+                .build();
+    }
+
+    private static Address newAddress(int port) {
+        try {
+            return new Address(InetAddress.getLocalHost(), port);
+        } catch (UnknownHostException e) {
+            fail("Could not create new Address: " + e.getMessage());
+        }
+        return null;
+    }
+
+    private static void assertMemberSet(MemberMap map) {
+        for (MemberImpl member : map.getMembers()) {
+            assertContains(map, member.getAddress());
+            assertContains(map, member.getUuid());
+            assertEquals(member, map.getMember(member.getAddress()));
+            assertEquals(member, map.getMember(member.getUuid()));
+        }
+    }
+
+    private static void assertContains(MemberMap map, Address address) {
+        assertTrue("MemberMap doesn't contain expected " + address, map.contains(address));
+    }
+
+    private static void assertContains(MemberMap map, String uuid) {
+        assertTrue("MemberMap doesn't contain expected " + uuid, map.contains(uuid));
+    }
+
+    private static void assertNotContains(MemberMap map, Address address) {
+        assertFalse("MemberMap contains unexpected " + address, map.contains(address));
+    }
+
+    private static void assertNotContains(MemberMap map, String uuid) {
+        assertFalse("MemberMap contains unexpected " + uuid, map.contains(uuid));
+    }
 }

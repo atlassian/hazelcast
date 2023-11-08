@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ public interface ICredentialsFactory {
      * Configures {@link ICredentialsFactory}.
      *
      * @param groupConfig Hazelcast {@link GroupConfig}
-     * @param properties
+     * @param properties  properties that will be used to pass custom configurations by user
      */
     void configure(GroupConfig groupConfig, Properties properties);
 

@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.client;
 
 import com.hazelcast.client.config.ClientConfig;
@@ -31,19 +47,16 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.mockito.Mockito.mock;
 
-
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
 public class MembershipListenerTest extends HazelcastTestSupport {
 
     private final TestHazelcastFactory hazelcastFactory = new TestHazelcastFactory();
 
-
     @After
     public void tearDown() {
         hazelcastFactory.terminateAll();
     }
-
 
     private class MemberShipEventLogger implements MembershipListener {
 
@@ -177,7 +190,6 @@ public class MembershipListenerTest extends HazelcastTestSupport {
         assertFalse(client.getCluster().removeMembershipListener(null));
     }
 
-
     @Test(expected = java.lang.NullPointerException.class)
     public void addNullListener_thenException() throws Exception {
         hazelcastFactory.newHazelcastInstance();
@@ -240,6 +252,25 @@ public class MembershipListenerTest extends HazelcastTestSupport {
     }
 
     @Test
+    public void initialMemberEvents_whenAddedAfterClientStartedAsync() throws InterruptedException {
+        hazelcastFactory.newHazelcastInstance();
+        hazelcastFactory.newHazelcastInstance();
+
+        ClientConfig clientConfig = new ClientConfig();
+        clientConfig.getConnectionStrategyConfig().setAsyncStart(true);
+        HazelcastInstance client = hazelcastFactory.newHazelcastClient(clientConfig);
+
+        final InitialMemberShipEventLogger listener = new InitialMemberShipEventLogger();
+        client.getCluster().addMembershipListener(listener);
+
+        EventObject eventObject = listener.events.poll(ASSERT_TRUE_EVENTUALLY_TIMEOUT, TimeUnit.SECONDS);
+        assertInstanceOf(InitialMembershipEvent.class, eventObject);
+        InitialMembershipEvent event = (InitialMembershipEvent) eventObject;
+        assertEquals(2, event.getMembers().size());
+        assertEquals(0, listener.events.size());
+    }
+
+    @Test
     public void initialMemberEvents_whenClusterRestarted() throws InterruptedException {
         HazelcastInstance instance1 = hazelcastFactory.newHazelcastInstance();
         HazelcastInstance instance2 = hazelcastFactory.newHazelcastInstance();
@@ -270,6 +301,4 @@ public class MembershipListenerTest extends HazelcastTestSupport {
         assertInstanceOf(MembershipEvent.class, eventObject);
         assertEquals(MembershipEvent.MEMBER_ADDED, ((MembershipEvent) eventObject).getEventType());
     }
-
-
 }

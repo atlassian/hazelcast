@@ -1,9 +1,25 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.map.impl.query;
 
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
 import com.hazelcast.query.Predicate;
-import com.hazelcast.query.SampleObjects;
+import com.hazelcast.query.SampleTestObjects;
 import com.hazelcast.query.TruePredicate;
 import com.hazelcast.query.impl.predicates.InstanceOfPredicate;
 import com.hazelcast.spi.serialization.SerializationService;
@@ -59,9 +75,9 @@ public class MapValuesTest extends HazelcastTestSupport {
         Collection<String> result = map.values();
 
         assertEquals(3, result.size());
-        assertTrue(result.contains("a"));
-        assertTrue(result.contains("b"));
-        assertTrue(result.contains("c"));
+        assertContains(result, "a");
+        assertContains(result, "b");
+        assertContains(result, "c");
     }
 
     @Test
@@ -73,9 +89,9 @@ public class MapValuesTest extends HazelcastTestSupport {
         Collection<String> result = map.values(TruePredicate.INSTANCE);
 
         assertEquals(3, result.size());
-        assertTrue(result.contains("a"));
-        assertTrue(result.contains("b"));
-        assertTrue(result.contains("c"));
+        assertContains(result, "a");
+        assertContains(result, "b");
+        assertContains(result, "c");
     }
 
     @Test
@@ -87,8 +103,8 @@ public class MapValuesTest extends HazelcastTestSupport {
         Collection<String> result = map.values(new GoodPredicate());
 
         assertEquals(2, result.size());
-        assertTrue(result.contains("good1"));
-        assertTrue(result.contains("good2"));
+        assertContains(result, "good1");
+        assertContains(result, "good2");
     }
 
     @Test
@@ -106,7 +122,7 @@ public class MapValuesTest extends HazelcastTestSupport {
     @Test
     public void testSerializationServiceNullClassLoaderProblem() throws Exception {
         // if the classloader is null the following call throws NullPointerException
-        map.values(new InstanceOfPredicate(SampleObjects.PortableEmployee.class));
+        map.values(new InstanceOfPredicate(SampleTestObjects.PortableEmployee.class));
     }
 
     static class GoodPredicate implements Predicate<String, String> {

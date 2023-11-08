@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,6 @@ import java.io.IOException;
 
 public class CustomStreamSerializer implements StreamSerializer<CustomStreamSerializable> {
 
-
     @Override
     public void write(ObjectDataOutput out, CustomStreamSerializable object) throws IOException {
         out.writeInt(object.i);
@@ -38,11 +37,10 @@ public class CustomStreamSerializer implements StreamSerializer<CustomStreamSeri
 
     @Override
     public int getTypeId() {
-        return ReferenceObjects.CUSTOM_STREAM_SERILAZABLE_ID;
+        return ReferenceObjects.CUSTOM_STREAM_SERIALIZABLE_ID;
     }
 
     @Override
     public void destroy() {
-
     }
 }

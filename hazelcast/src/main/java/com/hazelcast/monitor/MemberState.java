@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,14 +18,33 @@ package com.hazelcast.monitor;
 
 import com.hazelcast.internal.management.JsonSerializable;
 import com.hazelcast.internal.management.dto.ClientEndPointDTO;
+import com.hazelcast.internal.management.dto.ClusterHotRestartStatusDTO;
 import com.hazelcast.internal.management.dto.MXBeansDTO;
 
 import java.util.Collection;
 import java.util.Map;
 
+/**
+ * Local statistics for a Hazelcast member.
+ */
 public interface MemberState extends JsonSerializable {
 
     String getAddress();
+
+    /**
+     * Returns the UUID of this member.
+     *
+     * @return the UUID of this member.
+     */
+    String getUuid();
+
+    /**
+     * Returns the local CP member's UUID if this Hazelcast
+     * member is part of the CP subsystem, returns null otherwise.
+     *
+     * @return local CP member's UUID if available, null otherwise
+     */
+    String getCpMemberUuid();
 
     Map<String, Long> getRuntimeProps();
 
@@ -37,6 +56,10 @@ public interface MemberState extends JsonSerializable {
 
     LocalTopicStats getLocalTopicStats(String topicName);
 
+    LocalTopicStats getReliableLocalTopicStats(String reliableTopicName);
+
+    LocalPNCounterStats getLocalPNCounterStats(String pnCounterName);
+
     LocalReplicatedMapStats getLocalReplicatedMapStats(String replicatedMapName);
 
     LocalExecutorStats getLocalExecutorStats(String executorName);
@@ -44,6 +67,8 @@ public interface MemberState extends JsonSerializable {
     LocalCacheStats getLocalCacheStats(String cacheName);
 
     LocalWanStats getLocalWanStats(String schemeName);
+
+    LocalFlakeIdGeneratorStats getLocalFlakeIdGeneratorStats(String flakeIdName);
 
     Collection<ClientEndPointDTO> getClients();
 
@@ -62,4 +87,9 @@ public interface MemberState extends JsonSerializable {
 
     NodeState getNodeState();
 
+    HotRestartState getHotRestartState();
+
+    ClusterHotRestartStatusDTO getClusterHotRestartStatus();
+
+    WanSyncState getWanSyncState();
 }

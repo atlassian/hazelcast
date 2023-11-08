@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package com.hazelcast.map.impl;
 
+import com.hazelcast.map.impl.querycache.QueryCacheContext;
+import com.hazelcast.map.impl.querycache.publisher.PublisherContext;
 import com.hazelcast.spi.ClientAwareService;
 
 /**
@@ -26,8 +28,16 @@ import com.hazelcast.spi.ClientAwareService;
  */
 class MapClientAwareService implements ClientAwareService {
 
+    private final MapServiceContext mapServiceContext;
+
+    public MapClientAwareService(MapServiceContext mapServiceContext) {
+        this.mapServiceContext = mapServiceContext;
+    }
+
     @Override
     public void clientDisconnected(String clientUuid) {
-        // NOP
+        QueryCacheContext queryCacheContext = mapServiceContext.getQueryCacheContext();
+        PublisherContext publisherContext = queryCacheContext.getPublisherContext();
+        publisherContext.handleDisconnectedSubscriber(clientUuid);
     }
 }

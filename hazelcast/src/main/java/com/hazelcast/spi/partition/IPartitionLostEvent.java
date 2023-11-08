@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,14 +20,18 @@ import com.hazelcast.nio.Address;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.DataSerializable;
+import com.hazelcast.nio.serialization.SerializableByConvention;
 
 import java.io.IOException;
 
+import static com.hazelcast.nio.serialization.SerializableByConvention.Reason.PUBLIC_API;
+
 /**
  * Internal event that is dispatched to {@link com.hazelcast.spi.PartitionAwareService#onPartitionLost}
- * <p/>
- * It contains the partition id, number of replicas that is lost and the address of node that detects the partition lost
+ * <p>
+ * It contains the partition ID, number of replicas that is lost and the address of node that detects the partition lost.
  */
+@SerializableByConvention(PUBLIC_API)
 public class IPartitionLostEvent
         implements DataSerializable {
 
@@ -47,17 +51,18 @@ public class IPartitionLostEvent
     }
 
     /**
-     * The partition id that is lost
+     * The partition ID that is lost.
      *
-     * @return the partition id that is lost
+     * @return the partition ID that is lost
      */
     public int getPartitionId() {
         return partitionId;
     }
 
     /**
-     * 0-based replica index that is lost for the partition
-     * For instance, 0 means only the owner of the partition is lost, 1 means both the owner and first backup are lost
+     * 0-based replica index that is lost for the partition.
+     * <p>
+     * For instance, 0 means only the owner of the partition is lost, 1 means both the owner and first backup are lost.
      *
      * @return 0-based replica index that is lost for the partition
      */
@@ -66,7 +71,7 @@ public class IPartitionLostEvent
     }
 
     /**
-     * The address of the node that detects the partition lost
+     * The address of the node that detects the partition lost.
      *
      * @return the address of the node that detects the partition lost
      */
@@ -75,16 +80,14 @@ public class IPartitionLostEvent
     }
 
     @Override
-    public void writeData(ObjectDataOutput out)
-            throws IOException {
+    public void writeData(ObjectDataOutput out) throws IOException {
         out.writeInt(partitionId);
         out.writeInt(lostReplicaIndex);
         eventSource.writeData(out);
     }
 
     @Override
-    public void readData(ObjectDataInput in)
-            throws IOException {
+    public void readData(ObjectDataInput in) throws IOException {
         this.partitionId = in.readInt();
         this.lostReplicaIndex = in.readInt();
         this.eventSource = new Address();
@@ -96,5 +99,4 @@ public class IPartitionLostEvent
         return getClass().getName() + "{partitionId=" + partitionId + ", lostReplicaIndex=" + lostReplicaIndex + ", eventSource="
                 + eventSource + '}';
     }
-
 }

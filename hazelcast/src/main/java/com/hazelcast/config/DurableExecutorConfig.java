@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,12 @@
 package com.hazelcast.config;
 
 import com.hazelcast.durableexecutor.DurableExecutorService;
-import com.hazelcast.spi.annotation.Beta;
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+import com.hazelcast.nio.serialization.impl.Versioned;
+
+import java.io.IOException;
 
 import static com.hazelcast.util.Preconditions.checkNotNegative;
 import static com.hazelcast.util.Preconditions.checkPositive;
@@ -25,8 +30,7 @@ import static com.hazelcast.util.Preconditions.checkPositive;
 /**
  * Contains the configuration for an {@link DurableExecutorService}.
  */
-@Beta
-public class DurableExecutorConfig {
+public class DurableExecutorConfig implements IdentifiedDataSerializable, Versioned, NamedConfig {
 
     /**
      * The number of executor threads per Member for the Executor based on this configuration.
@@ -34,12 +38,12 @@ public class DurableExecutorConfig {
     public static final int DEFAULT_POOL_SIZE = 16;
 
     /**
-     * Capacity of RingBuffer (per partition)
+     * Capacity of RingBuffer (per partition).
      */
     public static final int DEFAULT_RING_BUFFER_CAPACITY = 100;
 
     /**
-     * Durability of Executor
+     * Durability of Executor.
      */
     public static final int DEFAULT_DURABILITY = 1;
 
@@ -51,7 +55,9 @@ public class DurableExecutorConfig {
 
     private int capacity = DEFAULT_RING_BUFFER_CAPACITY;
 
-    private DurableExecutorConfigReadOnly readOnly;
+    private String quorumName;
+
+    private transient DurableExecutorConfigReadOnly readOnly;
 
     public DurableExecutorConfig() {
     }
@@ -61,27 +67,25 @@ public class DurableExecutorConfig {
     }
 
     public DurableExecutorConfig(String name, int poolSize, int durability, int capacity) {
+        this(name, poolSize, durability, capacity, null);
+    }
+
+    public DurableExecutorConfig(String name, int poolSize, int durability, int capacity, String quorumName) {
         this.name = name;
         this.poolSize = poolSize;
         this.durability = durability;
         this.capacity = capacity;
+        this.quorumName = quorumName;
     }
 
     public DurableExecutorConfig(DurableExecutorConfig config) {
-        this(config.getName(), config.getPoolSize(), config.getDurability(), config.getCapacity());
-    }
-
-    public DurableExecutorConfigReadOnly getAsReadOnly() {
-        if (readOnly == null) {
-            readOnly = new DurableExecutorConfigReadOnly(this);
-        }
-        return readOnly;
+        this(config.getName(), config.getPoolSize(), config.getDurability(), config.getCapacity(), config.getQuorumName());
     }
 
     /**
      * Gets the name of the executor task.
      *
-     * @return The name of the executor task.
+     * @return the name of the executor task
      */
     public String getName() {
         return name;
@@ -90,8 +94,8 @@ public class DurableExecutorConfig {
     /**
      * Sets the name of the executor task.
      *
-     * @param name The name of the executor task.
-     * @return This executor config instance.
+     * @param name the name of the executor task
+     * @return this executor config instance
      */
     public DurableExecutorConfig setName(String name) {
         this.name = name;
@@ -101,7 +105,7 @@ public class DurableExecutorConfig {
     /**
      * Gets the number of executor threads per member for the executor.
      *
-     * @return The number of executor threads per member for the executor.
+     * @return the number of executor threads per member for the executor
      */
     public int getPoolSize() {
         return poolSize;
@@ -110,12 +114,11 @@ public class DurableExecutorConfig {
     /**
      * Sets the number of executor threads per member for the executor.
      *
-     * @param poolSize The number of executor threads per member for the executor.
-     * @return This executor config instance.
+     * @param poolSize the number of executor threads per member for the executor
+     * @return this executor config instance
      */
     public DurableExecutorConfig setPoolSize(int poolSize) {
-        checkPositive(poolSize, "Pool size should be greater than 0");
-        this.poolSize = poolSize;
+        this.poolSize = checkPositive(poolSize, "Pool size should be greater than 0");
         return this;
     }
 
@@ -132,11 +135,10 @@ public class DurableExecutorConfig {
      * Sets the durability of the executor
      *
      * @param durability the durability of the executor
-     * @return This executor config instance.
+     * @return this executor config instance
      */
     public DurableExecutorConfig setDurability(int durability) {
-        checkNotNegative(durability, "durability can't be smaller than 0");
-        this.durability = durability;
+        this.durability = checkNotNegative(durability, "durability can't be smaller than 0");
         return this;
     }
 
@@ -144,7 +146,7 @@ public class DurableExecutorConfig {
      * Gets the ring buffer capacity of the executor task.
      * This is a per partition parameter, so total capacity of the ringbuffers will be partitionCount * capacity
      *
-     * @return Ring buffer capacity of the executor task.
+     * @return Ring buffer capacity of the executor task
      */
     public int getCapacity() {
         return capacity;
@@ -153,14 +155,34 @@ public class DurableExecutorConfig {
     /**
      * Sets the ring buffer capacity of the executor task.
      *
-     * @param capacity Ring Buffer capacity of the executor task.
-     * @return This executor config instance.
+     * @param capacity Ring Buffer capacity of the executor task
+     * @return this executor config instance
      */
     public DurableExecutorConfig setCapacity(int capacity) {
-        checkPositive(capacity, "Capacity should be greater than 0");
-        this.capacity = capacity;
+        this.capacity = checkPositive(capacity, "Capacity should be greater than 0");
         return this;
     }
+
+    /**
+     * Returns the quorum name for operations.
+     *
+     * @return the quorum name
+     */
+    public String getQuorumName() {
+        return quorumName;
+    }
+
+    /**
+     * Sets the quorum name for operations.
+     *
+     * @param quorumName the quorum name
+     * @return the updated configuration
+     */
+    public DurableExecutorConfig setQuorumName(String quorumName) {
+        this.quorumName = quorumName;
+        return this;
+    }
+
 
     @Override
     public String toString() {
@@ -168,12 +190,85 @@ public class DurableExecutorConfig {
                 + "name='" + name + '\''
                 + ", poolSize=" + poolSize
                 + ", capacity=" + capacity
+                + ", quorumName=" + quorumName
                 + '}';
     }
 
-    private static class DurableExecutorConfigReadOnly extends DurableExecutorConfig {
+    DurableExecutorConfigReadOnly getAsReadOnly() {
+        if (readOnly == null) {
+            readOnly = new DurableExecutorConfigReadOnly(this);
+        }
+        return readOnly;
+    }
 
-        public DurableExecutorConfigReadOnly(DurableExecutorConfig config) {
+    @Override
+    public int getFactoryId() {
+        return ConfigDataSerializerHook.F_ID;
+    }
+
+    @Override
+    public int getId() {
+        return ConfigDataSerializerHook.DURABLE_EXECUTOR_CONFIG;
+    }
+
+    @Override
+    public void writeData(ObjectDataOutput out) throws IOException {
+        out.writeUTF(name);
+        out.writeInt(poolSize);
+        out.writeInt(durability);
+        out.writeInt(capacity);
+        out.writeUTF(quorumName);
+    }
+
+    @Override
+    public void readData(ObjectDataInput in) throws IOException {
+        name = in.readUTF();
+        poolSize = in.readInt();
+        durability = in.readInt();
+        capacity = in.readInt();
+        quorumName = in.readUTF();
+    }
+
+    @Override
+    @SuppressWarnings("checkstyle:npathcomplexity")
+    public final boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof DurableExecutorConfig)) {
+            return false;
+        }
+
+        DurableExecutorConfig that = (DurableExecutorConfig) o;
+        if (poolSize != that.poolSize) {
+            return false;
+        }
+        if (durability != that.durability) {
+            return false;
+        }
+        if (capacity != that.capacity) {
+            return false;
+        }
+        if (quorumName != null ? !quorumName.equals(that.quorumName) : that.quorumName != null) {
+            return false;
+        }
+        return name.equals(that.name);
+    }
+
+    @Override
+    public final int hashCode() {
+        int result = name.hashCode();
+        result = 31 * result + poolSize;
+        result = 31 * result + durability;
+        result = 31 * result + capacity;
+        result = 31 * result + (quorumName != null ? quorumName.hashCode() : 0);
+        return result;
+    }
+
+    // not private for testing
+    static class DurableExecutorConfigReadOnly extends DurableExecutorConfig {
+
+        DurableExecutorConfigReadOnly(DurableExecutorConfig config) {
             super(config);
         }
 
@@ -194,6 +289,11 @@ public class DurableExecutorConfig {
 
         @Override
         public DurableExecutorConfig setDurability(int durability) {
+            throw new UnsupportedOperationException("This config is read-only durable executor: " + getName());
+        }
+
+        @Override
+        public DurableExecutorConfig setQuorumName(String quorumName) {
             throw new UnsupportedOperationException("This config is read-only durable executor: " + getName());
         }
     }

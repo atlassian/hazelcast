@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -70,7 +70,7 @@ public class SetCommandProcessor extends MemcacheCommandProcessor<SetCommand> {
         String mapName = DEFAULT_MAP_NAME;
         int index = key.indexOf(':');
         if (index != -1) {
-            mapName = MAP_NAME_PRECEDER + key.substring(0, index);
+            mapName = MAP_NAME_PREFIX + key.substring(0, index);
             key = key.substring(index + 1);
         }
         Object value = new MemcacheEntry(setCommand.getKey(), setCommand.getValue(), setCommand.getFlag());

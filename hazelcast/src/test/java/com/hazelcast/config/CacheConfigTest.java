@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import com.hazelcast.cache.HazelcastCacheManager;
 import com.hazelcast.cache.HazelcastCachingProvider;
 import com.hazelcast.cache.impl.HazelcastServerCachingProvider;
 import com.hazelcast.cache.impl.ICacheService;
+import com.hazelcast.cache.jsr.JsrTestUtil;
 import com.hazelcast.config.CacheSimpleConfig.ExpiryPolicyFactoryConfig;
 import com.hazelcast.config.CacheSimpleConfig.ExpiryPolicyFactoryConfig.DurationConfig;
 import com.hazelcast.config.CacheSimpleConfig.ExpiryPolicyFactoryConfig.TimedExpiryPolicyFactoryConfig;
@@ -27,15 +28,11 @@ import com.hazelcast.config.CacheSimpleConfig.ExpiryPolicyFactoryConfig.TimedExp
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.instance.HazelcastInstanceFactory;
-import com.hazelcast.instance.Node;
-import com.hazelcast.instance.TestUtil;
-import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
 import com.hazelcast.test.annotation.QuickTest;
-import com.hazelcast.util.EmptyStatement;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -49,12 +46,19 @@ import javax.cache.configuration.Configuration;
 import javax.cache.configuration.Factory;
 import javax.cache.event.CacheEntryCreatedListener;
 import javax.cache.event.CacheEntryListenerException;
+import javax.cache.integration.CacheLoader;
+import javax.cache.integration.CacheLoaderException;
+import javax.cache.integration.CacheWriter;
+import javax.cache.integration.CacheWriterException;
 import javax.cache.spi.CachingProvider;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -74,10 +78,45 @@ public class CacheConfigTest extends HazelcastTestSupport {
     private final URL configUrl2 = getClass().getClassLoader().getResource("test-hazelcast-jcache2.xml");
 
     @Before
+    public void setUp() {
+        JsrTestUtil.setup();
+    }
+
     @After
     public void cleanup() {
         HazelcastInstanceFactory.terminateAll();
-        Caching.getCachingProvider().close();
+        JsrTestUtil.cleanup();
+    }
+
+    @Test
+    public void testCacheConfigLoaderWriterXml() throws Exception {
+        Config config = new XmlConfigBuilder(configUrl2).build();
+
+        CacheSimpleConfig simpleConfig = config.getCacheConfig("cache3");
+        CacheConfig<Object, String> cacheConfig = new CacheConfig<Object, String>(simpleConfig);
+
+        Factory<CacheWriter<? super Object, ? super String>> writerFactory = cacheConfig.getCacheWriterFactory();
+        CacheWriter<? super Object, ? super String> cacheWriter = writerFactory.create();
+        assertTrue(cacheWriter instanceof EmptyCacheWriter);
+
+        Factory<CacheLoader<Object, String>> loaderFactory = cacheConfig.getCacheLoaderFactory();
+        CacheLoader<Object, String> cacheLoader = loaderFactory.create();
+        assertTrue(cacheLoader instanceof MyCacheLoader);
+    }
+
+    @Test
+    public void testCacheConfigLoaderWriter() throws Exception {
+        CacheSimpleConfig simpleConfig = new CacheSimpleConfig();
+        simpleConfig.setCacheLoader(MyCacheLoader.class.getName());
+        simpleConfig.setCacheWriter(EmptyCacheWriter.class.getName());
+
+        CacheConfig cacheConfig = new CacheConfig(simpleConfig);
+
+        CacheLoader loader = (CacheLoader) cacheConfig.getCacheLoaderFactory().create();
+        CacheWriter writer = (CacheWriter) cacheConfig.getCacheWriterFactory().create();
+
+        assertTrue(loader instanceof MyCacheLoader);
+        assertTrue(writer instanceof EmptyCacheWriter);
     }
 
     @Test
@@ -463,7 +502,7 @@ public class CacheConfigTest extends HazelcastTestSupport {
             cacheManager.createCache(cacheName, (Configuration<Object, Object>) null);
             fail("NullPointerException expected");
         } catch (NullPointerException expected) {
-            EmptyStatement.ignore(expected);
+            ignore(expected);
         }
     }
 
@@ -509,13 +548,7 @@ public class CacheConfigTest extends HazelcastTestSupport {
     }
 
     private ICacheService getCacheService(HazelcastInstance instance) {
-        Node node = TestUtil.getNode(instance);
-        return node.getNodeEngine().getService(ICacheService.SERVICE_NAME);
-    }
-
-    private NodeEngine getNodeEngine(HazelcastInstance instance) {
-        Node node = TestUtil.getNode(instance);
-        return node.getNodeEngine();
+        return getNodeEngineImpl(instance).getService(ICacheService.SERVICE_NAME);
     }
 
     @Test
@@ -612,6 +645,45 @@ public class CacheConfigTest extends HazelcastTestSupport {
         @Override
         public Object create() {
             return null;
+        }
+    }
+
+    public static class MyCacheLoader<K> implements CacheLoader<K, String> {
+        @Override
+        public String load(K key) throws CacheLoaderException {
+            return String.valueOf(key);
+        }
+
+        @Override
+        public Map<K, String> loadAll(Iterable<? extends K> keys) throws CacheLoaderException {
+            Map<K, String> result = new HashMap<K, String>();
+            for (K key : keys) {
+                result.put(key, String.valueOf(key));
+            }
+            return result;
+        }
+    }
+
+    public static class EmptyCacheWriter<K> implements CacheWriter<K, String> {
+
+        @Override
+        public void write(Cache.Entry<? extends K, ? extends String> entry) throws CacheWriterException {
+
+        }
+
+        @Override
+        public void writeAll(Collection<Cache.Entry<? extends K, ? extends String>> entries) throws CacheWriterException {
+
+        }
+
+        @Override
+        public void delete(Object key) throws CacheWriterException {
+
+        }
+
+        @Override
+        public void deleteAll(Collection<?> keys) throws CacheWriterException {
+
         }
     }
 }

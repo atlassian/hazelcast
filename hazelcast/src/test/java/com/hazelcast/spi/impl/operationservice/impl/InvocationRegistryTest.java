@@ -1,17 +1,29 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.spi.impl.operationservice.impl;
 
-import com.hazelcast.config.Config;
-import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.HazelcastInstanceNotActiveException;
 import com.hazelcast.core.MemberLeftException;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.spi.Operation;
-import com.hazelcast.spi.OperationAccessor;
-import com.hazelcast.spi.impl.operationservice.impl.CallIdSequence.CallIdSequenceWithBackpressure;
 import com.hazelcast.spi.impl.operationservice.impl.Invocation.Context;
+import com.hazelcast.spi.impl.sequence.CallIdSequenceWithBackpressure;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
-import com.hazelcast.test.RequireAssertEnabled;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Before;
 import org.junit.Test;
@@ -21,8 +33,6 @@ import org.mockito.Mockito;
 
 import java.util.concurrent.ExecutionException;
 
-import static com.hazelcast.spi.OperationAccessor.hasActiveInvocation;
-import static com.hazelcast.spi.properties.GroupProperty.BACKPRESSURE_ENABLED;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
@@ -49,8 +59,8 @@ public class InvocationRegistryTest extends HazelcastTestSupport {
 
     private Invocation newInvocation(Operation op) {
         Invocation.Context context = new Context(null, null, null, null, null,
-                1000, invocationRegistry, null, "", logger, null, null, null, null, null, null, null, null);
-        return new PartitionInvocation(context, op, 0, 0, 0, false);
+                1000, invocationRegistry, null, logger, null, null, null, null, null, null, null, null, null, null);
+        return new PartitionInvocation(context, op, 0, 0, 0, false, false);
     }
 
     // ====================== register ===============================
@@ -103,7 +113,6 @@ public class InvocationRegistryTest extends HazelcastTestSupport {
     public void deregister_whenSkipped() {
         Operation op = new DummyOperation();
         Invocation invocation = newInvocation(op);
-        invocation.remote = false;
 
         invocationRegistry.register(invocation);
         invocationRegistry.deregister(invocation);
@@ -148,7 +157,7 @@ public class InvocationRegistryTest extends HazelcastTestSupport {
         invocationRegistry.register(invocation);
         long callId = invocation.op.getCallId();
 
-        invocationRegistry.reset();
+        invocationRegistry.reset(null);
 
         InvocationFuture f = invocation.future;
         try {

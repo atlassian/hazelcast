@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,9 @@ package com.hazelcast.mapreduce;
  * on a regular basis (after 1000 processed elements per node).
  *
  * @since 3.2
- * @deprecated Hazelcast Jet will replace, maybe re-implement this API shortly
+ * @deprecated MapReduce is deprecated and will be removed in 4.0.
+ * For map aggregations, you can use {@link com.hazelcast.aggregation.Aggregator} on IMap.
+ * For general data processing, it is superseded by <a href="http://jet.hazelcast.org">Hazelcast Jet</a>.
  */
 @Deprecated
 public interface JobProcessInformation {
@@ -35,7 +37,7 @@ public interface JobProcessInformation {
      * and the processing owner of this partition.<br/>
      * The index of the {@link com.hazelcast.mapreduce.JobPartitionState} inside of the
      * array is the number of the processed partition if the {@link com.hazelcast.mapreduce.KeyValueSource}
-     * is {@link com.hazelcast.mapreduce.PartitionIdAware} or a randomly assigned id for
+     * is {@link com.hazelcast.mapreduce.PartitionIdAware} or a randomly assigned ID for
      * the different members of the cluster.
      *
      * @return partition state array with actual state information

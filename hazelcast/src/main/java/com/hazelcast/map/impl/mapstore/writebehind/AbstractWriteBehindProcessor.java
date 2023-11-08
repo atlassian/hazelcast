@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import com.hazelcast.config.MapStoreConfig;
 import com.hazelcast.core.MapStore;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.map.impl.mapstore.MapStoreContext;
-import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.serialization.SerializationService;
 
 import java.util.List;
@@ -54,10 +53,6 @@ abstract class AbstractWriteBehindProcessor<T> implements WriteBehindProcessor<T
 
     protected Object toObject(Object obj) {
         return serializationService.toObject(obj);
-    }
-
-    protected Data toData(Object obj) {
-        return serializationService.toData(obj);
     }
 
     /**

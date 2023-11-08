@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,12 @@
 
 package com.hazelcast.config;
 
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.spi.properties.GroupProperty;
 
+import java.io.IOException;
 import java.util.Properties;
 
 import static com.hazelcast.util.Preconditions.isNotNull;
@@ -25,7 +29,7 @@ import static com.hazelcast.util.Preconditions.isNotNull;
 /**
  * Contains the configuration for a Map Store.
  */
-public class MapStoreConfig {
+public class MapStoreConfig implements IdentifiedDataSerializable {
     /**
      * Default delay seconds for writing
      */
@@ -48,7 +52,7 @@ public class MapStoreConfig {
     private Object implementation;
     private Object factoryImplementation;
     private Properties properties = new Properties();
-    private MapStoreConfigReadOnly readOnly;
+    private transient MapStoreConfigReadOnly readOnly;
     private InitialLoadMode initialLoadMode = InitialLoadMode.LAZY;
 
     /**
@@ -81,6 +85,12 @@ public class MapStoreConfig {
         properties.putAll(config.getProperties());
     }
 
+    /**
+     * Gets immutable version of this configuration.
+     *
+     * @return immutable version of this configuration
+     * @deprecated this method will be removed in 4.0; it is meant for internal usage only
+     */
     public MapStoreConfigReadOnly getAsReadOnly() {
         if (readOnly == null) {
             readOnly = new MapStoreConfigReadOnly(this);
@@ -129,7 +139,7 @@ public class MapStoreConfig {
     /**
      * Returns the number of seconds to delay the store writes.
      *
-     * @return the number of seconds to delay the store writes.
+     * @return the number of seconds to delay the store writes
      */
     public int getWriteDelaySeconds() {
         return writeDelaySeconds;
@@ -137,7 +147,7 @@ public class MapStoreConfig {
 
     /**
      * Sets the number of seconds to delay before writing (storing) the dirty records
-     * <p/>
+     * <p>
      * Default value is {@value #DEFAULT_WRITE_DELAY_SECONDS}.
      *
      * @param writeDelaySeconds the number of seconds to delay before writing the dirty records
@@ -150,7 +160,7 @@ public class MapStoreConfig {
     /**
      * Returns the number of operations to be included in each batch processing round.
      *
-     * @return write batch size: the number of operations to be included in each batch processing round.
+     * @return write batch size: the number of operations to be included in each batch processing round
      */
     public int getWriteBatchSize() {
         return writeBatchSize;
@@ -158,10 +168,10 @@ public class MapStoreConfig {
 
     /**
      * Sets the number of operations to be included in each batch processing round.
-     * <p/>
+     * <p>
      * Default value is {@value #DEFAULT_WRITE_BATCH_SIZE}.
      *
-     * @param writeBatchSize the number of operations to be included in each batch processing round.
+     * @param writeBatchSize the number of operations to be included in each batch processing round
      */
     public MapStoreConfig setWriteBatchSize(int writeBatchSize) {
         if (writeBatchSize < 1) {
@@ -174,7 +184,7 @@ public class MapStoreConfig {
     /**
      * Returns if this configuration is enabled
      *
-     * @return true if this configuration is enabled, false otherwise
+     * @return {@code true} if this configuration is enabled, {@code false} otherwise
      */
     public boolean isEnabled() {
         return enabled;
@@ -183,7 +193,7 @@ public class MapStoreConfig {
     /**
      * Enables and disables this configuration
      *
-     * @param enabled true to enables this configuration, false to disable
+     * @param enabled {@code true} to enables this configuration, {@code false} to disable
      */
     public MapStoreConfig setEnabled(boolean enabled) {
         this.enabled = enabled;
@@ -265,7 +275,7 @@ public class MapStoreConfig {
     }
 
     /**
-     * Returns the initial load mode
+     * Returns the initial load mode.
      *
      * @return the initial load mode object
      */
@@ -274,10 +284,11 @@ public class MapStoreConfig {
     }
 
     /**
-     * Sets the initial load mode
-     * <p/>
-     * LAZY: Default load mode where load is async
-     * EAGER: load mode where load is blocked till all partitions are loaded
+     * Sets the initial load mode.
+     * <ul>
+     * <li>LAZY: Default load mode where load is async</li>
+     * <li>EAGER: load mode where load is blocked till all partitions are loaded</li>
+     * </ul>
      *
      * @param initialLoadMode the initial load mode object
      */
@@ -289,7 +300,7 @@ public class MapStoreConfig {
     /**
      * Returns {@code true} if write-coalescing is enabled.
      *
-     * @return {@code true} if coalescing enabled, {@code false} otherwise.
+     * @return {@code true} if coalescing enabled, {@code false} otherwise
      * @see #setWriteCoalescing(boolean)
      */
     public boolean isWriteCoalescing() {
@@ -298,13 +309,13 @@ public class MapStoreConfig {
 
     /**
      * Setting {@link #writeCoalescing} is meaningful if you are using write-behind {@link com.hazelcast.core.MapStore}.
-     * <p/>
+     * <p>
      * When {@link #writeCoalescing} is {@code true}, only the latest store operation on a key in the {@link #writeDelaySeconds}
      * time-window will be reflected to {@link com.hazelcast.core.MapStore}.
-     * <p/>
+     * <p>
      * Default value is {@value #DEFAULT_WRITE_COALESCING}.
      *
-     * @param writeCoalescing {@code true} to enable write-coalescing, {@code false} otherwise.
+     * @param writeCoalescing {@code true} to enable write-coalescing, {@code false} otherwise
      * @see GroupProperty#MAP_WRITE_BEHIND_QUEUE_CAPACITY
      */
     public MapStoreConfig setWriteCoalescing(boolean writeCoalescing) {
@@ -328,9 +339,9 @@ public class MapStoreConfig {
                 + '}';
     }
 
-    @SuppressWarnings({"checkstyle:npathcomplexity", "checkstyle:cyclomaticcomplexity"})
     @Override
-    public boolean equals(Object o) {
+    @SuppressWarnings({"checkstyle:npathcomplexity", "checkstyle:cyclomaticcomplexity"})
+    public final boolean equals(Object o) {
         if (this == o) {
             return true;
         }
@@ -371,9 +382,9 @@ public class MapStoreConfig {
         return initialLoadMode == that.initialLoadMode;
     }
 
-    @SuppressWarnings({"checkstyle:npathcomplexity"})
     @Override
-    public int hashCode() {
+    @SuppressWarnings({"checkstyle:npathcomplexity"})
+    public final int hashCode() {
         final int prime = 31;
         int result = (enabled ? 1 : 0);
         result = prime * result + (writeCoalescing ? 1 : 0);
@@ -386,5 +397,44 @@ public class MapStoreConfig {
         result = prime * result + properties.hashCode();
         result = prime * result + (initialLoadMode != null ? initialLoadMode.hashCode() : 0);
         return result;
+    }
+
+
+    @Override
+    public int getFactoryId() {
+        return ConfigDataSerializerHook.F_ID;
+    }
+
+    @Override
+    public int getId() {
+        return ConfigDataSerializerHook.MAP_STORE_CONFIG;
+    }
+
+    @Override
+    public void writeData(ObjectDataOutput out) throws IOException {
+        out.writeBoolean(enabled);
+        out.writeBoolean(writeCoalescing);
+        out.writeUTF(className);
+        out.writeUTF(factoryClassName);
+        out.writeInt(writeDelaySeconds);
+        out.writeInt(writeBatchSize);
+        out.writeObject(implementation);
+        out.writeObject(factoryImplementation);
+        out.writeObject(properties);
+        out.writeUTF(initialLoadMode.name());
+    }
+
+    @Override
+    public void readData(ObjectDataInput in) throws IOException {
+        enabled = in.readBoolean();
+        writeCoalescing = in.readBoolean();
+        className = in.readUTF();
+        factoryClassName = in.readUTF();
+        writeDelaySeconds = in.readInt();
+        writeBatchSize = in.readInt();
+        implementation = in.readObject();
+        factoryImplementation = in.readObject();
+        properties = in.readObject();
+        initialLoadMode = InitialLoadMode.valueOf(in.readUTF());
     }
 }

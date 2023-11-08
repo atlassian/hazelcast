@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,13 @@ import com.hazelcast.spi.impl.eventservice.impl.EventServiceImpl;
 
 import java.io.IOException;
 
+/**
+ * An operation for sending a event to a remote subscriber (not on this node).
+ * It will process the event on a thread defined by the {@link #orderKey} and in case of an exception,
+ * the exception is returned to the caller.
+ *
+ * @see EventServiceImpl#sendEvent(com.hazelcast.nio.Address, EventEnvelope, int)
+ */
 public class SendEventOperation extends Operation implements AllowedDuringPassiveState, IdentifiedDataSerializable {
     private EventEnvelope eventEnvelope;
     private int orderKey;

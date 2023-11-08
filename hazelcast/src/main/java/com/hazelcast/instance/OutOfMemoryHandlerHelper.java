@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,8 @@ package com.hazelcast.instance;
 
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.spi.annotation.PrivateApi;
-import com.hazelcast.util.EmptyStatement;
+
+import static com.hazelcast.util.EmptyStatement.ignore;
 
 /**
  * Helper class for OutOfMemoryHandlers to close sockets, stop threads, release allocated resources
@@ -42,11 +43,11 @@ public final class OutOfMemoryHandlerHelper {
     }
 
     private static void closeSockets(HazelcastInstanceImpl factory) {
-        if (factory.node.connectionManager != null) {
+        if (factory.node.networkingService != null) {
             try {
-                factory.node.connectionManager.shutdown();
+                factory.node.networkingService.shutdown();
             } catch (Throwable ignored) {
-                EmptyStatement.ignore(ignored);
+                ignore(ignored);
             }
         }
     }
@@ -60,20 +61,7 @@ public final class OutOfMemoryHandlerHelper {
         try {
             factory.node.shutdown(true);
         } catch (Throwable ignored) {
-            EmptyStatement.ignore(ignored);
-        }
-    }
-
-    public static void tryStopThreads(HazelcastInstance hazelcastInstance) {
-        if (hazelcastInstance == null) {
-            return;
-        }
-
-        HazelcastInstanceImpl factory = (HazelcastInstanceImpl) hazelcastInstance;
-        try {
-            factory.node.getHazelcastThreadGroup().destroy();
-        } catch (Throwable ignored) {
-            EmptyStatement.ignore(ignored);
+            ignore(ignored);
         }
     }
 }

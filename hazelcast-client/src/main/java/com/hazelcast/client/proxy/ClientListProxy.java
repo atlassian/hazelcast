@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,7 +40,7 @@ import com.hazelcast.client.impl.protocol.codec.ListRemoveWithIndexCodec;
 import com.hazelcast.client.impl.protocol.codec.ListSetCodec;
 import com.hazelcast.client.impl.protocol.codec.ListSizeCodec;
 import com.hazelcast.client.impl.protocol.codec.ListSubCodec;
-import com.hazelcast.client.spi.ClientClusterService;
+import com.hazelcast.client.spi.ClientContext;
 import com.hazelcast.client.spi.EventHandler;
 import com.hazelcast.client.spi.impl.ListenerMessageCodec;
 import com.hazelcast.collection.impl.common.DataAwareItemEvent;
@@ -51,14 +51,15 @@ import com.hazelcast.core.ItemListener;
 import com.hazelcast.core.Member;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.impl.UnmodifiableLazyList;
-import com.hazelcast.spi.serialization.SerializationService;
-import com.hazelcast.util.CollectionUtil;
-import com.hazelcast.util.Preconditions;
 
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.ListIterator;
+
+import static com.hazelcast.util.CollectionUtil.objectToDataCollection;
+import static com.hazelcast.util.Preconditions.checkNotNull;
+import static com.hazelcast.util.Preconditions.isNotNull;
 
 /**
  * Proxy implementation of {@link IList}.
@@ -67,14 +68,14 @@ import java.util.ListIterator;
  */
 public class ClientListProxy<E> extends PartitionSpecificClientProxy implements IList<E> {
 
-    public ClientListProxy(String serviceName, String name) {
-        super(serviceName, name);
+    public ClientListProxy(String serviceName, String name, ClientContext context) {
+        super(serviceName, name, context);
     }
 
     @Override
     public boolean addAll(int index, Collection<? extends E> c) {
-        Preconditions.checkNotNull(c);
-        Collection<Data> dataCollection = CollectionUtil.objectToDataCollection(c, getSerializationService());
+        checkNotNull(c);
+        Collection<Data> dataCollection = objectToDataCollection(c, getSerializationService());
         ClientMessage request = ListAddAllWithIndexCodec.encodeRequest(name, index, dataCollection);
         ClientMessage response = invokeOnPartition(request);
         ListAddAllWithIndexCodec.ResponseParameters resultParameters =
@@ -92,7 +93,7 @@ public class ClientListProxy<E> extends PartitionSpecificClientProxy implements 
 
     @Override
     public E set(int index, E element) {
-        Preconditions.checkNotNull(element);
+        checkNotNull(element);
         Data value = toData(element);
         ClientMessage request = ListSetCodec.encodeRequest(name, index, value);
         ClientMessage response = invokeOnPartition(request);
@@ -102,7 +103,7 @@ public class ClientListProxy<E> extends PartitionSpecificClientProxy implements 
 
     @Override
     public void add(int index, E element) {
-        Preconditions.checkNotNull(element);
+        checkNotNull(element);
         Data value = toData(element);
         ClientMessage request = ListAddWithIndexCodec.encodeRequest(name, index, value);
         invokeOnPartition(request);
@@ -134,7 +135,7 @@ public class ClientListProxy<E> extends PartitionSpecificClientProxy implements 
 
     @Override
     public boolean contains(Object o) {
-        Preconditions.checkNotNull(o);
+        checkNotNull(o);
         Data value = toData(o);
         ClientMessage request = ListContainsCodec.encodeRequest(name, value);
         ClientMessage response = invokeOnPartition(request);
@@ -148,8 +149,7 @@ public class ClientListProxy<E> extends PartitionSpecificClientProxy implements 
         ClientMessage response = invokeOnPartition(request);
         ListIteratorCodec.ResponseParameters resultParameters = ListIteratorCodec.decodeResponse(response);
         List<Data> resultCollection = resultParameters.response;
-        SerializationService serializationService = getContext().getSerializationService();
-        return new UnmodifiableLazyList<E>(resultCollection, serializationService).iterator();
+        return new UnmodifiableLazyList<E>(resultCollection, getSerializationService()).iterator();
     }
 
     @Override
@@ -164,7 +164,7 @@ public class ClientListProxy<E> extends PartitionSpecificClientProxy implements 
 
     @Override
     public boolean add(E e) {
-        Preconditions.checkNotNull(e);
+        checkNotNull(e);
         Data element = toData(e);
         ClientMessage request = ListAddCodec.encodeRequest(name, element);
         ClientMessage response = invokeOnPartition(request);
@@ -174,7 +174,7 @@ public class ClientListProxy<E> extends PartitionSpecificClientProxy implements 
 
     @Override
     public boolean remove(Object o) {
-        Preconditions.checkNotNull(o);
+        checkNotNull(o);
         Data value = toData(o);
         ClientMessage request = ListRemoveCodec.encodeRequest(name, value);
         ClientMessage response = invokeOnPartition(request);
@@ -184,8 +184,8 @@ public class ClientListProxy<E> extends PartitionSpecificClientProxy implements 
 
     @Override
     public boolean containsAll(Collection<?> c) {
-        Preconditions.checkNotNull(c);
-        Collection<Data> dataCollection = CollectionUtil.objectToDataCollection(c, getSerializationService());
+        checkNotNull(c);
+        Collection<Data> dataCollection = objectToDataCollection(c, getSerializationService());
         ClientMessage request = ListContainsAllCodec.encodeRequest(name, dataCollection);
         ClientMessage response = invokeOnPartition(request);
         ListContainsAllCodec.ResponseParameters resultParameters = ListContainsAllCodec.decodeResponse(response);
@@ -194,8 +194,8 @@ public class ClientListProxy<E> extends PartitionSpecificClientProxy implements 
 
     @Override
     public boolean addAll(Collection<? extends E> c) {
-        Preconditions.checkNotNull(c);
-        Collection<Data> dataCollection = CollectionUtil.objectToDataCollection(c, getSerializationService());
+        checkNotNull(c);
+        Collection<Data> dataCollection = objectToDataCollection(c, getSerializationService());
         ClientMessage request = ListAddAllCodec.encodeRequest(name, dataCollection);
         ClientMessage response = invokeOnPartition(request);
         ListAddAllCodec.ResponseParameters resultParameters = ListAddAllCodec.decodeResponse(response);
@@ -204,8 +204,8 @@ public class ClientListProxy<E> extends PartitionSpecificClientProxy implements 
 
     @Override
     public boolean removeAll(Collection<?> c) {
-        Preconditions.checkNotNull(c);
-        Collection<Data> dataCollection = CollectionUtil.objectToDataCollection(c, getSerializationService());
+        checkNotNull(c);
+        Collection<Data> dataCollection = objectToDataCollection(c, getSerializationService());
         ClientMessage request = ListCompareAndRemoveAllCodec.encodeRequest(name, dataCollection);
         ClientMessage response = invokeOnPartition(request);
         ListCompareAndRemoveAllCodec.ResponseParameters resultParameters =
@@ -215,8 +215,8 @@ public class ClientListProxy<E> extends PartitionSpecificClientProxy implements 
 
     @Override
     public boolean retainAll(Collection<?> c) {
-        Preconditions.checkNotNull(c);
-        Collection<Data> dataCollection = CollectionUtil.objectToDataCollection(c, getSerializationService());
+        checkNotNull(c);
+        Collection<Data> dataCollection = objectToDataCollection(c, getSerializationService());
         ClientMessage request = ListCompareAndRetainAllCodec.encodeRequest(name, dataCollection);
         ClientMessage response = invokeOnPartition(request);
         ListCompareAndRetainAllCodec.ResponseParameters resultParameters =
@@ -232,6 +232,7 @@ public class ClientListProxy<E> extends PartitionSpecificClientProxy implements 
 
     @Override
     public String addItemListener(ItemListener<E> listener, boolean includeValue) {
+        isNotNull(listener, "listener");
         EventHandler<ClientMessage> eventHandler = new ItemEventHandler(listener);
         return registerListener(createItemListenerCodec(includeValue), eventHandler);
     }
@@ -274,7 +275,7 @@ public class ClientListProxy<E> extends PartitionSpecificClientProxy implements 
 
     @Override
     public int lastIndexOf(Object o) {
-        Preconditions.checkNotNull(o);
+        checkNotNull(o);
         Data value = toData(o);
         ClientMessage request = ListLastIndexOfCodec.encodeRequest(name, value);
         ClientMessage response = invokeOnPartition(request);
@@ -284,7 +285,7 @@ public class ClientListProxy<E> extends PartitionSpecificClientProxy implements 
 
     @Override
     public int indexOf(Object o) {
-        Preconditions.checkNotNull(o);
+        checkNotNull(o);
         Data value = toData(o);
         ClientMessage request = ListIndexOfCodec.encodeRequest(name, value);
         ClientMessage response = invokeOnPartition(request);
@@ -303,8 +304,7 @@ public class ClientListProxy<E> extends PartitionSpecificClientProxy implements 
         ClientMessage response = invokeOnPartition(request);
         ListListIteratorCodec.ResponseParameters resultParameters = ListListIteratorCodec.decodeResponse(response);
         List<Data> resultCollection = resultParameters.response;
-        SerializationService serializationService = getContext().getSerializationService();
-        return new UnmodifiableLazyList<E>(resultCollection, serializationService).listIterator();
+        return new UnmodifiableLazyList<E>(resultCollection, getSerializationService()).listIterator();
     }
 
     @Override
@@ -313,8 +313,7 @@ public class ClientListProxy<E> extends PartitionSpecificClientProxy implements 
         ClientMessage response = invokeOnPartition(request);
         ListSubCodec.ResponseParameters resultParameters = ListSubCodec.decodeResponse(response);
         List<Data> resultCollection = resultParameters.response;
-        SerializationService serializationService = getContext().getSerializationService();
-        return new UnmodifiableLazyList<E>(resultCollection, serializationService);
+        return new UnmodifiableLazyList<E>(resultCollection, getSerializationService());
     }
 
     @Override
@@ -332,12 +331,10 @@ public class ClientListProxy<E> extends PartitionSpecificClientProxy implements 
         }
 
         @Override
-        public void handle(Data dataItem, String uuid, int eventType) {
-            SerializationService serializationService = getContext().getSerializationService();
-            ClientClusterService clusterService = getContext().getClusterService();
-            Member member = clusterService.getMember(uuid);
+        public void handleItemEventV10(Data dataItem, String uuid, int eventType) {
+            Member member = getContext().getClusterService().getMember(uuid);
             ItemEvent<E> itemEvent = new DataAwareItemEvent(name, ItemEventType.getByType(eventType),
-                    dataItem, member, serializationService);
+                    dataItem, member, getSerializationService());
             if (eventType == ItemEventType.ADDED.getType()) {
                 listener.itemAdded(itemEvent);
             } else {
@@ -347,12 +344,10 @@ public class ClientListProxy<E> extends PartitionSpecificClientProxy implements 
 
         @Override
         public void beforeListenerRegister() {
-
         }
 
         @Override
         public void onListenerRegister() {
-
         }
     }
 }

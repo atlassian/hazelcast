@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -81,6 +81,15 @@ public class DurableExecutorPartitionContainer {
         for (DurableExecutorContainer container : executorContainerMap.values()) {
             container.executeAll();
         }
+    }
+
+    public void removeContainer(String name) {
+        executorContainerMap.remove(name);
+    }
+
+    // for testing
+    DurableExecutorContainer getExistingExecutorContainer(String name) {
+        return executorContainerMap.get(name);
     }
 
     private DurableExecutorContainer createExecutorContainer(String name) {

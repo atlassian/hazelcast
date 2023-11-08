@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.ringbuffer.impl;
 
 import com.hazelcast.config.Config;
@@ -13,9 +29,12 @@ import com.hazelcast.spi.InternalCompletableFuture;
 import com.hazelcast.spi.exception.DistributedObjectDestroyedException;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastTestSupport;
+import com.hazelcast.util.RootCauseMatcher;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.ExpectedException;
 
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -23,6 +42,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 
@@ -32,6 +52,7 @@ import static com.hazelcast.ringbuffer.OverflowPolicy.OVERWRITE;
 import static com.hazelcast.test.AbstractHazelcastClassRunner.getTestMethodName;
 import static java.lang.Math.max;
 import static java.lang.String.format;
+import static java.util.Arrays.asList;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.junit.Assert.assertEquals;
@@ -43,10 +64,13 @@ public abstract class RingbufferAbstractTest extends HazelcastTestSupport {
 
     protected HazelcastInstance[] instances;
     protected IAtomicLong atomicLong;
-    private Ringbuffer<String> ringbuffer;
+    protected Ringbuffer<String> ringbuffer;
     private Config config;
     private HazelcastInstance local;
     private String name;
+
+    @Rule
+    public ExpectedException expectedException = ExpectedException.none();
 
     @Before
     public void setup() {
@@ -87,6 +111,12 @@ public abstract class RingbufferAbstractTest extends HazelcastTestSupport {
                 .setTimeToLiveSeconds(10));
         config.addRingBufferConfig(new RingbufferConfig("readOne_staleSequence*").setCapacity(5));
         config.addRingBufferConfig(new RingbufferConfig("readOne_futureSequence*").setCapacity(5));
+        config.addRingBufferConfig(new RingbufferConfig("sizeShouldNotExceedCapacity_whenPromotedFromBackup*")
+                .setCapacity(10));
+        config.addRingBufferConfig(new RingbufferConfig("readManyAsync_whenHitsStale_shouldNotBeBlocked*")
+                .setCapacity(10));
+        config.addRingBufferConfig(new RingbufferConfig("readOne_whenHitsStale_shouldNotBeBlocked*")
+                .setCapacity(10));
 
         instances = newInstances(config);
         local = instances[0];
@@ -700,6 +730,35 @@ public abstract class RingbufferAbstractTest extends HazelcastTestSupport {
         assertEquals(0, resultSet.readCount());
     }
 
+
+    @Test
+    public void readManyAsync_whenHitsStale_shouldNotBeBlocked() throws Exception {
+        ICompletableFuture<ReadResultSet<String>> f = ringbuffer.readManyAsync(0, 1, 10, null);
+        ringbuffer.addAllAsync(asList("0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"), OVERWRITE);
+        expectedException.expect(new RootCauseMatcher(StaleSequenceException.class));
+        f.get();
+    }
+
+    @Test
+    public void readOne_whenHitsStale_shouldNotBeBlocked() {
+        final CountDownLatch latch = new CountDownLatch(1);
+        Thread consumer = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ringbuffer.readOne(0);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                } catch (StaleSequenceException e) {
+                    latch.countDown();
+                }
+            }
+        });
+        consumer.start();
+        ringbuffer.addAllAsync(asList("0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"), OVERWRITE);
+        assertOpenEventually(latch);
+    }
+
     @Test
     public void readManyAsync_whenMoreAvailableThanMinimumLessThanMaximum() throws ExecutionException, InterruptedException {
         ringbuffer.add("1");
@@ -734,8 +793,8 @@ public abstract class RingbufferAbstractTest extends HazelcastTestSupport {
     }
 
     @Test(expected = IllegalArgumentException.class)
-    public void readManyAsync_whenMinCountLargerThanCapacity() {
-        ringbuffer.readManyAsync(0, RingbufferConfig.DEFAULT_CAPACITY + 1, RingbufferConfig.DEFAULT_CAPACITY + 1, null);
+    public void readManyAsync_whenMaxCountLargerThanCapacity() {
+        ringbuffer.readManyAsync(0, 1, RingbufferConfig.DEFAULT_CAPACITY + 1, null);
     }
 
     @Test(expected = IllegalArgumentException.class)

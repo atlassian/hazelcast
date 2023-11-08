@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import com.hazelcast.client.connection.nio.ClientConnection;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.spi.impl.ClientInvocation;
 import com.hazelcast.nio.Address;
-import com.hazelcast.nio.Connection;
+import com.hazelcast.util.function.Consumer;
 
 import java.io.IOException;
 
@@ -32,8 +32,6 @@ import java.io.IOException;
  */
 public interface ClientInvocationService {
 
-    void start();
-
     void invokeOnConnection(ClientInvocation invocation, ClientConnection connection) throws IOException;
 
     void invokeOnPartitionOwner(ClientInvocation invocation, int partitionId) throws IOException;
@@ -44,9 +42,7 @@ public interface ClientInvocationService {
 
     boolean isRedoOperation();
 
-    void shutdown();
+    Consumer<ClientMessage> getResponseHandler();
 
-    void handleClientMessage(ClientMessage message, Connection connection);
-
-    ClientConnection getConnection(int partitionId) throws IOException;
+    long concurrentInvocations();
 }

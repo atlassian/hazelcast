@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,23 +22,24 @@ import com.hazelcast.multimap.impl.MultiMapDataSerializerHook;
 import com.hazelcast.multimap.impl.MultiMapRecord;
 import com.hazelcast.multimap.impl.MultiMapService;
 import com.hazelcast.multimap.impl.MultiMapValue;
-import com.hazelcast.multimap.impl.operations.MultiMapKeyBasedOperation;
+import com.hazelcast.multimap.impl.operations.AbstractKeyBasedMultiMapOperation;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.BackupAwareOperation;
 import com.hazelcast.spi.Operation;
-import com.hazelcast.util.Clock;
+import com.hazelcast.spi.impl.MutatingOperation;
 
 import java.io.IOException;
 import java.util.Collection;
 import java.util.Iterator;
 
-public class TxnRemoveOperation extends MultiMapKeyBasedOperation implements BackupAwareOperation {
+public class TxnRemoveOperation extends AbstractKeyBasedMultiMapOperation implements BackupAwareOperation, MutatingOperation {
 
-    long recordId;
-    Data value;
-    long begin = -1;
+    private long recordId;
+    private Data value;
+
+    private transient long startTimeNanos;
 
     public TxnRemoveOperation() {
     }
@@ -51,14 +52,15 @@ public class TxnRemoveOperation extends MultiMapKeyBasedOperation implements Bac
 
     @Override
     public void run() throws Exception {
-        begin = Clock.currentTimeMillis();
+        startTimeNanos = System.nanoTime();
         MultiMapContainer container = getOrCreateContainer();
         MultiMapValue multiMapValue = container.getMultiMapValueOrNull(dataKey);
-        response = true;
         if (multiMapValue == null || !multiMapValue.containsRecordId(recordId)) {
             response = false;
             return;
         }
+        response = true;
+        container.update();
         Collection<MultiMapRecord> coll = multiMapValue.getCollection(false);
         Iterator<MultiMapRecord> iter = coll.iterator();
         while (iter.hasNext()) {
@@ -68,17 +70,16 @@ public class TxnRemoveOperation extends MultiMapKeyBasedOperation implements Bac
             }
         }
         if (coll.isEmpty()) {
-            delete();
+            container.delete(dataKey);
         }
     }
 
     @Override
     public void afterRun() throws Exception {
-        long elapsed = Math.max(0, Clock.currentTimeMillis() - begin);
-        final MultiMapService service = getService();
-        service.getLocalMultiMapStatsImpl(name).incrementRemoves(elapsed);
+        long elapsed = Math.max(0, System.nanoTime() - startTimeNanos);
+        MultiMapService service = getService();
+        service.getLocalMultiMapStatsImpl(name).incrementRemoveLatencyNanos(elapsed);
         if (Boolean.TRUE.equals(response)) {
-            getOrCreateContainer().update();
             publishEvent(EntryEventType.REMOVED, dataKey, null, value);
         }
     }
@@ -115,5 +116,4 @@ public class TxnRemoveOperation extends MultiMapKeyBasedOperation implements Bac
     public int getId() {
         return MultiMapDataSerializerHook.TXN_REMOVE;
     }
-
 }

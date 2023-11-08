@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@ public final class Records {
         record.setVersion(replicationInfo.getVersion());
         record.setHits(replicationInfo.getHits());
         record.setTtl(replicationInfo.getTtl());
+        record.setMaxIdle(replicationInfo.getMaxIdle());
         record.setCreationTime(replicationInfo.getCreationTime());
         record.setLastAccessTime(replicationInfo.getLastAccessTime());
         record.setLastUpdateTime(replicationInfo.getLastUpdateTime());
@@ -49,6 +50,7 @@ public final class Records {
         info.setLastAccessTime(record.getLastAccessTime());
         info.setLastUpdateTime(record.getLastUpdateTime());
         info.setTtl(record.getTtl());
+        info.setMaxIdle(record.getMaxIdle());
         info.setExpirationTime(record.getExpirationTime());
         info.setLastStoredTime(record.getLastStoredTime());
 
@@ -146,7 +148,13 @@ public final class Records {
 
         //we managed to lock the record for ourselves
         Object valueAfterCas = record.getValue();
-        Object object = serializationService.toObject(valueBeforeCas);
+        Object object = null;
+        try {
+            object = serializationService.toObject(valueBeforeCas);
+        } catch (RuntimeException e) {
+            record.casCachedValue(currentThread, null);
+            throw e;
+        }
         if (valueAfterCas == valueBeforeCas) {
             //this check is needed to make sure a partition thread had not changed the value
             //right before we won the CAS

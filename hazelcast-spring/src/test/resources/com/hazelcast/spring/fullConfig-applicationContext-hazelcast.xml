@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ~ Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+  ~ Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
   ~ you may not use this file except in compliance with the License.
@@ -20,13 +20,11 @@
        xmlns:s="http://www.hazelcast.com/schema/sample"
        xmlns:hz="http://www.hazelcast.com/schema/spring"
        xsi:schemaLocation="http://www.springframework.org/schema/beans
-		http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
-		http://www.hazelcast.com/schema/spring
-		http://www.hazelcast.com/schema/spring/hazelcast-spring.xsd
-		http://www.hazelcast.com/schema/sample
-		hazelcast-sample-service.xsd">
-
-    <!--xmlns="http://www.hazelcast.com/schema/config"-->
+        http://www.springframework.org/schema/beans/spring-beans.xsd
+        http://www.hazelcast.com/schema/sample
+        hazelcast-sample-service.xsd
+        http://www.hazelcast.com/schema/spring
+        http://www.hazelcast.com/schema/spring/hazelcast-spring-3.12.xsd">
 
     <bean class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer"
           p:systemPropertiesModeName="SYSTEM_PROPERTIES_MODE_OVERRIDE">
@@ -44,15 +42,28 @@
                     name="${cluster.group.name}"
                     password="${cluster.group.password}"/>
             <hz:license-key>HAZELCAST_ENTERPRISE_LICENSE_KEY</hz:license-key>
-            <hz:management-center enabled="true" url="myserver:80" update-interval="4"/>
+            <hz:management-center enabled="true" update-interval="2" scripting-enabled="false">
+                <hz:url>myserver:80</hz:url>
+                <hz:mutual-auth enabled="true">
+                    <hz:factory-class-name>who.let.the.cat.out.class</hz:factory-class-name>
+                    <hz:properties>
+                        <hz:property name="bool">ean</hz:property>
+                    </hz:properties>
+                </hz:mutual-auth>
+            </hz:management-center>
+
             <hz:properties>
                 <hz:property name="hazelcast.merge.first.run.delay.seconds">5</hz:property>
                 <hz:property name="hazelcast.merge.next.run.delay.seconds">5</hz:property>
+                <hz:property name="hazelcast.partition.count">277</hz:property>
             </hz:properties>
             <hz:wan-replication name="testWan">
-                <hz:wan-publisher group-name="tokyo" class-name="com.hazelcast.enterprise.wan.replication.WanBatchReplication">
+                <hz:wan-publisher group-name="tokyo"
+                                  publisher-id="tokyoPublisherId"
+                                  class-name="com.hazelcast.enterprise.wan.replication.WanBatchReplication">
                     <hz:queue-full-behavior>THROW_EXCEPTION</hz:queue-full-behavior>
                     <hz:queue-capacity>1000</hz:queue-capacity>
+                    <hz:initial-publisher-state>STOPPED</hz:initial-publisher-state>
                     <hz:properties>
                         <hz:property name="batch.size">50</hz:property>
                         <hz:property name="batch.max.delay.millis">3000</hz:property>
@@ -64,22 +75,64 @@
                         <hz:property name="group.password">pass</hz:property>
                     </hz:properties>
                 </hz:wan-publisher>
-                <hz:wan-publisher group-name="istanbul" class-name="com.hazelcast.wan.custom.CustomPublisher">
+                <hz:wan-publisher group-name="istanbul"
+                                  publisher-id="istanbulPublisherId"
+                                  class-name="com.hazelcast.wan.custom.CustomPublisher">
                     <hz:queue-full-behavior>THROW_EXCEPTION_ONLY_IF_REPLICATION_ACTIVE</hz:queue-full-behavior>
+                    <hz:aws enabled="false"
+                            access-key="sample-access-key"
+                            secret-key="sample-secret-key"
+                            region="sample-region"
+                            host-header="sample-header"
+                            security-group-name="sample-group"
+                            tag-key="sample-tag-key"
+                            tag-value="sample-tag-value"
+                            iam-role="sample-role"/>
+                    <hz:gcp enabled="false"
+                            zones="us-east1-b,us-east1-c"/>
+                    <hz:azure enabled="false"
+                              client-id="CLIENT_ID"
+                              client-secret="CLIENT_SECRET"
+                              tenant-id="TENANT_ID"
+                              subscription-id="SUB_ID"
+                              cluster-id="HZLCAST001"
+                              group-name="GROUP-NAME"/>
+                    <hz:kubernetes enabled="false"
+                                   namespace="MY-KUBERNETES-NAMESPACE"
+                                   service-name="MY-SERVICE-NAME"
+                                   service-label-name="MY-SERVICE-LABEL-NAME"
+                                   service-label-value="MY-SERVICE-LABEL-VALUE"/>
+                    <hz:eureka enabled="false"
+                               self-registration="true"
+                               namespace="hazelcast"/>
                     <hz:properties>
                         <hz:property name="custom.prop.publisher">prop.publisher</hz:property>
+                        <hz:property name="discovery.period">5</hz:property>
+                        <hz:property name="maxEndpoints">2</hz:property>
                     </hz:properties>
                 </hz:wan-publisher>
-                <hz:wan-consumer class-name="com.hazelcast.wan.custom.WanConsumer">
+                <hz:wan-publisher group-name="ankara" class-name="com.hazelcast.enterprise.wan.replication.WanBatchReplication">
+                    <hz:queue-capacity>${wan.queue.capacity}</hz:queue-capacity>
+                </hz:wan-publisher>
+                <hz:wan-consumer class-name="com.hazelcast.wan.custom.WanConsumer"
+                                 persist-wan-replicated-data="true">
                     <hz:properties>
                         <hz:property name="custom.prop.consumer">prop.consumer</hz:property>
                     </hz:properties>
                 </hz:wan-consumer>
             </hz:wan-replication>
             <hz:wan-replication name="testWan2">
-                <hz:wan-consumer implementation="wanConsumer"/>
+                <hz:wan-publisher group-name="tokyo" class-name="PublisherClassName">
+                    <hz:wan-sync>
+                        <hz:consistency-check-strategy>MERKLE_TREES</hz:consistency-check-strategy>
+                    </hz:wan-sync>
+                </hz:wan-publisher>
+                <hz:wan-consumer implementation="wanConsumer" persist-wan-replicated-data="false"/>
             </hz:wan-replication>
-            <hz:network port="${cluster.port}" port-auto-increment="false">
+            <hz:wan-replication name="testWan3">
+                <hz:wan-consumer persist-wan-replicated-data="false"/>
+            </hz:wan-replication>
+            <hz:network port="${cluster.port}" port-auto-increment="false" port-count="42">
                 <hz:outbound-ports>
                     <hz:ports>35000-35100</hz:ports>
                     <hz:ports>36000,36100</hz:ports>
@@ -97,25 +150,32 @@
                         <hz:interface>127.0.0.1:5700</hz:interface>
                         <hz:interface>127.0.0.1:5701</hz:interface>
                     </hz:tcp-ip>
-                    <hz:aws enabled="false" access-key="sample-access-key" secret-key="sample-secret-key"
-                            region="sample-region" security-group-name="sample-group"
-                            tag-key="sample-tag-key" tag-value="sample-tag-value" iam-role="sample-role"/>
-                    <hz:discovery-strategies>
-                        <hz:node-filter implementation="dummyNodeFilter"/>
-                        <hz:discovery-strategy discovery-strategy-factory="dummyDiscoveryStrategyFactory">
-                            <hz:properties>
-                                <hz:property name="key-string">foo</hz:property>
-                                <hz:property name="key-int">123</hz:property>
-                                <hz:property name="key-boolean">true</hz:property>
-                            </hz:properties>
-                        </hz:discovery-strategy>
-                        <hz:discovery-strategy class-name="com.hazelcast.spring.DummyDiscoveryStrategy">
-                            <hz:properties>
-                                <hz:property name="key-string">foo2</hz:property>
-                            </hz:properties>
-                        </hz:discovery-strategy>
-                        <hz:discovery-service-provider implementation="dummyDiscoveryServiceProvider"/>
-                    </hz:discovery-strategies>
+                    <hz:aws enabled="false"
+                            access-key="sample-access-key"
+                            secret-key="sample-secret-key"
+                            region="sample-region"
+                            host-header="sample-header"
+                            security-group-name="sample-group"
+                            tag-key="sample-tag-key"
+                            tag-value="sample-tag-value"
+                            iam-role="sample-role"/>
+                    <hz:gcp enabled="false"
+                            zones="us-east1-b,us-east1-c"/>
+                    <hz:azure enabled="false"
+                              client-id="CLIENT_ID"
+                              client-secret="CLIENT_SECRET"
+                              tenant-id="TENANT_ID"
+                              subscription-id="SUB_ID"
+                              cluster-id="HZLCAST001"
+                              group-name="GROUP-NAME"/>
+                    <hz:kubernetes enabled="false"
+                                   namespace="MY-KUBERNETES-NAMESPACE"
+                                   service-name="MY-SERVICE-NAME"
+                                   service-label-name="MY-SERVICE-LABEL-NAME"
+                                   service-label-value="MY-SERVICE-LABEL-VALUE"/>
+                    <hz:eureka enabled="false"
+                               self-registration="true"
+                               namespace="hazelcast"/>
                 </hz:join>
                 <hz:interfaces enabled="false">
                     <hz:interface>10.10.1.*</hz:interface>
@@ -126,12 +186,37 @@
                         factory-implementation="dummySSLContextFactory"/>
                 <hz:socket-interceptor enabled="false" class-name="com.hazelcast.spring.DummySocketInterceptor"
                                        implementation="dummySocketInterceptor"/>
-                <hz:symmetric-encryption enabled="true"
+                <hz:symmetric-encryption enabled="false"
                                          algorithm="PBEWithMD5AndDES"
                                          salt="thesalt"
                                          password="thepass"
                                          iteration-count="19"/>
                 <hz:reuse-address>true</hz:reuse-address>
+                <hz:member-address-provider enabled="false" class-name="com.hazelcast.spring.DummyMemberAddressProvider">
+                    <hz:properties>
+                        <hz:property name="dummy.property">value</hz:property>
+                        <hz:property name="dummy.property.2">value2</hz:property>
+                    </hz:properties>
+                </hz:member-address-provider>
+                <hz:failure-detector>
+                    <hz:icmp enabled="false">
+                        <hz:fail-fast-on-startup>true</hz:fail-fast-on-startup>
+                        <hz:interval-milliseconds>1002</hz:interval-milliseconds>
+                        <hz:max-attempts>2</hz:max-attempts>
+                        <hz:parallel-mode>true</hz:parallel-mode>
+                        <hz:timeout-milliseconds>500</hz:timeout-milliseconds>
+                        <hz:ttl>1</hz:ttl>
+                    </hz:icmp>
+                </hz:failure-detector>
+                <hz:rest-api enabled="false">
+                    <hz:endpoint-group name="CLUSTER_READ" enabled="true"/>
+                    <hz:endpoint-group name="CLUSTER_WRITE" enabled="true"/>
+                    <hz:endpoint-group name="HEALTH_CHECK" enabled="true"/>
+                    <hz:endpoint-group name="HOT_RESTART" enabled="true"/>
+                    <hz:endpoint-group name="WAN" enabled="true"/>
+                    <hz:endpoint-group name="DATA" enabled="true"/>
+                </hz:rest-api>
+                <hz:memcache-protocol enabled="true"/>
             </hz:network>
             <hz:partition-group enabled="true" group-type="CUSTOM">
                 <hz:member-group>
@@ -145,28 +230,49 @@
             </hz:partition-group>
             <hz:executor-service name="testExec"
                                  pool-size="2"
-                                 queue-capacity="100"
-            />
+                                 queue-capacity="100">
+                <hz:quorum-ref>my-quorum</hz:quorum-ref>
+            </hz:executor-service>
             <hz:executor-service name="testExec2"
                                  pool-size="5"
                                  queue-capacity="300"
                                  statistics-enabled="false"
             />
-            <hz:queue name="testQ"
-                      max-size="1000"
-            >
+            <hz:durable-executor-service name="durableExec"
+                                         pool-size="10"
+                                         durability="5"
+                                         capacity="200">
+                <hz:quorum-ref>my-quorum</hz:quorum-ref>
+            </hz:durable-executor-service>
 
+            <hz:scheduled-executor-service name="scheduledExec"
+                                           pool-size="10"
+                                           durability="5">
+                <hz:quorum-ref>my-quorum</hz:quorum-ref>
+                <hz:merge-policy batch-size="101">PassThroughMergePolicy</hz:merge-policy>
+            </hz:scheduled-executor-service>
+
+            <hz:cardinality-estimator name="estimator">
+                <hz:quorum-ref>my-quorum</hz:quorum-ref>
+                <hz:backup-count>4</hz:backup-count>
+                <hz:merge-policy batch-size="44">DiscardMergePolicy</hz:merge-policy>
+
+            </hz:cardinality-estimator>
+
+            <hz:queue name="testQ" max-size="1000">
                 <hz:item-listeners>
                     <hz:item-listener class-name="com.hazelcast.spring.DummyItemListener" include-value="true"/>
                 </hz:item-listeners>
             </hz:queue>
-            <hz:queue name="q"
+            <hz:queue name="queueWithSplitBrainConfig"
                       max-size="2500"
                       backup-count="1"
                       async-backup-count="1"
                       statistics-enabled="false"
-                      empty-queue-ttl="100"/>
-
+                      empty-queue-ttl="100">
+                <hz:quorum-ref>my-quorum</hz:quorum-ref>
+                <hz:merge-policy batch-size="2342">DiscardMergePolicy</hz:merge-policy>
+            </hz:queue>
             <hz:queue name="queueWithStore1">
                 <hz:queue-store enabled="true" class-name="com.hazelcast.spring.DummyQueueStore"/>
             </hz:queue>
@@ -180,6 +286,10 @@
                 <hz:queue-store enabled="true" factory-implementation="dummyQueueStoreFactory"/>
             </hz:queue>
 
+            <hz:lock name="lock">
+                <hz:quorum-ref>my-quorum</hz:quorum-ref>
+            </hz:lock>
+
             <hz:ringbuffer name="testRingbuffer"
                            in-memory-format="OBJECT"
                            capacity="100"
@@ -187,10 +297,17 @@
                            async-backup-count="1"
                            time-to-live-seconds="20">
                 <hz:ringbuffer-store enabled="true" class-name="com.hazelcast.spring.DummyRingbufferStore"/>
+                <hz:quorum-ref>my-quorum</hz:quorum-ref>
+                <hz:merge-policy batch-size="2342">PassThroughMergePolicy</hz:merge-policy>
             </hz:ringbuffer>
 
             <hz:ringbuffer name="testRingbuffer2">
-                <hz:ringbuffer-store enabled="true" factory-class-name="com.hazelcast.spring.DummyRingbufferStoreFactory"/>
+                <hz:ringbuffer-store enabled="true" factory-class-name="com.hazelcast.spring.DummyRingbufferStoreFactory">
+                    <hz:properties>
+                        <hz:property name="dummy.property">value</hz:property>
+                        <hz:property name="dummy.property.2">value2</hz:property>
+                    </hz:properties>
+                </hz:ringbuffer-store>
             </hz:ringbuffer>
 
             <hz:ringbuffer name="testRingbuffer3">
@@ -201,7 +318,23 @@
                 <hz:ringbuffer-store enabled="true" factory-implementation="dummyRingbufferStoreFactory"/>
             </hz:ringbuffer>
 
-            <hz:semaphore name="testSemaphore" async-backup-count="1" backup-count="1" initial-permits="10" />
+            <hz:atomic-long name="testAtomicLong">
+                <hz:quorum-ref>my-quorum</hz:quorum-ref>
+                <hz:merge-policy batch-size="2342">DiscardMergePolicy</hz:merge-policy>
+            </hz:atomic-long>
+
+            <hz:atomic-reference name="testAtomicReference">
+                <hz:quorum-ref>my-quorum</hz:quorum-ref>
+                <hz:merge-policy batch-size="4223">PassThroughMergePolicy</hz:merge-policy>
+            </hz:atomic-reference>
+
+            <hz:count-down-latch name="testCountDownLatch">
+                <hz:quorum-ref>my-quorum</hz:quorum-ref>
+            </hz:count-down-latch>
+
+            <hz:semaphore name="testSemaphore" async-backup-count="1" backup-count="1" initial-permits="10">
+                <hz:quorum-ref>my-quorum</hz:quorum-ref>
+            </hz:semaphore>
 
             <hz:reliable-topic name="testReliableTopic" topic-overload-policy="BLOCK" read-batch-size="10"
                                statistics-enabled="false">
@@ -217,23 +350,24 @@
                     min-eviction-check-millis="1000"
                     read-backup-data="true"
                     eviction-policy="NONE"
-                    merge-policy="PUT_IF_ABSENT"
-                    in-memory-format="BINARY">
+                    in-memory-format="BINARY"
+                    metadata-policy="OFF">
                 <hz:map-store enabled="true" class-name="com.hazelcast.spring.DummyStore" write-delay-seconds="0"
                               initial-mode="EAGER" write-batch-size="10"/>
                 <hz:near-cache time-to-live-seconds="0" max-idle-seconds="60" eviction-policy="LRU" max-size="5000"
-                               invalidate-on-change="true"/>
+                               invalidate-on-change="true" serialize-keys="false"/>
 
                 <hz:indexes>
                     <hz:index attribute="name"/>
                     <hz:index attribute="age" ordered="true"/>
                 </hz:indexes>
                 <hz:attributes>
-                    <hz:attribute name="power" extractor="com.car.PowerExtractor" />
-                    <hz:attribute name="weight" extractor="com.car.WeightExtractor" />
+                    <hz:attribute name="power" extractor="com.car.PowerExtractor"/>
+                    <hz:attribute name="weight" extractor="com.car.WeightExtractor"/>
                 </hz:attributes>
                 <hz:quorum-ref>my-quorum</hz:quorum-ref>
-                <hz:hot-restart enabled="true" fsync="true" />
+                <hz:merge-policy batch-size="2342">PassThroughMergePolicy</hz:merge-policy>
+                <hz:hot-restart enabled="${testMap.hotRestart.enabled}" fsync="${testMap.hotRestart.fsync}"/>
             </hz:map>
             <hz:map name="testMap2"
                     backup-count="2"
@@ -241,8 +375,7 @@
                     max-size-policy="PER_NODE"
                     eviction-percentage="30"
                     read-backup-data="true"
-                    eviction-policy="NONE"
-                    merge-policy="PUT_IF_ABSENT">
+                    eviction-policy="NONE">
                 <hz:map-store enabled="true" implementation="dummyMapStore" write-delay-seconds="0"
                               initial-mode="LAZY"/>
                 <hz:wan-replication-ref name="testWan" merge-policy="PUT_IF_ABSENT"/>
@@ -253,14 +386,35 @@
                 </hz:entry-listeners>
             </hz:map>
 
+            <hz:map name="testMapNoWanMergePolicy">
+                <hz:wan-replication-ref name="testWan" />
+            </hz:map>
+
+            <hz:map name="lfuEvictionMap" eviction-policy="LFU"/>
+            <hz:map name="lruEvictionMap" eviction-policy="LRU"/>
+            <hz:map name="noneEvictionMap" eviction-policy="NONE"/>
+            <hz:map name="randomEvictionMap" eviction-policy="RANDOM"/>
+
+            <hz:map name="lfuNearCacheEvictionMap">
+                <hz:near-cache eviction-policy="LFU"/>
+            </hz:map>
+            <hz:map name="lruNearCacheEvictionMap">
+                <hz:near-cache eviction-policy="LRU"/>
+            </hz:map>
+            <hz:map name="noneNearCacheEvictionMap">
+                <hz:near-cache eviction-policy="NONE"/>
+            </hz:map>
+            <hz:map name="randomNearCacheEvictionMap">
+                <hz:near-cache eviction-policy="RANDOM"/>
+            </hz:map>
+
             <hz:map name="testMap3"
                     backup-count="2"
                     max-size="0"
                     max-size-policy="PER_NODE"
                     eviction-percentage="30"
                     read-backup-data="true"
-                    eviction-policy="NONE"
-                    merge-policy="PUT_IF_ABSENT">
+                    eviction-policy="NONE">
                 <hz:map-store enabled="true" factory-class-name="com.hazelcast.spring.DummyStoreFactory"
                               write-delay-seconds="0">
                     <hz:properties>
@@ -274,8 +428,7 @@
                     max-size="0"
                     eviction-percentage="30"
                     read-backup-data="true"
-                    eviction-policy="NONE"
-                    merge-policy="PUT_IF_ABSENT">
+                    eviction-policy="NONE">
                 <hz:map-store enabled="true" factory-implementation="dummyMapStoreFactory" write-delay-seconds="0"/>
             </hz:map>
             <hz:map name="map-with-query-cache">
@@ -306,20 +459,19 @@
                     time-to-live-seconds="1"
                     max-size="10"
                     eviction-percentage="50"
-                    eviction-policy="LRU"
-                    merge-policy="LATEST_UPDATE"/>
+                    eviction-policy="LRU"/>
 
             <hz:map name="mapWithOptimizedQueries" optimize-queries="true"/>
             <hz:map name="mapWithNotOptimizedQueries" optimize-queries="false"/>
             <hz:map name="mapWithValueCachingSetToNever" cache-deserialized-values="NEVER"/>
-            <hz:map name="mapWithValueCachingSetToAlways" cache-deserialized-values="ALWAYS"/>
+            <hz:map name="mapWithValueCachingSetToAlways" cache-deserialized-values="${map.conf.cache.deserialized.values}"/>
             <hz:map name="mapWithDefaultOptimizedQueries"/>
             <hz:map name="map-with-native-max-size-policy" max-size-policy="USED_NATIVE_MEMORY_PERCENTAGE"
-                    in-memory-format="NATIVE" />
+                    in-memory-format="NATIVE"/>
 
             <hz:map name="mapWithPartitionLostListener">
                 <hz:partition-lost-listeners>
-                    <hz:partition-lost-listener class-name="DummyMapPartitionLostListenerImpl" />
+                    <hz:partition-lost-listener class-name="DummyMapPartitionLostListenerImpl"/>
                 </hz:partition-lost-listeners>
             </hz:map>
 
@@ -340,35 +492,46 @@
             </hz:map>
 
             <hz:cache name="testCache" disable-per-entry-invalidation-events="true">
-                <hz:wan-replication-ref name="testWan" merge-policy="PUT_IF_ABSENT" republishing-enabled="false">
+                <hz:wan-replication-ref name="testWan" merge-policy="PUT_IF_ABSENT"
+                                        republishing-enabled="false">
                     <hz:filters>
                         <hz:filter-impl>com.example.SampleFilter</hz:filter-impl>
                     </hz:filters>
                 </hz:wan-replication-ref>
-                <hz:hot-restart enabled="true" fsync="true" />
+                <hz:quorum-ref>my-quorum</hz:quorum-ref>
+                <hz:hot-restart enabled="true" fsync="true"/>
             </hz:cache>
 
-            <hz:multimap name="testMultimap"
-                         value-collection-type="LIST" binary="false" statistics-enabled="false">
+            <hz:event-journal map-name="mapName" cache-name="cacheName" enabled="true"
+                              capacity="123" time-to-live-seconds="321"/>
 
+            <hz:merkle-tree map-name="mapName" enabled="true" depth="15"/>
+
+            <hz:multimap name="testMultimap" value-collection-type="LIST" binary="false" statistics-enabled="false">
                 <hz:entry-listeners>
                     <hz:entry-listener class-name="com.hazelcast.spring.DummyEntryListener" include-value="true"/>
                     <hz:entry-listener implementation="dummyEntryListener" local="true"/>
                 </hz:entry-listeners>
+                <hz:quorum-ref>my-quorum</hz:quorum-ref>
+                <hz:merge-policy batch-size="1234">PassThroughMergePolicy</hz:merge-policy>
             </hz:multimap>
 
             <hz:list name="testList"
-                      max-size="9999"
-                      backup-count="1"
-                      async-backup-count="1"
-                      statistics-enabled="false"
-            />
+                     max-size="9999"
+                     backup-count="1"
+                     async-backup-count="1"
+                     statistics-enabled="false">
+                <hz:quorum-ref>my-quorum</hz:quorum-ref>
+                <hz:merge-policy batch-size="2342">DiscardMergePolicy</hz:merge-policy>
+            </hz:list>
             <hz:set name="testSet"
-                      max-size="7777"
-                      backup-count="0"
-                      async-backup-count="0"
-                      statistics-enabled="false"
-            />
+                    max-size="7777"
+                    backup-count="0"
+                    async-backup-count="0"
+                    statistics-enabled="false">
+                <hz:quorum-ref>my-quorum</hz:quorum-ref>
+                <hz:merge-policy batch-size="2342">DiscardMergePolicy</hz:merge-policy>
+            </hz:set>
 
             <hz:topic name="testTopic">
                 <hz:statistics-enabled>false</hz:statistics-enabled>
@@ -377,13 +540,17 @@
                     <hz:message-listener class-name="com.hazelcast.spring.DummyMessageListener"/>
                 </hz:message-listeners>
             </hz:topic>
+
             <hz:replicatedmap name="replicatedMap" replication-delay-millis="200" async-fillup="false"
                               concurrency-level="16" statistics-enabled="false" in-memory-format="OBJECT">
                 <hz:entry-listeners>
                     <hz:entry-listener class-name="com.hazelcast.spring.DummyEntryListener" include-value="true"/>
                     <hz:entry-listener implementation="dummyEntryListener" local="true"/>
                 </hz:entry-listeners>
+                <hz:quorum-ref>my-quorum</hz:quorum-ref>
+                <hz:merge-policy batch-size="2342">PassThroughMergePolicy</hz:merge-policy>
             </hz:replicatedmap>
+
             <hz:listeners>
                 <hz:listener class-name="com.hazelcast.spring.DummyMembershipListener"/>
                 <hz:listener implementation="dummyMembershipListener"/>
@@ -417,6 +584,19 @@
                     <hz:serializer type-class="com.hazelcast.spring.serialization.DummySerializableObject2"
                                    implementation="dummySerializer"/>
                 </hz:serializers>
+                <hz:java-serialization-filter defaults-disabled="true">
+                    <hz:blacklist>
+                        <hz:class>com.acme.app.BeanComparator</hz:class>
+                        <hz:prefix>a.dangerous.package.</hz:prefix>
+                        <hz:prefix>justaprefix</hz:prefix>
+                    </hz:blacklist>
+                    <hz:whitelist>
+                        <hz:class>java.lang.String</hz:class>
+                        <hz:class>example.Foo</hz:class>
+                        <hz:package>com.acme.app</hz:package>
+                        <hz:package>com.acme.app.subpkg</hz:package>
+                    </hz:whitelist>
+                </hz:java-serialization-filter>
             </hz:serialization>
 
             <hz:native-memory enabled="false" allocator-type="POOLED" metadata-space-percentage="10.2"
@@ -424,6 +604,135 @@
                               page-size="20">
                 <hz:size unit="MEGABYTES" value="256"/>
             </hz:native-memory>
+            <hz:security>
+                <hz:client-permissions on-join-operation="SEND">
+                    <hz:pn-counter-permission name="pnCounterPermission">
+                        <hz:actions>
+                            <hz:action>create</hz:action>
+                        </hz:actions>
+                    </hz:pn-counter-permission>
+                    <hz:all-permissions principal="admin">
+                        <hz:endpoints>
+                            <hz:endpoint>127.0.0.1</hz:endpoint>
+                        </hz:endpoints>
+                    </hz:all-permissions>
+                    <hz:config-permission principal="deployer"/>
+                    <hz:transaction-permission principal="deployer"/>
+                    <hz:map-permission name="custom" principal="dev">
+                        <hz:endpoints>
+                            <hz:endpoint>127.0.0.1</hz:endpoint>
+                        </hz:endpoints>
+                        <hz:actions>
+                            <hz:action>create</hz:action>
+                            <hz:action>destroy</hz:action>
+                            <hz:action>put</hz:action>
+                            <hz:action>read</hz:action>
+                        </hz:actions>
+                    </hz:map-permission>
+                    <hz:queue-permission name="*">
+                        <hz:actions>
+                            <hz:action>all</hz:action>
+                        </hz:actions>
+                    </hz:queue-permission>
+                    <hz:topic-permission name="*">
+                        <hz:actions>
+                            <hz:action>all</hz:action>
+                        </hz:actions>
+                    </hz:topic-permission>
+                    <hz:multimap-permission name="*">
+                        <hz:actions>
+                            <hz:action>all</hz:action>
+                        </hz:actions>
+                    </hz:multimap-permission>
+                    <hz:list-permission name="*">
+                        <hz:actions>
+                            <hz:action>all</hz:action>
+                        </hz:actions>
+                    </hz:list-permission>
+                    <hz:set-permission name="*">
+                        <hz:actions>
+                            <hz:action>all</hz:action>
+                        </hz:actions>
+                    </hz:set-permission>
+                    <hz:id-generator-permission name="*">
+                        <hz:actions>
+                            <hz:action>all</hz:action>
+                        </hz:actions>
+                    </hz:id-generator-permission>
+                    <hz:flake-id-generator-permission name="*">
+                        <hz:actions>
+                            <hz:action>all</hz:action>
+                        </hz:actions>
+                    </hz:flake-id-generator-permission>
+                    <hz:lock-permission name="*">
+                        <hz:actions>
+                            <hz:action>all</hz:action>
+                        </hz:actions>
+                    </hz:lock-permission>
+                    <hz:atomic-long-permission name="*">
+                        <hz:actions>
+                            <hz:action>all</hz:action>
+                        </hz:actions>
+                    </hz:atomic-long-permission>
+                    <hz:atomic-reference-permission name="*">
+                        <hz:actions>
+                            <hz:action>all</hz:action>
+                        </hz:actions>
+                    </hz:atomic-reference-permission>
+                    <hz:countdown-latch-permission name="*">
+                        <hz:actions>
+                            <hz:action>all</hz:action>
+                        </hz:actions>
+                    </hz:countdown-latch-permission>
+                    <hz:semaphore-permission name="*">
+                        <hz:actions>
+                            <hz:action>all</hz:action>
+                        </hz:actions>
+                    </hz:semaphore-permission>
+                    <hz:executor-service-permission name="*">
+                        <hz:actions>
+                            <hz:action>all</hz:action>
+                        </hz:actions>
+                    </hz:executor-service-permission>
+                    <hz:durable-executor-service-permission name="*">
+                        <hz:actions>
+                            <hz:action>all</hz:action>
+                        </hz:actions>
+                    </hz:durable-executor-service-permission>
+                    <hz:cardinality-estimator-permission name="*">
+                        <hz:actions>
+                            <hz:action>all</hz:action>
+                        </hz:actions>
+                    </hz:cardinality-estimator-permission>
+                    <hz:scheduled-executor-permission name="*">
+                        <hz:actions>
+                            <hz:action>all</hz:action>
+                        </hz:actions>
+                    </hz:scheduled-executor-permission>
+                    <hz:cache-permission name="*">
+                        <hz:actions>
+                            <hz:action>all</hz:action>
+                        </hz:actions>
+                    </hz:cache-permission>
+                    <hz:user-code-deployment-permission name="*">
+                        <hz:actions>
+                            <hz:action>all</hz:action>
+                        </hz:actions>
+                    </hz:user-code-deployment-permission>
+                    <hz:ring-buffer-permission name="*">
+                        <hz:actions>
+                            <hz:action>all</hz:action>
+                        </hz:actions>
+                    </hz:ring-buffer-permission>
+                    <hz:reliable-topic-permission name="*">
+                        <hz:actions>
+                            <hz:action>all</hz:action>
+                        </hz:actions>
+                    </hz:reliable-topic-permission>
+                </hz:client-permissions>
+                <hz:client-block-unmapped-actions>false</hz:client-block-unmapped-actions>
+            </hz:security>
+
             <hz:member-attributes>
                 <hz:attribute name="cluster.group.name">spring-group</hz:attribute>
                 <hz:attribute name="cluster.port.int" type="int">5700</hz:attribute>
@@ -463,9 +772,79 @@
                 </hz:quorum-listeners>
             </hz:quorum>
 
-            <hz:hot-restart-persistence enabled="true" validation-timeout-seconds="1111" data-load-timeout-seconds="2222">
+            <hz:quorum enabled="true" name="probabilistic-quorum">
+                <hz:quorum-size>3</hz:quorum-size>
+                <hz:quorum-type>READ_WRITE</hz:quorum-type>
+                <hz:quorum-listeners>
+                    <hz:quorum-listener class-name="com.hazelcast.spring.DummyQuorumListener"/>
+                    <hz:quorum-listener implementation="dummyQuorumListener"/>
+                </hz:quorum-listeners>
+                <hz:probabilistic-quorum suspicion-threshold="11" acceptable-heartbeat-pause-millis="31415" max-sample-size="42"
+                                         heartbeat-interval-millis="77123" min-std-deviation-millis="1000" />
+            </hz:quorum>
+
+            <hz:quorum enabled="true" name="recently-active-quorum">
+                <hz:quorum-size>5</hz:quorum-size>
+                <hz:quorum-type>READ_WRITE</hz:quorum-type>
+                <hz:recently-active-quorum heartbeat-tolerance-millis="5123"/>
+            </hz:quorum>
+
+            <hz:hot-restart-persistence enabled="true"
+                                        validation-timeout-seconds="1111"
+                                        data-load-timeout-seconds="2222"
+                                        auto-remove-stale-data="false"
+                                        cluster-data-recovery-policy="PARTIAL_RECOVERY_MOST_COMPLETE">
                 <hz:base-dir>/mnt/hot-restart/</hz:base-dir>
+                <hz:backup-dir>/mnt/hot-backup/</hz:backup-dir>
             </hz:hot-restart-persistence>
+
+            <hz:flake-id-generator name="flakeIdGenerator*" prefetchCount="3" prefetchValidityMillis="10" idOffset="20"
+                                   nodeIdOffset="30" statistics-enabled="false" />
+
+            <hz:crdt-replication max-concurrent-replication-targets="10" replication-period-millis="2000" />
+
+            <hz:pn-counter name="testPNCounter" statistics-enabled="false">
+                <hz:quorum-ref>my-quorum</hz:quorum-ref>
+                <hz:replica-count>100</hz:replica-count>
+            </hz:pn-counter>
+
+            <hz:cp-subsystem>
+                <hz:cp-member-count>10</hz:cp-member-count>
+                <hz:group-size>5</hz:group-size>
+                <hz:session-time-to-live-seconds>15</hz:session-time-to-live-seconds>
+                <hz:session-heartbeat-interval-seconds>3</hz:session-heartbeat-interval-seconds>
+                <hz:missing-cp-member-auto-removal-seconds>120</hz:missing-cp-member-auto-removal-seconds>
+                <hz:fail-on-indeterminate-operation-state>true</hz:fail-on-indeterminate-operation-state>
+                <hz:raft-algorithm>
+                    <hz:leader-election-timeout-in-millis>500</hz:leader-election-timeout-in-millis>
+                    <hz:leader-heartbeat-period-in-millis>100</hz:leader-heartbeat-period-in-millis>
+                    <hz:max-missed-leader-heartbeat-count>3</hz:max-missed-leader-heartbeat-count>
+                    <hz:append-request-max-entry-count>25</hz:append-request-max-entry-count>
+                    <hz:commit-index-advance-count-to-snapshot>250</hz:commit-index-advance-count-to-snapshot>
+                    <hz:uncommitted-entry-count-to-reject-new-appends>75</hz:uncommitted-entry-count-to-reject-new-appends>
+                    <hz:append-request-backoff-timeout-in-millis>50</hz:append-request-backoff-timeout-in-millis>
+                </hz:raft-algorithm>
+                <hz:semaphores>
+                    <hz:cp-semaphore>
+                        <hz:name>sem1</hz:name>
+                        <hz:jdk-compatible>true</hz:jdk-compatible>
+                    </hz:cp-semaphore>
+                    <hz:cp-semaphore>
+                        <hz:name>sem2</hz:name>
+                        <hz:jdk-compatible>false</hz:jdk-compatible>
+                    </hz:cp-semaphore>
+                </hz:semaphores>
+                <hz:locks>
+                    <hz:fenced-lock>
+                        <hz:name>lock1</hz:name>
+                        <hz:lock-acquire-limit>1</hz:lock-acquire-limit>
+                    </hz:fenced-lock>
+                    <hz:fenced-lock>
+                        <hz:name>lock2</hz:name>
+                        <hz:lock-acquire-limit>2</hz:lock-acquire-limit>
+                    </hz:fenced-lock>
+                </hz:locks>
+            </hz:cp-subsystem>
         </hz:config>
     </hz:hazelcast>
 
@@ -482,12 +861,19 @@
     <hz:set id="set" instance-ref="instance" name="set"/>
     <hz:list id="list" instance-ref="instance" name="list"/>
     <hz:executorService id="executorService" instance-ref="instance" name="executorService"/>
+    <hz:scheduledExecutorService id="scheduledExec" instance-ref="instance" name="scheduledExec"/>
+    <hz:durableExecutorService id="durableExec" instance-ref="instance" name="durableExec"/>
     <hz:idGenerator id="idGenerator" instance-ref="instance" name="idGenerator"/>
-    <hz:atomicLong id="atomicLong" instance-ref="instance" name="atomicLong"/>
-    <hz:atomicReference id="atomicReference" instance-ref="instance" name="atomicReference"/>
+    <hz:flakeIdGenerator id="flakeIdGenerator" instance-ref="instance" name="flakeIdGenerator"/>
+    <hz:atomicLong id="atomicLong" instance-ref="instance" name="testAtomicLong"/>
+    <hz:atomicReference id="atomicReference" instance-ref="instance" name="testAtomicReference"/>
     <hz:countDownLatch id="countDownLatch" instance-ref="instance" name="countDownLatch"/>
     <hz:semaphore id="semaphore" instance-ref="instance" name="semaphore"/>
     <hz:lock id="lock" instance-ref="instance" name="lock"/>
+    <hz:cardinalityEstimator id="cardinality" instance-ref="instance" name="cardinality"/>
+    <hz:ringbuffer id="testRingbuffer" instance-ref="instance" name="testRingbuffer"/>
+    <hz:reliableTopic id="testReliableTopic" instance-ref="instance" name="testReliableTopic"/>
+    <hz:PNCounter id="pnCounter" instance-ref="instance" name="pnCounter"/>
 
     <bean id="dummyMapStore" class="com.hazelcast.spring.DummyStore"/>
     <bean id="dummyMapStoreFactory" class="com.hazelcast.spring.DummyStoreFactory"/>

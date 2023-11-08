@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,6 +39,8 @@ import com.hazelcast.core.Message;
 import com.hazelcast.core.MessageListener;
 import com.hazelcast.core.MultiMap;
 import com.hazelcast.core.Partition;
+import com.hazelcast.internal.util.RuntimeAvailableProcessors;
+import com.hazelcast.nio.IOUtil;
 import com.hazelcast.util.Clock;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
@@ -66,7 +68,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 
 import static com.hazelcast.memory.MemoryUnit.BYTES;
+import static com.hazelcast.util.MapUtil.createHashMap;
+import static com.hazelcast.util.StringUtil.equalsIgnoreCase;
+import static com.hazelcast.util.StringUtil.lowerCaseInternal;
+import static com.hazelcast.util.StringUtil.trim;
 import static java.lang.String.format;
+import static java.lang.Thread.currentThread;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 
 /**
@@ -177,14 +184,13 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
     /**
      * Handles a command.
      */
-    @SuppressFBWarnings("DM_EXIT")
     @SuppressWarnings({"checkstyle:cyclomaticcomplexity", "checkstyle:npathcomplexity", "checkstyle:methodlength"})
-    protected void handleCommand(String inputCommand) {
+    public void handleCommand(String inputCommand) {
         String command = inputCommand;
         if (command == null) {
             return;
         }
-        command = command.trim();
+        command = trim(command);
         if (command.length() == 0) {
             return;
         }
@@ -204,7 +210,7 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
         String[] argsSplit = command.split(" ");
         String[] args = new String[argsSplit.length];
         for (int i = 0; i < argsSplit.length; i++) {
-            args[i] = argsSplit[i].trim();
+            args[i] = trim(argsSplit[i]);
         }
         if (spaceIndex != -1) {
             first = args[0];
@@ -217,8 +223,12 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
             for (int i = 0; i < repeat; i++) {
                 handleCommand(command.substring(first.length()).replaceAll("\\$i", "" + i));
             }
-            long elapsedSeconds = MILLISECONDS.toSeconds(Clock.currentTimeMillis() - started);
-            println("ops/s = " + repeat / elapsedSeconds);
+            long elapsedMilliSeconds = Clock.currentTimeMillis() - started;
+            if (elapsedMilliSeconds > 0) {
+                println(String.format("ops/s = %.2f", (double) repeat * 1000 / elapsedMilliSeconds));
+            } else {
+                println("Bingo, all the operations finished in no time!");
+            }
         } else if (first.startsWith("&") && first.length() > 1) {
             final int fork = Integer.parseInt(first.substring(1));
             final String threadCommand = command.substring(first.length());
@@ -229,7 +239,7 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
                     @Override
                     public void run() {
                         String command = threadCommand;
-                        String[] threadArgs = command.replaceAll("\\$t", "" + threadID).trim().split(" ");
+                        String[] threadArgs = trim(command.replaceAll("\\$t", "" + threadID)).split(" ");
                         // TODO &t #4 m.putmany x k
                         if ("m.putmany".equals(threadArgs[0]) || "m.removemany".equals(threadArgs[0])) {
                             if (threadArgs.length < 4) {
@@ -252,13 +262,13 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
             handleColon(command);
         } else if ("silent".equals(first)) {
             silent = Boolean.parseBoolean(args[1]);
-        } else if ("shutdown".equals(first)) {
-            hazelcast.getLifecycleService().shutdown();
+        } else if (equalsIgnoreCase("shutdown", first)) {
+            handleShutdown();
         } else if ("echo".equals(first)) {
             echo = Boolean.parseBoolean(args[1]);
             println("echo: " + echo);
         } else if ("ns".equals(first)) {
-            handleNamespace(command.substring(first.length()).trim());
+            handleNamespace(trim(command.substring(first.length())));
         } else if ("whoami".equals(first)) {
             handleWhoami();
         } else if ("who".equals(first)) {
@@ -305,7 +315,7 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
             handleSetRemoveMany(args);
         } else if (first.equals("m.replace")) {
             handleMapReplace(args);
-        } else if (first.equalsIgnoreCase("m.putIfAbsent")) {
+        } else if (equalsIgnoreCase(first, "m.putIfAbsent")) {
             handleMapPutIfAbsent(args);
         } else if (first.equals("m.putAsync")) {
             handleMapPutAsync(args);
@@ -315,21 +325,23 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
             handleMapPut(args);
         } else if (first.equals("m.get")) {
             handleMapGet(args);
-        } else if (first.equalsIgnoreCase("m.getMapEntry")) {
+        } else if (equalsIgnoreCase(first, "m.getMapEntry")) {
             handleMapGetMapEntry(args);
         } else if (first.equals("m.remove")) {
             handleMapRemove(args);
+        } else if (first.equals("m.delete")) {
+            handleMapDelete(args);
         } else if (first.equals("m.evict")) {
             handleMapEvict(args);
-        } else if (first.equals("m.putmany") || first.equalsIgnoreCase("m.putAll")) {
+        } else if (first.equals("m.putmany") || equalsIgnoreCase(first, "m.putAll")) {
             handleMapPutMany(args);
         } else if (first.equals("m.getmany")) {
             handleMapGetMany(args);
         } else if (first.equals("m.removemany")) {
             handleMapRemoveMany(args);
-        } else if (command.equalsIgnoreCase("m.localKeys")) {
+        } else if (equalsIgnoreCase(command, "m.localKeys")) {
             handleMapLocalKeys();
-        } else if (command.equalsIgnoreCase("m.localSize")) {
+        } else if (equalsIgnoreCase(command, "m.localSize")) {
             handleMapLocalSize();
         } else if (command.equals("m.keys")) {
             handleMapKeys();
@@ -339,7 +351,7 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
             handleMapEntries();
         } else if (first.equals("m.lock")) {
             handleMapLock(args);
-        } else if (first.equalsIgnoreCase("m.tryLock")) {
+        } else if (equalsIgnoreCase(first, "m.tryLock")) {
             handleMapTryLock(args);
         } else if (first.equals("m.unlock")) {
             handleMapUnlock(args);
@@ -347,8 +359,6 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
             handleAddListener(args);
         } else if (first.equals("m.removeMapListener")) {
             handleRemoveListener(args);
-        } else if (first.equals("m.unlock")) {
-            handleMapUnlock(args);
         } else if (first.equals("mm.put")) {
             handleMultiMapPut(args);
         } else if (first.equals("mm.get")) {
@@ -363,7 +373,7 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
             handleMultiMapEntries();
         } else if (first.equals("mm.lock")) {
             handleMultiMapLock(args);
-        } else if (first.equalsIgnoreCase("mm.tryLock")) {
+        } else if (equalsIgnoreCase(first, "mm.tryLock")) {
             handleMultiMapTryLock(args);
         } else if (first.equals("mm.unlock")) {
             handleMultiMapUnlock(args);
@@ -389,26 +399,16 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
             execute(args);
         } else if (first.equals("partitions")) {
             handlePartitions(args);
-//      } else if (first.equals("txn")) {
-//          hazelcast.getTransaction().begin();
-//      } else if (first.equals("commit")) {
-//          hazelcast.getTransaction().commit();
-//      } else if (first.equals("rollback")) {
-//          hazelcast.getTransaction().rollback();
-        } else if (first.equalsIgnoreCase("executeOnKey")) {
+        } else if (equalsIgnoreCase(first, "executeOnKey")) {
             executeOnKey(args);
-        } else if (first.equalsIgnoreCase("executeOnMember")) {
+        } else if (equalsIgnoreCase(first, "executeOnMember")) {
             executeOnMember(args);
-        } else if (first.equalsIgnoreCase("executeOnMembers")) {
+        } else if (equalsIgnoreCase(first, "executeOnMembers")) {
             executeOnMembers(args);
-//      } else if (first.equalsIgnoreCase("longOther") || first.equalsIgnoreCase("executeLongOther")) {
-//        executeLongTaskOnOtherMember(args);
-//      } else if (first.equalsIgnoreCase("long") || first.equalsIgnoreCase("executeLong")) {
-//        executeLong(args);
-        } else if (first.equalsIgnoreCase("instances")) {
+        } else if (equalsIgnoreCase(first, "instances")) {
             handleInstances(args);
-        } else if (first.equalsIgnoreCase("quit") || first.equalsIgnoreCase("exit")) {
-            System.exit(0);
+        } else if (equalsIgnoreCase(first, "quit") || equalsIgnoreCase(first, "exit")) {
+            handleExit();
         } else if (first.startsWith("e") && first.endsWith(".simulateLoad")) {
             handleExecutorSimulate(args);
         } else {
@@ -416,11 +416,19 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
         }
     }
 
+    protected void handleShutdown() {
+        hazelcast.getLifecycleService().shutdown();
+    }
+
+    protected void handleExit() {
+        System.exit(0);
+    }
+
     private void handleExecutorSimulate(String[] args) {
         String first = args[0];
         int threadCount = Integer.parseInt(first.substring(1, first.indexOf(".")));
         if (threadCount < 1 || threadCount > 16) {
-            throw new RuntimeException("threadcount can't be smaller than 1 or larger than 16");
+            throw new RuntimeException("threadCount can't be smaller than 1 or larger than 16");
         }
 
         int taskCount = Integer.parseInt(args[1]);
@@ -450,6 +458,7 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
             try {
                 f.get();
             } catch (InterruptedException e) {
+                currentThread().interrupt();
                 e.printStackTrace();
             } catch (ExecutionException e) {
                 e.printStackTrace();
@@ -475,16 +484,18 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
         File f = new File(first.substring(1));
         println("Executing script file " + f.getAbsolutePath());
         if (f.exists()) {
+            BufferedReader br = null;
             try {
-                BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(f), "UTF-8"));
+                br = new BufferedReader(new InputStreamReader(new FileInputStream(f), "UTF-8"));
                 String l = br.readLine();
                 while (l != null) {
                     handleCommand(l);
                     l = br.readLine();
                 }
-                br.close();
             } catch (IOException e) {
                 e.printStackTrace();
+            } finally {
+                IOUtil.closeResource(br);
             }
         } else {
             println("File not found! " + f.getAbsolutePath());
@@ -492,7 +503,8 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
     }
 
     private void handleEcho(String command) {
-        if (!Thread.currentThread().getName().toLowerCase().contains("main")) {
+        String threadName = lowerCaseInternal(Thread.currentThread().getName());
+        if (!threadName.contains("main")) {
             println(" [" + Thread.currentThread().getName() + "] " + command);
         } else {
             println(command);
@@ -516,7 +528,7 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
         println("Memory max: " + BYTES.toMegaBytes(max) + "MB");
         println("Memory free: " + BYTES.toMegaBytes(free) + "MB " + (int) (free * ONE_HUNDRED / max) + "%");
         println("Used Memory:" + BYTES.toMegaBytes(total - free) + "MB");
-        println("# procs: " + Runtime.getRuntime().availableProcessors());
+        println("# procs: " + RuntimeAvailableProcessors.get());
         println("OS info: " + ManagementFactory.getOperatingSystemMXBean().getArch()
                 + " " + ManagementFactory.getOperatingSystemMXBean().getName()
                 + " " + ManagementFactory.getOperatingSystemMXBean().getVersion());
@@ -665,6 +677,7 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
         try {
             println(getMap().putAsync(args[1], args[2]).get());
         } catch (InterruptedException e) {
+            currentThread().interrupt();
             e.printStackTrace();
         } catch (ExecutionException e) {
             e.printStackTrace();
@@ -687,6 +700,7 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
         try {
             println(getMap().getAsync(args[1]).get());
         } catch (InterruptedException e) {
+            currentThread().interrupt();
             e.printStackTrace();
         } catch (ExecutionException e) {
             e.printStackTrace();
@@ -699,6 +713,11 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
 
     protected void handleMapRemove(String[] args) {
         println(getMap().remove(args[1]));
+    }
+
+    protected void handleMapDelete(String[] args) {
+        getMap().delete(args[1]);
+        println("true");
     }
 
     protected void handleMapEvict(String[] args) {
@@ -720,7 +739,7 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
         if (args.length > 3) {
             start = Integer.parseInt(args[3]);
         }
-        Map<String, byte[]> theMap = new HashMap<String, byte[]>(count);
+        Map<String, byte[]> theMap = createHashMap(count);
         for (int i = 0; i < count; i++) {
             theMap.put("key" + (start + i), value);
         }
@@ -779,6 +798,7 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
             try {
                 locked = getMap().tryLock(key, time, TimeUnit.SECONDS);
             } catch (InterruptedException e) {
+                currentThread().interrupt();
                 locked = false;
             }
         }
@@ -823,7 +843,7 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
         while (it.hasNext()) {
             count++;
             Map.Entry entry = (Entry) it.next();
-            println(entry.getKey() + " : " + entry.getValue());
+            println(entry.getKey() + ": " + entry.getValue());
         }
         println("Total " + count);
     }
@@ -871,7 +891,7 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
         while (it.hasNext()) {
             count++;
             Map.Entry entry = (Entry) it.next();
-            println(entry.getKey() + " : " + entry.getValue());
+            println(entry.getKey() + ": " + entry.getValue());
         }
         println("Total " + count);
     }
@@ -902,6 +922,7 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
             try {
                 locked = getMultiMap().tryLock(key, time, TimeUnit.SECONDS);
             } catch (InterruptedException e) {
+                currentThread().interrupt();
                 locked = false;
             }
         }
@@ -926,18 +947,19 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
         }
     }
 
-    @java.lang.SuppressWarnings("LockAcquiredButNotSafelyReleased")
+    // squid:S2222 suppression avoids sonar analysis bug regarding already known lock release issue
+    @SuppressWarnings({"LockAcquiredButNotSafelyReleased", "squid:S2222"})
     protected void handleLock(String[] args) {
         String lockStr = args[0];
         String key = args[1];
         Lock lock = hazelcast.getLock(key);
-        if (lockStr.equalsIgnoreCase("lock")) {
+        if (equalsIgnoreCase(lockStr, "lock")) {
             lock.lock();
             println("true");
-        } else if (lockStr.equalsIgnoreCase("unlock")) {
+        } else if (equalsIgnoreCase(lockStr, "unlock")) {
             lock.unlock();
             println("true");
-        } else if (lockStr.equalsIgnoreCase("trylock")) {
+        } else if (equalsIgnoreCase(lockStr, "trylock")) {
             String timeout = args.length > 2 ? args[2] : null;
             if (timeout == null) {
                 println(lock.tryLock());
@@ -946,6 +968,7 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
                 try {
                     println(lock.tryLock(time, TimeUnit.SECONDS));
                 } catch (InterruptedException e) {
+                    currentThread().interrupt();
                     e.printStackTrace();
                 }
             }
@@ -1079,13 +1102,7 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
 
     protected void handleContains(String[] args) {
         String iteratorStr = args[0];
-        boolean key = false;
-        boolean value = false;
-        if (iteratorStr.toLowerCase().endsWith("key")) {
-            key = true;
-        } else if (iteratorStr.toLowerCase().endsWith("value")) {
-            value = true;
-        }
+        boolean key = lowerCaseInternal(iteratorStr).endsWith("key");
         String data = args[1];
         boolean result = false;
         if (iteratorStr.startsWith("s.")) {
@@ -1162,6 +1179,7 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
             boolean offered = getQueue().offer(args[1], timeout, TimeUnit.SECONDS);
             println(offered);
         } catch (InterruptedException e) {
+            currentThread().interrupt();
             e.printStackTrace();
         }
     }
@@ -1170,6 +1188,7 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
         try {
             println(getQueue().take());
         } catch (InterruptedException e) {
+            currentThread().interrupt();
             e.printStackTrace();
         }
     }
@@ -1182,6 +1201,7 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
         try {
             println(getQueue().poll(timeout, TimeUnit.SECONDS));
         } catch (InterruptedException e) {
+            currentThread().interrupt();
             e.printStackTrace();
         }
     }
@@ -1281,6 +1301,7 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
             }
             println("Result: " + future.get());
         } catch (InterruptedException e) {
+            currentThread().interrupt();
             e.printStackTrace();
         } catch (ExecutionException e) {
             e.printStackTrace();
@@ -1298,6 +1319,7 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
                 println(f.get());
             }
         } catch (InterruptedException e) {
+            currentThread().interrupt();
             e.printStackTrace();
         } catch (ExecutionException e) {
             e.printStackTrace();
@@ -1520,7 +1542,7 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
 
     /**
      * Starts the test application.
-     *
+     * <p>
      * Loads the config from classpath hazelcast.xml, if it fails to load, will use default config.
      */
     public static void main(String[] args) throws Exception {

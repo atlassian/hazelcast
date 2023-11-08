@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,9 +39,7 @@ import static com.hazelcast.spi.ExecutionService.SYSTEM_EXECUTOR;
 import static com.hazelcast.spi.partition.IPartitionService.SERVICE_NAME;
 
 /**
- *
- * Maintains registration of partition-system related listeners and dispatches corresponding events
- *
+ * Maintains registration of partition-system related listeners and dispatches corresponding events.
  */
 public class PartitionEventManager {
 
@@ -53,10 +51,17 @@ public class PartitionEventManager {
         this.nodeEngine = node.nodeEngine;
     }
 
+    /** Sends a {@link MigrationEvent} to the registered event listeners. */
     void sendMigrationEvent(final MigrationInfo migrationInfo, final MigrationEvent.MigrationStatus status) {
+        if (migrationInfo.getSourceCurrentReplicaIndex() != 0
+                && migrationInfo.getDestinationNewReplicaIndex() != 0) {
+            // only fire events for 0th replica migrations
+            return;
+        }
+
         ClusterServiceImpl clusterService = node.getClusterService();
-        MemberImpl current = clusterService.getMember(migrationInfo.getSource());
-        MemberImpl newOwner = clusterService.getMember(migrationInfo.getDestination());
+        MemberImpl current = clusterService.getMember(migrationInfo.getSourceAddress());
+        MemberImpl newOwner = clusterService.getMember(migrationInfo.getDestinationAddress());
         MigrationEvent event = new MigrationEvent(migrationInfo.getPartitionId(), current, newOwner, status);
         EventService eventService = nodeEngine.getEventService();
         Collection<EventRegistration> registrations = eventService.getRegistrations(SERVICE_NAME, MIGRATION_EVENT_TOPIC);
@@ -134,6 +139,7 @@ public class PartitionEventManager {
         nodeEngine.getExecutionService().execute(SYSTEM_EXECUTOR, publisher);
     }
 
+    /** Task which notifies all {@link PartitionAwareService}s that replicas have been lost. */
     private static class InternalPartitionLostEventPublisher
             implements Runnable {
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,14 +24,17 @@ import com.hazelcast.internal.eviction.Evictable;
 import com.hazelcast.internal.eviction.EvictionCandidate;
 import com.hazelcast.internal.eviction.EvictionListener;
 import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.nio.serialization.SerializableByConvention;
 import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.util.SampleableConcurrentHashMap;
 
+import javax.cache.expiry.ExpiryPolicy;
 import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+@SerializableByConvention
 public class CacheRecordHashMap
         extends SampleableConcurrentHashMap<Data, CacheRecord>
         implements SampleableCacheRecordMap<Data, CacheRecord> {
@@ -146,6 +149,11 @@ public class CacheRecordHashMap
         }
 
         @Override
+        public ExpiryPolicy getExpiryPolicy() {
+            return serializationService.toObject(value.getExpiryPolicy());
+        }
+
+        @Override
         public long getCreationTime() {
             return value.getCreationTime();
         }
@@ -193,21 +201,18 @@ public class CacheRecordHashMap
     }
 
     @Override
-    public <C extends EvictionCandidate<Data, CacheRecord>> int evict(Iterable<C> evictionCandidates,
-                                                                      EvictionListener<Data, CacheRecord> evictionListener) {
-        if (evictionCandidates == null) {
-            return 0;
+    public <C extends EvictionCandidate<Data, CacheRecord>> boolean tryEvict(C evictionCandidate,
+                                                                 EvictionListener<Data, CacheRecord> evictionListener) {
+        if (evictionCandidate == null) {
+            return false;
         }
-        int actualEvictedCount = 0;
-        for (EvictionCandidate<Data, CacheRecord> evictionCandidate : evictionCandidates) {
-            if (remove(evictionCandidate.getAccessor()) != null) {
-                actualEvictedCount++;
-                if (evictionListener != null) {
-                    evictionListener.onEvict(evictionCandidate.getAccessor(), evictionCandidate.getEvictable(), false);
-                }
-            }
+        if (remove(evictionCandidate.getAccessor()) == null) {
+            return false;
         }
-        return actualEvictedCount;
+        if (evictionListener != null) {
+            evictionListener.onEvict(evictionCandidate.getAccessor(), evictionCandidate.getEvictable(), false);
+        }
+        return true;
     }
 
     @Override

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import com.hazelcast.instance.Node;
 import com.hazelcast.map.EntryProcessor;
 import com.hazelcast.map.impl.MapEntries;
 import com.hazelcast.map.impl.MapService;
-import com.hazelcast.map.impl.operation.MultipleEntryOperationFactory;
+import com.hazelcast.map.impl.operation.MapOperationProvider;
 import com.hazelcast.nio.Connection;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.security.permission.ActionConstants;
@@ -40,6 +40,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static com.hazelcast.util.SetUtil.createHashSet;
+
 public class MapExecuteOnKeysMessageTask
         extends AbstractMultiPartitionMessageTask<MapExecuteOnKeysCodec.RequestParameters> {
 
@@ -49,9 +51,10 @@ public class MapExecuteOnKeysMessageTask
 
     @Override
     protected OperationFactory createOperationFactory() {
-        EntryProcessor entryProcessor = serializationService.toObject(parameters.entryProcessor);
-        Set<Data> keys = new HashSet<Data>(parameters.keys);
-        return new MultipleEntryOperationFactory(parameters.name, keys, entryProcessor);
+        EntryProcessor processor = serializationService.toObject(parameters.entryProcessor);
+        MapOperationProvider operationProvider = getMapOperationProvider(parameters.name);
+        return operationProvider.createMultipleEntryOperationFactory(parameters.name,
+                new HashSet<Data>(parameters.keys), processor);
     }
 
     @Override
@@ -73,7 +76,7 @@ public class MapExecuteOnKeysMessageTask
         IPartitionService partitionService = nodeEngine.getPartitionService();
         int partitions = partitionService.getPartitionCount();
         int capacity = Math.min(partitions, parameters.keys.size());
-        Set<Integer> partitionIds = new HashSet<Integer>(capacity);
+        Set<Integer> partitionIds = createHashSet(capacity);
         Iterator<Data> iterator = parameters.keys.iterator();
         while (iterator.hasNext() && partitionIds.size() < partitions) {
             Data key = iterator.next();

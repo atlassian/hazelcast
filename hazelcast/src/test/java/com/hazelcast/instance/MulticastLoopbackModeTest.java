@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,39 +48,13 @@ import static org.junit.Assume.assumeFalse;
 @Category(QuickTest.class)
 public class MulticastLoopbackModeTest extends HazelcastTestSupport {
 
-    /**
-     * Replies if a network interface was properly configured.
-     *
-     * @return <code>true</code> if there is at least one configured interface;
-     * <code>false</code> otherwise.
-     */
-    protected static boolean hasConfiguredNetworkInterface() {
-        try {
-            Enumeration<NetworkInterface> e = NetworkInterface.getNetworkInterfaces();
-            while (e.hasMoreElements()) {
-                NetworkInterface i = e.nextElement();
-                Enumeration<InetAddress> as = i.getInetAddresses();
-                while (as.hasMoreElements()) {
-                    InetAddress a = as.nextElement();
-                    if (a instanceof Inet4Address && !a.isLoopbackAddress() && !a.isMulticastAddress()) {
-                        return true;
-                    }
-                }
-            }
-        } catch (Exception ignored) {
-            // silently cast the exceptions
-        }
-        return false;
-    }
-
     private String multicastGroup;
     private HazelcastInstance hz1;
     private HazelcastInstance hz2;
 
     @Before
     public void setUpTests() {
-        assumeFalse(
-                "This test can be processed only if your host has no configured network interface.",
+        assumeFalse("This test can be processed only if your host has no configured network interface.",
                 hasConfiguredNetworkInterface());
         multicastGroup = System.clearProperty("hazelcast.multicast.group");
     }
@@ -113,8 +87,7 @@ public class MulticastLoopbackModeTest extends HazelcastTestSupport {
     public void testEnabledMode() throws Exception {
         createTestEnvironment(true);
 
-        assertClusterSize(2, hz1);
-        assertClusterSize(2, hz2);
+        assertClusterSize(2, hz1, hz2);
 
         Cluster cluster1 = hz1.getCluster();
         Cluster cluster2 = hz2.getCluster();
@@ -130,5 +103,30 @@ public class MulticastLoopbackModeTest extends HazelcastTestSupport {
 
         assertClusterSize(1, hz1);
         assertClusterSize(1, hz2);
+    }
+
+    /**
+     * Replies if a network interface was properly configured.
+     *
+     * @return <code>true</code> if there is at least one configured interface;
+     * <code>false</code> otherwise.
+     */
+    private static boolean hasConfiguredNetworkInterface() {
+        try {
+            Enumeration<NetworkInterface> e = NetworkInterface.getNetworkInterfaces();
+            while (e.hasMoreElements()) {
+                NetworkInterface i = e.nextElement();
+                Enumeration<InetAddress> as = i.getInetAddresses();
+                while (as.hasMoreElements()) {
+                    InetAddress a = as.nextElement();
+                    if (a instanceof Inet4Address && !a.isLoopbackAddress() && !a.isMulticastAddress()) {
+                        return true;
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            // silently cast the exceptions
+        }
+        return false;
     }
 }

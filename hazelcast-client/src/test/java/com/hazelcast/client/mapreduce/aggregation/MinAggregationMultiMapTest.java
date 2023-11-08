@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -279,7 +279,7 @@ public class MinAggregationMultiMapTest
         MultiMap<String, T> map = client.getMultiMap(mapName);
 
         for (int i = 0; i < values.length; i++) {
-            map.put("key-" + (i/2), values[i]);
+            map.put("key-" + (i / 2), values[i]);
         }
 
         Supplier<String, T, T> supplier = Supplier.all();
@@ -293,7 +293,7 @@ public class MinAggregationMultiMapTest
         MultiMap<String, Value<T>> map = client.getMultiMap(mapName);
 
         for (int i = 0; i < values.length; i++) {
-            map.put("key-" + (i/2), values[i]);
+            map.put("key-" + (i / 2), values[i]);
         }
 
         Supplier<String, Value<T>, T> supplier = Supplier.all(new ValuePropertyExtractor<T>());

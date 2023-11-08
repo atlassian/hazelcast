@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,20 +23,17 @@ import com.hazelcast.logging.ILogger;
 
 /**
  * PartitionListener used to listen partition change events internally.
- * Most significant responsibility of this listener is to increment
- * partition-state version on each change.
+ * Most significant responsibility of this listener is to increment the partition-state version on each change and
+ * cancel any ongoing replica synchronization on the changed partition.
  * <p>
- * Also this listener delegates the partition change events to its child
- * listeners.
+ * Also this listener delegates the partition change events to its child listeners.
  */
 final class InternalPartitionListener implements PartitionListener {
-    private final Node node;
     private final InternalPartitionServiceImpl partitionService;
     private final ILogger logger;
     private volatile PartitionListenerNode listenerHead;
 
     InternalPartitionListener(Node node, InternalPartitionServiceImpl partitionService) {
-        this.node = node;
         this.partitionService = partitionService;
         logger = node.getLogger(InternalPartitionService.class);
     }
@@ -50,7 +47,7 @@ final class InternalPartitionListener implements PartitionListener {
             partitionService.getReplicaManager().cancelReplicaSync(partitionId);
         }
 
-        if (node.isMaster()) {
+        if (partitionService.isLocalMemberMaster()) {
             partitionService.getPartitionStateManager().incrementVersion();
         }
 

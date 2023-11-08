@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,12 +25,14 @@ import com.hazelcast.internal.management.dto.OperationServiceDTO;
 import com.hazelcast.internal.management.dto.PartitionServiceBeanDTO;
 import com.hazelcast.internal.management.dto.ProxyServiceDTO;
 import com.hazelcast.internal.partition.InternalPartitionService;
+import com.hazelcast.internal.util.RuntimeAvailableProcessors;
 import com.hazelcast.monitor.impl.MemberStateImpl;
-import com.hazelcast.nio.ConnectionManager;
+import com.hazelcast.nio.NetworkingService;
 import com.hazelcast.spi.EventService;
 import com.hazelcast.spi.ExecutionService;
 import com.hazelcast.spi.ProxyService;
 import com.hazelcast.spi.impl.operationservice.InternalOperationService;
+import com.hazelcast.util.OperatingSystemMXBeanSupport;
 import com.hazelcast.util.executor.ManagedExecutorService;
 
 import java.lang.management.ClassLoadingMXBean;
@@ -41,8 +43,9 @@ import java.lang.management.OperatingSystemMXBean;
 import java.lang.management.RuntimeMXBean;
 import java.lang.management.ThreadMXBean;
 import java.lang.reflect.Method;
-import java.util.HashMap;
 import java.util.Map;
+
+import static com.hazelcast.util.MapUtil.createHashMap;
 
 /**
  * Helper class to be gather JMX related stats for {@link TimedMemberStateFactory}
@@ -56,7 +59,7 @@ final class TimedMemberStateFactoryHelper {
     static void registerJMXBeans(HazelcastInstanceImpl instance, MemberStateImpl memberState) {
         final EventService es = instance.node.nodeEngine.getEventService();
         final InternalOperationService os = instance.node.nodeEngine.getOperationService();
-        final ConnectionManager cm = instance.node.connectionManager;
+        final NetworkingService cm = instance.node.networkingService;
         final InternalPartitionService ps = instance.node.partitionService;
         final ProxyService proxyService = instance.node.nodeEngine.getProxyService();
         final ExecutionService executionService = instance.node.nodeEngine.getExecutionService();
@@ -79,6 +82,7 @@ final class TimedMemberStateFactoryHelper {
         final ManagedExecutorService clientExecutor = executionService.getExecutor(ExecutionService.CLIENT_EXECUTOR);
         final ManagedExecutorService queryExecutor = executionService.getExecutor(ExecutionService.QUERY_EXECUTOR);
         final ManagedExecutorService ioExecutor = executionService.getExecutor(ExecutionService.IO_EXECUTOR);
+        final ManagedExecutorService offloadableExecutor = executionService.getExecutor(ExecutionService.OFFLOADABLE_EXECUTOR);
 
         final ManagedExecutorDTO systemExecutorDTO = new ManagedExecutorDTO(systemExecutor);
         final ManagedExecutorDTO asyncExecutorDTO = new ManagedExecutorDTO(asyncExecutor);
@@ -86,6 +90,7 @@ final class TimedMemberStateFactoryHelper {
         final ManagedExecutorDTO clientExecutorDTO = new ManagedExecutorDTO(clientExecutor);
         final ManagedExecutorDTO queryExecutorDTO = new ManagedExecutorDTO(queryExecutor);
         final ManagedExecutorDTO ioExecutorDTO = new ManagedExecutorDTO(ioExecutor);
+        final ManagedExecutorDTO offloadableExecutorDTO = new ManagedExecutorDTO(offloadableExecutor);
 
         beans.putManagedExecutor(ExecutionService.SYSTEM_EXECUTOR, systemExecutorDTO);
         beans.putManagedExecutor(ExecutionService.ASYNC_EXECUTOR, asyncExecutorDTO);
@@ -93,6 +98,7 @@ final class TimedMemberStateFactoryHelper {
         beans.putManagedExecutor(ExecutionService.CLIENT_EXECUTOR, clientExecutorDTO);
         beans.putManagedExecutor(ExecutionService.QUERY_EXECUTOR, queryExecutorDTO);
         beans.putManagedExecutor(ExecutionService.IO_EXECUTOR, ioExecutorDTO);
+        beans.putManagedExecutor(ExecutionService.OFFLOADABLE_EXECUTOR, offloadableExecutorDTO);
         memberState.setBeans(beans);
     }
 
@@ -104,8 +110,9 @@ final class TimedMemberStateFactoryHelper {
         MemoryMXBean memoryMxBean = ManagementFactory.getMemoryMXBean();
         MemoryUsage heapMemory = memoryMxBean.getHeapMemoryUsage();
         MemoryUsage nonHeapMemory = memoryMxBean.getNonHeapMemoryUsage();
-        Map<String, Long> map = new HashMap<String, Long>();
-        map.put("runtime.availableProcessors", Integer.valueOf(runtime.availableProcessors()).longValue());
+        final int propertyCount = 29;
+        Map<String, Long> map = createHashMap(propertyCount);
+        map.put("runtime.availableProcessors", (long) RuntimeAvailableProcessors.get());
         map.put("date.startTime", runtimeMxBean.getStartTime());
         map.put("seconds.upTime", runtimeMxBean.getUptime());
         map.put("memory.maxMemory", runtime.maxMemory());
@@ -116,12 +123,12 @@ final class TimedMemberStateFactoryHelper {
         map.put("memory.nonHeapMemoryMax", nonHeapMemory.getMax());
         map.put("memory.nonHeapMemoryUsed", nonHeapMemory.getUsed());
         map.put("runtime.totalLoadedClassCount", clMxBean.getTotalLoadedClassCount());
-        map.put("runtime.loadedClassCount", Integer.valueOf(clMxBean.getLoadedClassCount()).longValue());
+        map.put("runtime.loadedClassCount", (long) clMxBean.getLoadedClassCount());
         map.put("runtime.unloadedClassCount", clMxBean.getUnloadedClassCount());
         map.put("runtime.totalStartedThreadCount", threadMxBean.getTotalStartedThreadCount());
-        map.put("runtime.threadCount", Integer.valueOf(threadMxBean.getThreadCount()).longValue());
-        map.put("runtime.peakThreadCount", Integer.valueOf(threadMxBean.getPeakThreadCount()).longValue());
-        map.put("runtime.daemonThreadCount", Integer.valueOf(threadMxBean.getDaemonThreadCount()).longValue());
+        map.put("runtime.threadCount", (long) threadMxBean.getThreadCount());
+        map.put("runtime.peakThreadCount", (long) threadMxBean.getPeakThreadCount());
+        map.put("runtime.daemonThreadCount", (long) threadMxBean.getDaemonThreadCount());
 
         OperatingSystemMXBean osMxBean = ManagementFactory.getOperatingSystemMXBean();
         map.put("osMemory.freePhysicalMemory", get(osMxBean, "getFreePhysicalMemorySize", 0L));
@@ -143,6 +150,11 @@ final class TimedMemberStateFactoryHelper {
     }
 
     private static Long get(OperatingSystemMXBean mbean, String methodName, Long defaultValue) {
+        if (OperatingSystemMXBeanSupport.GET_FREE_PHYSICAL_MEMORY_SIZE_DISABLED
+                && methodName.equals("getFreePhysicalMemorySize")) {
+            return defaultValue;
+        }
+
         try {
             Method method = mbean.getClass().getMethod(methodName);
             method.setAccessible(true);
@@ -158,8 +170,8 @@ final class TimedMemberStateFactoryHelper {
                 return (Long) value;
             }
             return defaultValue;
-        } catch (RuntimeException re) {
-            throw re;
+        } catch (RuntimeException e) {
+            return defaultValue;
         } catch (Exception e) {
             return defaultValue;
         }

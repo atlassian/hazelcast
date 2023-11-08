@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,9 +26,13 @@ import com.hazelcast.nio.Address;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.DataSerializable;
+import com.hazelcast.nio.serialization.HazelcastSerializationException;
+import com.hazelcast.spi.InternalCompletableFuture;
 import com.hazelcast.spi.InvocationBuilder;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.OperationService;
+import com.hazelcast.spi.impl.operationservice.InternalOperationService;
+import com.hazelcast.spi.impl.operationservice.impl.responses.NormalResponse;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
@@ -53,7 +57,7 @@ import static org.junit.Assert.assertEquals;
 public class OperationServiceImpl_BasicTest extends HazelcastTestSupport {
 
     @Test
-    public void testGetPartitionThreadCount(){
+    public void testGetPartitionThreadCount() {
         Config config = new Config();
         config.setProperty(PARTITION_OPERATION_THREAD_COUNT.getName(), "5");
         HazelcastInstance hz = createHazelcastInstance(config);
@@ -63,7 +67,7 @@ public class OperationServiceImpl_BasicTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void testGetGenericThreadCount(){
+    public void testGetGenericThreadCount() {
         Config config = new Config();
         config.setProperty(GENERIC_OPERATION_THREAD_COUNT.getName(), "5");
         config.setProperty(PRIORITY_GENERIC_OPERATION_THREAD_COUNT.getName(), "1");
@@ -92,7 +96,7 @@ public class OperationServiceImpl_BasicTest extends HazelcastTestSupport {
     // there was a memory leak caused by the invocation not releasing the backup registration
     // when Future.get() is not called.
     @Test
-    public void testAsyncOpsMultiMember() throws InterruptedException {
+    public void testAsyncOpsMultiMember() {
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(2);
         HazelcastInstance hz = factory.newHazelcastInstance();
         HazelcastInstance hz2 = factory.newHazelcastInstance();
@@ -189,5 +193,54 @@ public class OperationServiceImpl_BasicTest extends HazelcastTestSupport {
                 assertEquals("invocations should be empty", 0, operationService.invocationRegistry.size());
             }
         });
+    }
+
+    @Test(expected = HazelcastSerializationException.class)
+    public void invocation_shouldFail_whenResponse_isNotSerializable() {
+        TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory();
+        HazelcastInstance hz1 = factory.newHazelcastInstance();
+        HazelcastInstance hz2 = factory.newHazelcastInstance();
+
+        InternalOperationService operationService = HazelcastTestSupport.getOperationService(hz1);
+        Address target = HazelcastTestSupport.getAddress(hz2);
+
+        InternalCompletableFuture<Object> future = operationService
+                .invokeOnTarget(null, new NonSerializableResponseOperation(), target);
+
+        future.join();
+    }
+
+    @Test(expected = HazelcastSerializationException.class)
+    public void invocation_shouldFail_whenNormalResponse_isNotSerializable() {
+        TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory();
+        HazelcastInstance hz1 = factory.newHazelcastInstance();
+        HazelcastInstance hz2 = factory.newHazelcastInstance();
+
+        InternalOperationService operationService = HazelcastTestSupport.getOperationService(hz1);
+        Address target = HazelcastTestSupport.getAddress(hz2);
+
+
+        InternalCompletableFuture<Object> future = operationService
+                .invokeOnTarget(null, new NonSerializableResponseOperation_withNormalResponseWrapper(), target);
+
+        future.join();
+    }
+
+    private static class NonSerializableResponse {
+    }
+
+    private static class NonSerializableResponseOperation extends Operation {
+
+        @Override
+        public Object getResponse() {
+            return new NonSerializableResponse();
+        }
+    }
+
+    private static class NonSerializableResponseOperation_withNormalResponseWrapper extends Operation {
+        @Override
+        public Object getResponse() {
+            return new NormalResponse(new NonSerializableResponse(), getCallId(), 0, false);
+        }
     }
 }

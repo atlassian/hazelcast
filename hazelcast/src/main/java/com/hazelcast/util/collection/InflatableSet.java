@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.hazelcast.util.collection;
 
+import com.hazelcast.nio.serialization.SerializableByConvention;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import java.io.Serializable;
@@ -52,6 +53,7 @@ import static com.hazelcast.util.Preconditions.checkNotNull;
  *
  * @param <T> the type of elements maintained by this set
  */
+@SerializableByConvention
 public final class InflatableSet<T> extends AbstractSet<T> implements Set<T>, Serializable, Cloneable {
 
     private static final long serialVersionUID = 0L;

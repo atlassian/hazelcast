@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ import com.hazelcast.client.impl.protocol.codec.SetIsEmptyCodec;
 import com.hazelcast.client.impl.protocol.codec.SetRemoveCodec;
 import com.hazelcast.client.impl.protocol.codec.SetRemoveListenerCodec;
 import com.hazelcast.client.impl.protocol.codec.SetSizeCodec;
-import com.hazelcast.client.spi.ClientClusterService;
+import com.hazelcast.client.spi.ClientContext;
 import com.hazelcast.client.spi.EventHandler;
 import com.hazelcast.client.spi.impl.ListenerMessageCodec;
 import com.hazelcast.collection.impl.common.DataAwareItemEvent;
@@ -42,13 +42,14 @@ import com.hazelcast.core.ItemListener;
 import com.hazelcast.core.Member;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.impl.UnmodifiableLazyList;
-import com.hazelcast.spi.serialization.SerializationService;
-import com.hazelcast.util.CollectionUtil;
 import com.hazelcast.util.Preconditions;
 
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
+
+import static com.hazelcast.util.CollectionUtil.objectToDataCollection;
+import static com.hazelcast.util.Preconditions.isNotNull;
 
 /**
  * Proxy implementation of {@link ISet}.
@@ -57,8 +58,8 @@ import java.util.List;
  */
 public class ClientSetProxy<E> extends PartitionSpecificClientProxy implements ISet<E> {
 
-    public ClientSetProxy(String serviceName, String name) {
-        super(serviceName, name);
+    public ClientSetProxy(String serviceName, String name, ClientContext context) {
+        super(serviceName, name, context);
     }
 
     @Override
@@ -125,7 +126,7 @@ public class ClientSetProxy<E> extends PartitionSpecificClientProxy implements I
     @Override
     public boolean containsAll(Collection<?> c) {
         Preconditions.checkNotNull(c);
-        Collection<Data> dataCollection = CollectionUtil.objectToDataCollection(c, getSerializationService());
+        Collection<Data> dataCollection = objectToDataCollection(c, getSerializationService());
         ClientMessage request = SetContainsAllCodec.encodeRequest(name, dataCollection);
         ClientMessage response = invokeOnPartition(request);
         SetContainsAllCodec.ResponseParameters resultParameters = SetContainsAllCodec.decodeResponse(response);
@@ -135,7 +136,7 @@ public class ClientSetProxy<E> extends PartitionSpecificClientProxy implements I
     @Override
     public boolean addAll(Collection<? extends E> c) {
         Preconditions.checkNotNull(c);
-        Collection<Data> dataCollection = CollectionUtil.objectToDataCollection(c, getSerializationService());
+        Collection<Data> dataCollection = objectToDataCollection(c, getSerializationService());
         ClientMessage request = SetAddAllCodec.encodeRequest(name, dataCollection);
         ClientMessage response = invokeOnPartition(request);
         SetAddAllCodec.ResponseParameters resultParameters = SetAddAllCodec.decodeResponse(response);
@@ -145,7 +146,7 @@ public class ClientSetProxy<E> extends PartitionSpecificClientProxy implements I
     @Override
     public boolean removeAll(Collection<?> c) {
         Preconditions.checkNotNull(c);
-        Collection<Data> dataCollection = CollectionUtil.objectToDataCollection(c, getSerializationService());
+        Collection<Data> dataCollection = objectToDataCollection(c, getSerializationService());
         ClientMessage request = SetCompareAndRemoveAllCodec.encodeRequest(name, dataCollection);
         ClientMessage response = invokeOnPartition(request);
         SetCompareAndRemoveAllCodec.ResponseParameters resultParameters = SetCompareAndRemoveAllCodec.decodeResponse(response);
@@ -155,7 +156,7 @@ public class ClientSetProxy<E> extends PartitionSpecificClientProxy implements I
     @Override
     public boolean retainAll(Collection<?> c) {
         Preconditions.checkNotNull(c);
-        Collection<Data> dataCollection = CollectionUtil.objectToDataCollection(c, getSerializationService());
+        Collection<Data> dataCollection = objectToDataCollection(c, getSerializationService());
         ClientMessage request = SetCompareAndRetainAllCodec.encodeRequest(name, dataCollection);
         ClientMessage response = invokeOnPartition(request);
         SetCompareAndRetainAllCodec.ResponseParameters resultParameters = SetCompareAndRetainAllCodec.decodeResponse(response);
@@ -170,6 +171,7 @@ public class ClientSetProxy<E> extends PartitionSpecificClientProxy implements I
 
     @Override
     public String addItemListener(final ItemListener<E> listener, final boolean includeValue) {
+        isNotNull(listener, "listener");
         EventHandler<ClientMessage> eventHandler = new ItemEventHandler(listener);
         return registerListener(createItemListenerCodec(includeValue), eventHandler);
     }
@@ -208,8 +210,7 @@ public class ClientSetProxy<E> extends PartitionSpecificClientProxy implements I
         ClientMessage response = invokeOnPartition(request);
         SetGetAllCodec.ResponseParameters resultParameters = SetGetAllCodec.decodeResponse(response);
         List<Data> resultCollection = resultParameters.response;
-        SerializationService serializationService = getContext().getSerializationService();
-        return new UnmodifiableLazyList<E>(resultCollection, serializationService);
+        return new UnmodifiableLazyList<E>(resultCollection, getSerializationService());
     }
 
     @Override
@@ -227,13 +228,10 @@ public class ClientSetProxy<E> extends PartitionSpecificClientProxy implements I
         }
 
         @Override
-        public void handle(Data dataItem, String uuid, int eventType) {
-            SerializationService serializationService = getContext().getSerializationService();
-            ClientClusterService clusterService = getContext().getClusterService();
-
-            Member member = clusterService.getMember(uuid);
+        public void handleItemEventV10(Data dataItem, String uuid, int eventType) {
+            Member member = getContext().getClusterService().getMember(uuid);
             ItemEvent<E> itemEvent = new DataAwareItemEvent(name, ItemEventType.getByType(eventType),
-                    dataItem, member, serializationService);
+                    dataItem, member, getSerializationService());
             if (eventType == ItemEventType.ADDED.getType()) {
                 listener.itemAdded(itemEvent);
             } else {

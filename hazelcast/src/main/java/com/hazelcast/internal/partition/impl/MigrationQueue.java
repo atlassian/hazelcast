@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -57,6 +57,11 @@ class MigrationQueue {
         }
     }
 
+    /**
+     * Marks a task as completed.
+     *
+     * @throws IllegalStateException if the migration task count was reduced below 0
+     */
     public void afterTaskCompletion(MigrationRunnable task) {
         if (migrateTaskCount.decrementAndGet() < 0) {
             throw new IllegalStateException();

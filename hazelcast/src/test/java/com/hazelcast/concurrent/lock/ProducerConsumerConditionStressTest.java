@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.concurrent.lock;
 
 import com.hazelcast.core.HazelcastInstance;
@@ -5,23 +21,26 @@ import com.hazelcast.core.ICondition;
 import com.hazelcast.core.ILock;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
+import com.hazelcast.test.annotation.NightlyTest;
 import org.junit.Test;
+import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
 import static org.junit.Assert.assertNull;
 
-
 @RunWith(HazelcastParallelClassRunner.class)
+@Category(NightlyTest.class)
 public class ProducerConsumerConditionStressTest extends HazelcastTestSupport {
 
     private static volatile Object object;
 
+    public static final long TEST_TIMEOUT_SECONDS = 10 * 60;
     public static final int ITERATIONS = 1000000;
     public static final int PRODUCER_COUNT = 2;
     public static final int CONSUMER_COUNT = 2;
     public static final int INSTANCE_COUNT = 1;
 
-    @Test
+    @Test(timeout = 2 * TEST_TIMEOUT_SECONDS * 1000)
     public void test() {
         HazelcastInstance[] instances = createHazelcastInstanceFactory(INSTANCE_COUNT).newInstances();
         HazelcastInstance hz = instances[0];
@@ -42,8 +61,8 @@ public class ProducerConsumerConditionStressTest extends HazelcastTestSupport {
             producers[k] = thread;
         }
 
-        assertJoinable(600, producers);
-        assertJoinable(600, consumers);
+        assertJoinable(TEST_TIMEOUT_SECONDS, producers);
+        assertJoinable(TEST_TIMEOUT_SECONDS, consumers);
 
         for (TestThread consumer : consumers) {
             assertNull(consumer.throwable);
@@ -105,6 +124,7 @@ public class ProducerConsumerConditionStressTest extends HazelcastTestSupport {
     }
 
     class ConsumerThread extends TestThread {
+
         private final ILock lock;
         private final ICondition condition;
 

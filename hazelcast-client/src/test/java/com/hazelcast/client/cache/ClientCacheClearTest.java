@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,11 @@ package com.hazelcast.client.cache;
 
 import com.hazelcast.cache.CacheClearTest;
 import com.hazelcast.cache.ICache;
+import com.hazelcast.client.HazelcastClient;
 import com.hazelcast.client.cache.impl.HazelcastClientCachingProvider;
 import com.hazelcast.client.config.ClientConfig;
-import com.hazelcast.client.impl.HazelcastClientInstanceImpl;
-import com.hazelcast.client.impl.HazelcastClientProxy;
+import com.hazelcast.client.impl.clientside.HazelcastClientInstanceImpl;
+import com.hazelcast.client.impl.clientside.HazelcastClientProxy;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.CacheAddInvalidationListenerCodec;
 import com.hazelcast.client.impl.protocol.codec.CacheRemoveEntryListenerCodec;
@@ -70,7 +71,7 @@ public class ClientCacheClearTest extends CacheClearTest {
                 .setCacheLocalEntries(false)
                 .setEvictionConfig(new EvictionConfig(10000, MaxSizePolicy.ENTRY_COUNT, EvictionPolicy.LFU))
                 .setInvalidateOnChange(true)
-                .setLocalUpdatePolicy(NearCacheConfig.LocalUpdatePolicy.CACHE)
+                .setLocalUpdatePolicy(NearCacheConfig.LocalUpdatePolicy.CACHE_ON_UPDATE)
                 .setMaxIdleSeconds(600)
                 .setTimeToLiveSeconds(60);
 
@@ -210,6 +211,7 @@ public class ClientCacheClearTest extends CacheClearTest {
         // Client factory is already shutdown at this test's super class (`CachePutAllTest`)
         // because it is returned instance factory from overridden `getInstanceFactory` method.
         client = null;
+        HazelcastClient.shutdownAll();
     }
 
     @Override

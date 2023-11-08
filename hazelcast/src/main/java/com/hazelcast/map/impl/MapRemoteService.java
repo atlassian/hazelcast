@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,18 @@
 
 package com.hazelcast.map.impl;
 
+import com.hazelcast.config.Config;
 import com.hazelcast.config.MapConfig;
 import com.hazelcast.core.DistributedObject;
 import com.hazelcast.map.impl.proxy.MapProxyImpl;
 import com.hazelcast.map.impl.proxy.NearCachedMapProxyImpl;
+import com.hazelcast.map.merge.MergePolicyProvider;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.RemoteService;
 
 import static com.hazelcast.internal.config.ConfigValidator.checkMapConfig;
 import static com.hazelcast.internal.config.ConfigValidator.checkNearCacheConfig;
+import static com.hazelcast.internal.config.MergePolicyValidator.checkMergePolicySupportsInMemoryFormat;
 
 /**
  * Defines remote service behavior of map service.
@@ -43,12 +46,17 @@ class MapRemoteService implements RemoteService {
 
     @Override
     public DistributedObject createDistributedObject(String name) {
-        MapConfig mapConfig = nodeEngine.getConfig().findMapConfig(name);
-        checkMapConfig(mapConfig);
+        Config config = nodeEngine.getConfig();
+        MapConfig mapConfig = config.findMapConfig(name);
+        MergePolicyProvider mergePolicyProvider = mapServiceContext.getMergePolicyProvider();
+        checkMapConfig(mapConfig, mergePolicyProvider);
+
+        Object mergePolicy = mergePolicyProvider.getMergePolicy(mapConfig.getMergePolicyConfig().getPolicy());
+        checkMergePolicySupportsInMemoryFormat(name, mergePolicy, mapConfig.getInMemoryFormat(),
+                true, nodeEngine.getLogger(getClass()));
 
         if (mapConfig.isNearCacheEnabled()) {
-            checkNearCacheConfig(mapConfig.getNearCacheConfig(), false);
-
+            checkNearCacheConfig(name, mapConfig.getNearCacheConfig(), config.getNativeMemoryConfig(), false);
             return new NearCachedMapProxyImpl(name, mapServiceContext.getService(), nodeEngine, mapConfig);
         } else {
             return new MapProxyImpl(name, mapServiceContext.getService(), nodeEngine, mapConfig);

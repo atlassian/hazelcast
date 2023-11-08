@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import com.hazelcast.internal.memory.MemoryAccessor;
 
 import java.lang.reflect.Field;
 
-import static com.hazelcast.internal.memory.impl.AlignmentUtil.IS_PLATFORM_BIG_ENDIAN;
 import static com.hazelcast.internal.memory.impl.UnsafeUtil.UNSAFE;
 import static com.hazelcast.internal.memory.impl.UnsafeUtil.UNSAFE_AVAILABLE;
 
@@ -37,11 +36,6 @@ public final class StandardMemoryAccessor extends UnsafeBasedMemoryAccessor {
         if (!UNSAFE_AVAILABLE) {
             throw new IllegalStateException(getClass().getName() + " can only be used only when Unsafe is available!");
         }
-    }
-
-    @Override
-    public boolean isBigEndian() {
-        return IS_PLATFORM_BIG_ENDIAN;
     }
 
     // Address-based memory access
@@ -228,7 +222,6 @@ public final class StandardMemoryAccessor extends UnsafeBasedMemoryAccessor {
     }
 
 
-
     @Override
     public boolean compareAndSwapInt(long address, int expected, int x) {
         return UNSAFE.compareAndSwapInt(null, address, expected, x);
@@ -244,7 +237,6 @@ public final class StandardMemoryAccessor extends UnsafeBasedMemoryAccessor {
         return UNSAFE.compareAndSwapObject(null, address, expected, x);
     }
 
-
     @Override
     public void putOrderedInt(long address, int x) {
         UNSAFE.putOrderedInt(null, address, x);
@@ -259,8 +251,6 @@ public final class StandardMemoryAccessor extends UnsafeBasedMemoryAccessor {
     public void putOrderedObject(long address, Object x) {
         UNSAFE.putOrderedObject(null, address, x);
     }
-
-
 
     // Object-based memory access
 
@@ -278,8 +268,6 @@ public final class StandardMemoryAccessor extends UnsafeBasedMemoryAccessor {
     public int arrayIndexScale(Class<?> arrayClass) {
         return UNSAFE.arrayIndexScale(arrayClass);
     }
-
-
 
     @Override
     public Object getObject(Object base, long offset) {
@@ -371,14 +359,10 @@ public final class StandardMemoryAccessor extends UnsafeBasedMemoryAccessor {
         UNSAFE.putDouble(base, offset, x);
     }
 
-
-
     @Override
     public void copyMemory(Object srcObj, long srcOffset, Object destObj, long destOffset, long lengthBytes) {
         UNSAFE.copyMemory(srcObj, srcOffset, destObj, destOffset, lengthBytes);
     }
-
-
 
     @Override
     public Object getObjectVolatile(Object base, long offset) {
@@ -470,8 +454,6 @@ public final class StandardMemoryAccessor extends UnsafeBasedMemoryAccessor {
         UNSAFE.putDoubleVolatile(base, offset, x);
     }
 
-
-
     @Override
     public void putOrderedInt(Object base, long offset, int x) {
         UNSAFE.putOrderedInt(base, offset, x);
@@ -486,8 +468,6 @@ public final class StandardMemoryAccessor extends UnsafeBasedMemoryAccessor {
     public void putOrderedObject(Object base, long offset, Object x) {
         UNSAFE.putOrderedObject(base, offset, x);
     }
-
-
 
     @Override
     public boolean compareAndSwapInt(Object base, long offset, int expected, int x) {

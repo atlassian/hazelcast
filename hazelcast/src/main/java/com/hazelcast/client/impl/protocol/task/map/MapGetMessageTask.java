@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,7 +33,7 @@ import java.security.Permission;
 public class MapGetMessageTask
         extends AbstractMapPartitionMessageTask<MapGetCodec.RequestParameters> {
 
-    private transient long startTime;
+    private transient long startTimeNanos;
 
     public MapGetMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
@@ -59,17 +59,17 @@ public class MapGetMessageTask
 
     @Override
     protected void beforeProcess() {
-        startTime = System.currentTimeMillis();
+        startTimeNanos = System.nanoTime();
     }
 
     @Override
     protected void beforeResponse() {
-        final long latency = System.currentTimeMillis() - startTime;
+        final long latencyNanos = System.nanoTime() - startTimeNanos;
         final MapService mapService = getService(MapService.SERVICE_NAME);
         MapContainer mapContainer = mapService.getMapServiceContext().getMapContainer(parameters.name);
         if (mapContainer.getMapConfig().isStatisticsEnabled()) {
             mapService.getMapServiceContext().getLocalMapStatsProvider().getLocalMapStatsImpl(parameters.name)
-                    .incrementGets(latency);
+                    .incrementGetLatencyNanos(latencyNanos);
         }
     }
 

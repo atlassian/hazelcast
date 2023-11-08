@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,13 +17,19 @@
 package com.hazelcast.aggregation.impl;
 
 import com.hazelcast.aggregation.Aggregator;
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+import com.hazelcast.util.MapUtil;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
-import java.util.HashSet;
-import java.util.Map;
+import java.io.IOException;
 import java.util.Set;
 
-public class DistinctValuesAggregator<R, K, V> extends AbstractAggregator<Set<R>, K, V> {
-    Set<R> values = new HashSet<R>();
+@SuppressFBWarnings("SE_BAD_FIELD")
+public final class DistinctValuesAggregator<I, R> extends AbstractAggregator<I, R, Set<R>> implements IdentifiedDataSerializable {
+
+    private CanonicalizingHashSet<R> values = new CanonicalizingHashSet<R>();
 
     public DistinctValuesAggregator() {
         super();
@@ -34,19 +40,50 @@ public class DistinctValuesAggregator<R, K, V> extends AbstractAggregator<Set<R>
     }
 
     @Override
-    public void accumulate(Map.Entry<K, V> entry) {
-        R extractedValue = (R) extract(entry);
-        values.add(extractedValue);
+    public void accumulateExtracted(I entry, R value) {
+        values.addInternal(value);
     }
 
+    @SuppressWarnings("unchecked")
     @Override
     public void combine(Aggregator aggregator) {
         DistinctValuesAggregator distinctValuesAggregator = (DistinctValuesAggregator) aggregator;
-        this.values.addAll(distinctValuesAggregator.values);
+        this.values.addAllInternal(distinctValuesAggregator.values);
     }
 
     @Override
     public Set<R> aggregate() {
         return values;
     }
+
+    @Override
+    public int getFactoryId() {
+        return AggregatorDataSerializerHook.F_ID;
+    }
+
+    @Override
+    public int getId() {
+        return AggregatorDataSerializerHook.DISTINCT_VALUES;
+    }
+
+    @Override
+    public void writeData(ObjectDataOutput out) throws IOException {
+        out.writeUTF(attributePath);
+        out.writeInt(values.size());
+        for (Object value : values) {
+            out.writeObject(value);
+        }
+    }
+
+    @Override
+    public void readData(ObjectDataInput in) throws IOException {
+        this.attributePath = in.readUTF();
+        int count = in.readInt();
+        this.values = new CanonicalizingHashSet<R>(MapUtil.calculateInitialCapacity(count));
+        for (int i = 0; i < count; i++) {
+            R value = in.readObject();
+            values.addInternal(value);
+        }
+    }
+
 }

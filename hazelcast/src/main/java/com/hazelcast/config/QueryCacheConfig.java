@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,16 @@
 
 package com.hazelcast.config;
 
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
+import static com.hazelcast.internal.serialization.impl.SerializationUtil.readNullableList;
+import static com.hazelcast.internal.serialization.impl.SerializationUtil.writeNullableList;
 import static com.hazelcast.util.Preconditions.checkFalse;
 import static com.hazelcast.util.Preconditions.checkHasText;
 import static com.hazelcast.util.Preconditions.checkNotNegative;
@@ -30,7 +37,9 @@ import static com.hazelcast.util.Preconditions.checkPositive;
  *
  * @since 3.5
  */
-public class QueryCacheConfig {
+
+@SuppressWarnings("checkstyle:methodcount")
+public class QueryCacheConfig implements IdentifiedDataSerializable {
 
     /**
      * By default, after reaching this minimum size, node immediately sends buffered events to {@code QueryCache}.
@@ -38,7 +47,7 @@ public class QueryCacheConfig {
     public static final int DEFAULT_BATCH_SIZE = 1;
 
     /**
-     * By default, only buffer last {@value #DEFAULT_BUFFER_SIZE} events fired from a partition.
+     * By default, only buffer last {@code DEFAULT_BUFFER_SIZE} events fired from a partition.
      */
     public static final int DEFAULT_BUFFER_SIZE = 16;
 
@@ -120,7 +129,7 @@ public class QueryCacheConfig {
 
     private List<MapIndexConfig> indexConfigs;
 
-    private QueryCacheConfigReadOnly readOnly;
+    private transient QueryCacheConfigReadOnly readOnly;
 
     public QueryCacheConfig() {
     }
@@ -144,7 +153,12 @@ public class QueryCacheConfig {
         this.indexConfigs = other.indexConfigs;
     }
 
-
+    /**
+     * Gets immutable version of this configuration.
+     *
+     * @return immutable version of this configuration
+     * @deprecated this method will be removed in 4.0; it is meant for internal usage only
+     */
     public QueryCacheConfigReadOnly getAsReadOnly() {
         if (readOnly == null) {
             readOnly = new QueryCacheConfigReadOnly(this);
@@ -155,7 +169,7 @@ public class QueryCacheConfig {
     /**
      * Returns the name of {@code QueryCache}.
      *
-     * @return the name of {@code QueryCache}.
+     * @return the name of {@code QueryCache}
      */
     public String getName() {
         return name;
@@ -164,8 +178,8 @@ public class QueryCacheConfig {
     /**
      * Sets the name of {@code QueryCache}.
      *
-     * @param name the name of {@code QueryCache}.
-     * @return this {@code QueryCacheConfig} instance.
+     * @param name the name of {@code QueryCache}
+     * @return this {@code QueryCacheConfig} instance
      */
     public QueryCacheConfig setName(String name) {
         checkHasText(name, "name");
@@ -177,7 +191,7 @@ public class QueryCacheConfig {
     /**
      * Returns the predicate of {@code QueryCache}.
      *
-     * @return the predicate of {@code QueryCache}.
+     * @return the predicate of {@code QueryCache}
      */
     public PredicateConfig getPredicateConfig() {
         return predicateConfig;
@@ -186,8 +200,8 @@ public class QueryCacheConfig {
     /**
      * Sets the predicate of {@code QueryCache}.
      *
-     * @param predicateConfig config for predicate.
-     * @return this {@code QueryCacheConfig} instance.
+     * @param predicateConfig config for predicate
+     * @return this {@code QueryCacheConfig} instance
      */
     public QueryCacheConfig setPredicateConfig(PredicateConfig predicateConfig) {
         this.predicateConfig = checkNotNull(predicateConfig, "predicateConfig can not be null");
@@ -197,7 +211,7 @@ public class QueryCacheConfig {
     /**
      * After reaching this size, node sends buffered events to {@code QueryCache}.
      *
-     * @return the batch size.
+     * @return the batch size
      */
     public int getBatchSize() {
         return batchSize;
@@ -206,20 +220,18 @@ public class QueryCacheConfig {
     /**
      * Sets the batch size which will be used to determine number of events to be sent in a batch to {@code QueryCache}
      *
-     * @param batchSize the batch size.
-     * @return this {@code QueryCacheConfig} instance.
+     * @param batchSize the batch size
+     * @return this {@code QueryCacheConfig} instance
      */
     public QueryCacheConfig setBatchSize(int batchSize) {
-        checkPositive(batchSize, "batchSize");
-
-        this.batchSize = batchSize;
+        this.batchSize = checkPositive(batchSize, "batchSize");
         return this;
     }
 
     /**
      * Returns the maximum number of events which can be stored in a buffer of partition.
      *
-     * @return the maximum number of events which can be stored in a buffer of partition.
+     * @return the maximum number of events which can be stored in a buffer of partition
      */
     public int getBufferSize() {
         return bufferSize;
@@ -228,13 +240,11 @@ public class QueryCacheConfig {
     /**
      * Sets the maximum number of events which can be stored in a buffer of partition.
      *
-     * @param bufferSize the buffer size.
-     * @return this {@code QueryCacheConfig} instance.
+     * @param bufferSize the buffer size
+     * @return this {@code QueryCacheConfig} instance
      */
     public QueryCacheConfig setBufferSize(int bufferSize) {
-        checkPositive(bufferSize, "bufferSize");
-
-        this.bufferSize = bufferSize;
+        this.bufferSize = checkPositive(bufferSize, "bufferSize");
         return this;
     }
 
@@ -242,7 +252,7 @@ public class QueryCacheConfig {
      * Returns the minimum number of delay seconds which an event waits in the buffer of node
      * before sending to a {@code QueryCache}
      *
-     * @return delay seconds.
+     * @return delay seconds
      */
     public int getDelaySeconds() {
         return delaySeconds;
@@ -252,22 +262,20 @@ public class QueryCacheConfig {
      * Sets the minimum number of delay seconds which an event waits in the buffer of node
      * before sending to a {@code QueryCache}
      *
-     * @param delaySeconds the delay seconds.
-     * @return this {@code QueryCacheConfig} instance.
+     * @param delaySeconds the delay seconds
+     * @return this {@code QueryCacheConfig} instance
      */
     public QueryCacheConfig setDelaySeconds(int delaySeconds) {
-        checkNotNegative(delaySeconds, "delaySeconds");
-
-        this.delaySeconds = delaySeconds;
+        this.delaySeconds = checkNotNegative(delaySeconds, "delaySeconds");
         return this;
     }
 
     /**
      * Returns memory format of values of entries in {@code QueryCache}.
-     * <p/>
+     * <p>
      * Default value is binary.
      *
-     * @return memory format of values of entries in {@code QueryCache}.
+     * @return memory format of values of entries in {@code QueryCache}
      */
     public InMemoryFormat getInMemoryFormat() {
         return inMemoryFormat;
@@ -275,11 +283,11 @@ public class QueryCacheConfig {
 
     /**
      * Sets memory format of values of entries in {@code QueryCache}.
-     * <p/>
+     * <p>
      * Default value is binary.
      *
      * @param inMemoryFormat the memory format
-     * @return this {@code QueryCacheConfig} instance.
+     * @return this {@code QueryCacheConfig} instance
      */
     public QueryCacheConfig setInMemoryFormat(InMemoryFormat inMemoryFormat) {
         checkNotNull(inMemoryFormat, "inMemoryFormat cannot be null");
@@ -291,22 +299,22 @@ public class QueryCacheConfig {
 
     /**
      * Returns {@code true} if value caching enabled, otherwise returns {@code false}.
-     * <p/>
+     * <p>
      * Default value is {@value #DEFAULT_INCLUDE_VALUE}.
      *
-     * @return {@code true} if value caching enabled, otherwise returns {@code false}.
+     * @return {@code true} if value caching enabled, otherwise returns {@code false}
      */
     public boolean isIncludeValue() {
         return includeValue;
     }
 
     /**
-     * Set {@code true} to enable value caching, otherwise set {@code false}.
-     * <p/>
+     * Set {@code true} to enable value caching, otherwise set {@code false}
+     * <p>
      * Default value is {@value #DEFAULT_INCLUDE_VALUE}.
      *
-     * @param includeValue Set {@code true} if value caching is enabled, otherwise set {@code false}.
-     * @return this {@code QueryCacheConfig} instance.
+     * @param includeValue Set {@code true} if value caching is enabled, otherwise set {@code false}
+     * @return this {@code QueryCacheConfig} instance
      */
     public QueryCacheConfig setIncludeValue(boolean includeValue) {
         this.includeValue = includeValue;
@@ -315,10 +323,10 @@ public class QueryCacheConfig {
 
     /**
      * Returns {@code true} if initial population of {@code QueryCache} is enabled, otherwise returns {@code false}.
-     * * <p/>
+     * <p>
      * Default value is {@value #DEFAULT_POPULATE}.
      *
-     * @return {@code true} if initial population of {@code QueryCache} is enabled, otherwise returns {@code false}.
+     * @return {@code true} if initial population of {@code QueryCache} is enabled, otherwise returns {@code false}
      */
     public boolean isPopulate() {
         return populate;
@@ -326,11 +334,11 @@ public class QueryCacheConfig {
 
     /**
      * Set {@code true} to enable initial population, otherwise set {@code false}.
-     * <p/>
+     * <p>
      * Default value is {@value #DEFAULT_POPULATE}.
      *
      * @param populate set {@code true} to enable initial population, otherwise set {@code false}
-     * @return this {@code QueryCacheConfig} instance.
+     * @return this {@code QueryCacheConfig} instance
      */
     public QueryCacheConfig setPopulate(boolean populate) {
         this.populate = populate;
@@ -339,10 +347,10 @@ public class QueryCacheConfig {
 
     /**
      * Returns {@code true} if coalescing is is enabled, otherwise returns {@code false}.
-     * <p/>
+     * <p>
      * Default value is {@value #DEFAULT_COALESCE}.
      *
-     * @return {@code true} if coalescing is is enabled, otherwise returns {@code false}.
+     * @return {@code true} if coalescing is is enabled, otherwise returns {@code false}
      * @see #setCoalesce
      */
     public boolean isCoalesce() {
@@ -352,19 +360,20 @@ public class QueryCacheConfig {
     /**
      * Set {@code true} to enable coalescing, otherwise set {@code false}.
      * This setting is only valid if {@code QueryCacheConfig#delaySeconds} is greater than 0.
-     * <p/>
+     * <p>
      * Default value is {@value #DEFAULT_COALESCE}.
      *
      * @param coalesce set {@code true} to enable, otherwise set {@code false}
      */
-    public void setCoalesce(boolean coalesce) {
+    public QueryCacheConfig setCoalesce(boolean coalesce) {
         this.coalesce = coalesce;
+        return this;
     }
 
     /**
      * Returns {@link EvictionConfig} instance for this {@code QueryCache}
      *
-     * @return the {@link EvictionConfig} instance for this {@code QueryCache}.
+     * @return the {@link EvictionConfig} instance for this {@code QueryCache}
      */
     public EvictionConfig getEvictionConfig() {
         return evictionConfig;
@@ -374,7 +383,7 @@ public class QueryCacheConfig {
      * Sets the {@link EvictionConfig} instance for this {@code QueryCache}
      *
      * @param evictionConfig the {@link EvictionConfig} instance for eviction configuration to set
-     * @return this {@code QueryCacheConfig} instance.
+     * @return this {@code QueryCacheConfig} instance
      */
     public QueryCacheConfig setEvictionConfig(EvictionConfig evictionConfig) {
         checkNotNull(evictionConfig, "evictionConfig cannot be null");
@@ -387,7 +396,7 @@ public class QueryCacheConfig {
      * Adds {@link EntryListenerConfig} to this {@code QueryCacheConfig}.
      *
      * @param listenerConfig the {@link EntryListenerConfig} to add
-     * @return this {@code QueryCacheConfig} instance.
+     * @return this {@code QueryCacheConfig} instance
      */
     public QueryCacheConfig addEntryListenerConfig(EntryListenerConfig listenerConfig) {
         checkNotNull(listenerConfig, "listenerConfig cannot be null");
@@ -443,5 +452,114 @@ public class QueryCacheConfig {
                 + ", entryListenerConfigs=" + entryListenerConfigs
                 + ", indexConfigs=" + indexConfigs
                 + '}';
+    }
+
+    @Override
+    public int getFactoryId() {
+        return ConfigDataSerializerHook.F_ID;
+    }
+
+    @Override
+    public int getId() {
+        return ConfigDataSerializerHook.QUERY_CACHE_CONFIG;
+    }
+
+    @Override
+    public void writeData(ObjectDataOutput out) throws IOException {
+        out.writeInt(batchSize);
+        out.writeInt(bufferSize);
+        out.writeInt(delaySeconds);
+        out.writeBoolean(includeValue);
+        out.writeBoolean(populate);
+        out.writeBoolean(coalesce);
+        out.writeUTF(inMemoryFormat.name());
+        out.writeUTF(name);
+        out.writeObject(predicateConfig);
+        out.writeObject(evictionConfig);
+        writeNullableList(entryListenerConfigs, out);
+        writeNullableList(indexConfigs, out);
+    }
+
+    @Override
+    public void readData(ObjectDataInput in) throws IOException {
+        batchSize = in.readInt();
+        bufferSize = in.readInt();
+        delaySeconds = in.readInt();
+        includeValue = in.readBoolean();
+        populate = in.readBoolean();
+        coalesce = in.readBoolean();
+        inMemoryFormat = InMemoryFormat.valueOf(in.readUTF());
+        name = in.readUTF();
+        predicateConfig = in.readObject();
+        evictionConfig = in.readObject();
+        entryListenerConfigs = readNullableList(in);
+        indexConfigs = readNullableList(in);
+    }
+
+    @Override
+    @SuppressWarnings({"checkstyle:cyclomaticcomplexity", "checkstyle:npathcomplexity"})
+    public final boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof QueryCacheConfig)) {
+            return false;
+        }
+
+        QueryCacheConfig that = (QueryCacheConfig) o;
+
+        if (batchSize != that.batchSize) {
+            return false;
+        }
+        if (bufferSize != that.bufferSize) {
+            return false;
+        }
+        if (delaySeconds != that.delaySeconds) {
+            return false;
+        }
+        if (includeValue != that.includeValue) {
+            return false;
+        }
+        if (populate != that.populate) {
+            return false;
+        }
+        if (coalesce != that.coalesce) {
+            return false;
+        }
+        if (inMemoryFormat != that.inMemoryFormat) {
+            return false;
+        }
+        if (name != null ? !name.equals(that.name) : that.name != null) {
+            return false;
+        }
+        if (predicateConfig != null ? !predicateConfig.equals(that.predicateConfig) : that.predicateConfig != null) {
+            return false;
+        }
+        if (evictionConfig != null ? !evictionConfig.equals(that.evictionConfig) : that.evictionConfig != null) {
+            return false;
+        }
+        if (entryListenerConfigs != null
+                ? !entryListenerConfigs.equals(that.entryListenerConfigs) : that.entryListenerConfigs != null) {
+            return false;
+        }
+        return indexConfigs != null ? indexConfigs.equals(that.indexConfigs) : that.indexConfigs == null;
+    }
+
+    @Override
+    @SuppressWarnings("checkstyle:npathcomplexity")
+    public final int hashCode() {
+        int result = batchSize;
+        result = 31 * result + bufferSize;
+        result = 31 * result + delaySeconds;
+        result = 31 * result + (includeValue ? 1 : 0);
+        result = 31 * result + (populate ? 1 : 0);
+        result = 31 * result + (coalesce ? 1 : 0);
+        result = 31 * result + (inMemoryFormat != null ? inMemoryFormat.hashCode() : 0);
+        result = 31 * result + (name != null ? name.hashCode() : 0);
+        result = 31 * result + (predicateConfig != null ? predicateConfig.hashCode() : 0);
+        result = 31 * result + (evictionConfig != null ? evictionConfig.hashCode() : 0);
+        result = 31 * result + (entryListenerConfigs != null ? entryListenerConfigs.hashCode() : 0);
+        result = 31 * result + (indexConfigs != null ? indexConfigs.hashCode() : 0);
+        return result;
     }
 }

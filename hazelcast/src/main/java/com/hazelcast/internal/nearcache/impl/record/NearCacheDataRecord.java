@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,20 @@
 
 package com.hazelcast.internal.nearcache.impl.record;
 
-import com.hazelcast.internal.nearcache.NearCacheRecord;
 import com.hazelcast.nio.serialization.Data;
 
 /**
- * Implementation of {@link NearCacheRecord} to store
- * {@link com.hazelcast.nio.serialization.Data} type objects.
+ * Implementation of {@link com.hazelcast.internal.nearcache.NearCacheRecord} to store {@link Data} type objects.
  */
 public class NearCacheDataRecord extends AbstractNearCacheRecord<Data> {
 
     public NearCacheDataRecord(Data value, long creationTime, long expiryTime) {
         super(value, creationTime, expiryTime);
         this.value = value;
+    }
+
+    @Override
+    public String toString() {
+        return "NearCacheDataRecord{" + super.toString() + '}';
     }
 }

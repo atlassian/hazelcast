@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.hazelcast.replicatedmap.impl.operation;
 
+import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
@@ -31,26 +32,21 @@ import java.util.concurrent.TimeUnit;
 /**
  * Replicates the update happened on the partition owner to the other nodes.
  */
-public class ReplicateUpdateOperation extends AbstractSerializableOperation implements PartitionAwareOperation {
+public class ReplicateUpdateOperation extends AbstractNamedSerializableOperation implements PartitionAwareOperation {
 
-    VersionResponsePair response;
-    boolean isRemove;
-    String name;
-    Data dataKey;
-    Data dataValue;
-    long ttl;
-    Address origin;
+    private VersionResponsePair response;
+    private boolean isRemove;
+    private String name;
+    private Data dataKey;
+    private Data dataValue;
+    private long ttl;
+    private Address origin;
 
     public ReplicateUpdateOperation() {
     }
 
-    public ReplicateUpdateOperation(String name,
-                                    Data dataKey,
-                                    Data dataValue,
-                                    long ttl,
-                                    VersionResponsePair response,
-                                    boolean isRemove,
-                                    Address origin) {
+    public ReplicateUpdateOperation(String name, Data dataKey, Data dataValue, long ttl, VersionResponsePair response,
+                                    boolean isRemove, Address origin) {
         this.name = name;
         this.dataKey = dataKey;
         this.dataValue = dataValue;
@@ -67,9 +63,11 @@ public class ReplicateUpdateOperation extends AbstractSerializableOperation impl
         long currentVersion = store.getVersion();
         long updateVersion = response.getVersion();
         if (currentVersion >= updateVersion) {
-            getLogger().finest("Stale update received for replicated map -> " + name + ",  partitionId -> "
-                    + getPartitionId() + " , current version -> " + currentVersion + ", update version -> "
-                    + updateVersion + ", rejecting update!");
+            ILogger logger = getLogger();
+            if (logger.isFineEnabled()) {
+                logger.fine("Rejecting stale update received for replicated map '" + name + "' (partitionId " + getPartitionId()
+                        + ") (current version " + currentVersion + ") (update version " + updateVersion + ")");
+            }
             return;
         }
         Object key = store.marshall(dataKey);
@@ -119,5 +117,10 @@ public class ReplicateUpdateOperation extends AbstractSerializableOperation impl
     @Override
     public int getId() {
         return ReplicatedMapDataSerializerHook.REPLICATE_UPDATE;
+    }
+
+    @Override
+    public String getName() {
+        return name;
     }
 }

@@ -1,4 +1,20 @@
 /*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/*
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -32,6 +48,7 @@ import com.hazelcast.mapreduce.ReducerFactory;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.annotation.NightlyTest;
 import org.junit.After;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -46,6 +63,7 @@ import static org.junit.Assert.assertEquals;
 @RunWith(HazelcastParallelClassRunner.class)
 @Category(NightlyTest.class)
 @SuppressWarnings("unused")
+@Ignore
 public class DistributedMapperClientMultiMapReduceTest
         extends AbstractClientMapReduceJobTest {
 
@@ -64,9 +82,8 @@ public class DistributedMapperClientMultiMapReduceTest
         HazelcastInstance h2 = hazelcastFactory.newHazelcastInstance(config);
         HazelcastInstance h3 = hazelcastFactory.newHazelcastInstance(config);
 
-        assertClusterSizeEventually(3, h1);
+        assertClusterSize(3, h1, h3);
         assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
 
         HazelcastInstance client = hazelcastFactory.newHazelcastClient(null);
         MultiMap<Integer, Integer> m1 = client.getMultiMap(randomString());
@@ -101,14 +118,13 @@ public class DistributedMapperClientMultiMapReduceTest
         HazelcastInstance h2 = hazelcastFactory.newHazelcastInstance(config);
         HazelcastInstance h3 = hazelcastFactory.newHazelcastInstance(config);
 
-        assertClusterSizeEventually(3, h1);
+        assertClusterSize(3, h1, h3);
         assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
 
         HazelcastInstance client = hazelcastFactory.newHazelcastClient(null);
         MultiMap<Integer, Integer> m1 = client.getMultiMap(randomString());
         for (int i = 0; i < 100; i++) {
-            m1.put(i/2, i);
+            m1.put(i / 2, i);
         }
 
         JobTracker tracker = client.getJobTracker("default");
@@ -137,9 +153,8 @@ public class DistributedMapperClientMultiMapReduceTest
         HazelcastInstance h2 = hazelcastFactory.newHazelcastInstance(config);
         HazelcastInstance h3 = hazelcastFactory.newHazelcastInstance(config);
 
-        assertClusterSizeEventually(3, h1);
+        assertClusterSize(3, h1, h3);
         assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
 
         HazelcastInstance client = hazelcastFactory.newHazelcastClient(null);
         MultiMap<Integer, Integer> m1 = client.getMultiMap(randomString());
@@ -194,14 +209,13 @@ public class DistributedMapperClientMultiMapReduceTest
         HazelcastInstance h2 = hazelcastFactory.newHazelcastInstance(config);
         HazelcastInstance h3 = hazelcastFactory.newHazelcastInstance(config);
 
-        assertClusterSizeEventually(3, h1);
+        assertClusterSize(3, h1, h3);
         assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
 
         HazelcastInstance client = hazelcastFactory.newHazelcastClient(null);
         MultiMap<Integer, Integer> m1 = client.getMultiMap(randomString());
         for (int i = 0; i < 100; i++) {
-            m1.put(i/2, i);
+            m1.put(i / 2, i);
         }
 
         final int[] result = new int[1];

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,8 @@ package com.hazelcast.client.impl.protocol.task.map;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.MapClearCodec;
 import com.hazelcast.instance.Node;
+import com.hazelcast.map.impl.LocalMapStatsProvider;
+import com.hazelcast.map.impl.MapContainer;
 import com.hazelcast.map.impl.MapService;
 import com.hazelcast.map.impl.MapServiceContext;
 import com.hazelcast.map.impl.event.MapEventPublisher;
@@ -61,10 +63,14 @@ public class MapClearMessageTask
             Address thisAddress = nodeEngine.getThisAddress();
             MapEventPublisher mapEventPublisher = mapServiceContext.getMapEventPublisher();
             mapEventPublisher.publishMapEvent(thisAddress, parameters.name, CLEAR_ALL, clearedTotal);
-
-            sendNearCacheClearEvent(parameters.name);
         }
 
+        final MapService mapService = getService(MapService.SERVICE_NAME);
+        MapContainer mapContainer = mapService.getMapServiceContext().getMapContainer(parameters.name);
+        if (mapContainer.getMapConfig().isStatisticsEnabled()) {
+            LocalMapStatsProvider localMapStatsProvider = mapServiceContext.getLocalMapStatsProvider();
+            localMapStatsProvider.getLocalMapStatsImpl(parameters.name).incrementOtherOperations();
+        }
         return null;
     }
 

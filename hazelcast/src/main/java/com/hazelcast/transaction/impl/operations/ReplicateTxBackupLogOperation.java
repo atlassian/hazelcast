@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import com.hazelcast.transaction.impl.TransactionLogRecord;
 import com.hazelcast.transaction.impl.TransactionManagerServiceImpl;
 
 import java.io.IOException;
+import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -48,7 +49,7 @@ public class ReplicateTxBackupLogOperation extends AbstractTxOperation {
     public ReplicateTxBackupLogOperation() {
     }
 
-    public ReplicateTxBackupLogOperation(List<TransactionLogRecord> logs, String callerUuid, String txnId,
+    public ReplicateTxBackupLogOperation(Collection<TransactionLogRecord> logs, String callerUuid, String txnId,
                                          long timeoutMillis, long startTime) {
         records.addAll(logs);
         this.callerUuid = callerUuid;

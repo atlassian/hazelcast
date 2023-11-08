@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,10 @@
 
 package com.hazelcast.spi.impl.operationservice.impl;
 
+import com.hazelcast.core.Member;
 import com.hazelcast.core.MemberLeftException;
 import com.hazelcast.nio.Address;
+import com.hazelcast.nio.EndpointManager;
 import com.hazelcast.spi.ExceptionAction;
 import com.hazelcast.spi.Operation;
 
@@ -27,19 +29,47 @@ import static com.hazelcast.spi.ExceptionAction.THROW_EXCEPTION;
  * A {@link Invocation} evaluates a Operation Invocation for a particular target running on top of the
  * {@link OperationServiceImpl}.
  */
-final class TargetInvocation extends Invocation {
+final class TargetInvocation extends Invocation<Address> {
 
     private final Address target;
 
-    TargetInvocation(Context context, Operation op, Address target,
-                     int tryCount, long tryPauseMillis, long callTimeoutMillis, boolean deserialize) {
-        super(context, op, tryCount, tryPauseMillis, callTimeoutMillis, deserialize);
+    TargetInvocation(Context context,
+                     Operation op,
+                     Address target,
+                     Runnable doneCallback,
+                     int tryCount,
+                     long tryPauseMillis,
+                     long callTimeoutMillis,
+                     boolean deserialize,
+                     EndpointManager endpointManager) {
+        super(context, op, doneCallback, tryCount, tryPauseMillis, callTimeoutMillis, deserialize, endpointManager);
         this.target = target;
     }
 
+    TargetInvocation(Context context,
+                     Operation op,
+                     Address target,
+                     int tryCount,
+                     long tryPauseMillis,
+                     long callTimeoutMillis,
+                     boolean deserialize) {
+        this(context, op, target, null, tryCount, tryPauseMillis, callTimeoutMillis, deserialize, null);
+    }
+
     @Override
-    public Address getTarget() {
+    Address getInvocationTarget() {
         return target;
+    }
+
+    @Override
+    Address toTargetAddress(Address target) {
+        return target;
+    }
+
+    @Override
+    Member toTargetMember(Address target) {
+        assert target == this.target;
+        return context.clusterService.getMember(target);
     }
 
     @Override

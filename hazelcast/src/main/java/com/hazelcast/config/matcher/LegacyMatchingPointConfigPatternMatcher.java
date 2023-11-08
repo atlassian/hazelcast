@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,15 +20,15 @@ import com.hazelcast.config.ConfigPatternMatcher;
 import com.hazelcast.config.ConfigurationException;
 
 /**
- * This <code>ConfigPatternMatcher</code> supports a simplified wildcard matching.
+ * This {@code ConfigPatternMatcher} supports a simplified wildcard matching.
  * See "Config.md ## Using Wildcard" for details about the syntax.
- * <p/>
+ * <p>
  * In addition the candidates are weighted by the best match.
  * No exception will be thrown if multiple configurations are found.
  * The first best result is returned.
- * <p/>
+ * <p>
  * This matcher represents a "contains" matching to provide backward compatibility.
- * <p/>
+ * <p>
  * Please adapt your configuration and use {@link com.hazelcast.config.matcher.MatchingPointConfigPatternMatcher} instead.
  */
 @Deprecated
@@ -74,5 +74,18 @@ public class LegacyMatchingPointConfigPatternMatcher implements ConfigPatternMat
         }
 
         return firstPart.length() + secondPart.length();
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        return o != null && getClass() == o.getClass();
+    }
+
+    @Override
+    public int hashCode() {
+        return super.hashCode();
     }
 }

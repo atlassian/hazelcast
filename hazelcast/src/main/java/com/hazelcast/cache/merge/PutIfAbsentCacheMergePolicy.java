@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,16 +18,15 @@ package com.hazelcast.cache.merge;
 
 import com.hazelcast.cache.CacheEntryView;
 import com.hazelcast.cache.StorageTypeAwareCacheMergePolicy;
+import com.hazelcast.nio.serialization.BinaryInterface;
 
 /**
- * `PassThroughCacheMergePolicy` policy merges cache entry from source to destination
- * if it does not exist in the destination cache.
+ * Merges cache entries from source to destination if they don't exist in the destination cache.
  */
-public class PutIfAbsentCacheMergePolicy
-        implements StorageTypeAwareCacheMergePolicy {
+@BinaryInterface
+public class PutIfAbsentCacheMergePolicy implements StorageTypeAwareCacheMergePolicy {
 
     public PutIfAbsentCacheMergePolicy() {
-
     }
 
     @Override
@@ -37,5 +36,4 @@ public class PutIfAbsentCacheMergePolicy
         }
         return existingEntry.getValue();
     }
-
 }

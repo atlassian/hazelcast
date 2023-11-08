@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,6 @@ import com.hazelcast.core.IAtomicLong;
 import com.hazelcast.core.IFunction;
 import com.hazelcast.test.ExpectedRuntimeException;
 import com.hazelcast.test.HazelcastTestSupport;
-import com.hazelcast.util.EmptyStatement;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -116,7 +115,7 @@ public abstract class AtomicLongAbstractTest extends HazelcastTestSupport {
             atomicLong.apply(new FailingFunction());
             fail();
         } catch (ExpectedRuntimeException expected) {
-            EmptyStatement.ignore(expected);
+            ignore(expected);
         }
 
         assertEquals(1, atomicLong.get());
@@ -135,7 +134,7 @@ public abstract class AtomicLongAbstractTest extends HazelcastTestSupport {
             atomicLong.alter(new FailingFunction());
             fail();
         } catch (ExpectedRuntimeException expected) {
-            EmptyStatement.ignore(expected);
+            ignore(expected);
         }
 
         assertEquals(10, atomicLong.get());
@@ -161,7 +160,7 @@ public abstract class AtomicLongAbstractTest extends HazelcastTestSupport {
             atomicLong.alterAndGet(new FailingFunction());
             fail();
         } catch (ExpectedRuntimeException expected) {
-            EmptyStatement.ignore(expected);
+            ignore(expected);
         }
 
         assertEquals(10, atomicLong.get());
@@ -187,7 +186,7 @@ public abstract class AtomicLongAbstractTest extends HazelcastTestSupport {
             atomicLong.getAndAlter(new FailingFunction());
             fail();
         } catch (ExpectedRuntimeException expected) {
-            EmptyStatement.ignore(expected);
+            ignore(expected);
         }
 
         assertEquals(10, atomicLong.get());
@@ -200,6 +199,14 @@ public abstract class AtomicLongAbstractTest extends HazelcastTestSupport {
         assertEquals(11, atomicLong.get());
     }
 
+    @Test
+    public void testDestroy() {
+        atomicLong.set(23);
+        atomicLong.destroy();
+
+        assertEquals(0, atomicLong.get());
+    }
+
     private static class AddOneFunction implements IFunction<Long, Long> {
         @Override
         public Long apply(Long input) {
@@ -207,7 +214,7 @@ public abstract class AtomicLongAbstractTest extends HazelcastTestSupport {
         }
     }
 
-    private static class FailingFunction implements IFunction<Long, Long> {
+    protected static class FailingFunction implements IFunction<Long, Long> {
         @Override
         public Long apply(Long input) {
             throw new ExpectedRuntimeException();

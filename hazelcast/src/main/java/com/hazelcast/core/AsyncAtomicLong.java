@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,6 @@
 
 package com.hazelcast.core;
 
-import com.hazelcast.spi.annotation.Beta;
-
 /**
  * This interface is an {@link IAtomicLong} interface that exposes its operations using an
  * {@link ICompletableFuture} interface so it can be used in the reactive programming model
@@ -25,7 +23,6 @@ import com.hazelcast.spi.annotation.Beta;
  *
  * @since 3.2
  */
-@Beta
 @Deprecated
 public interface AsyncAtomicLong extends IAtomicLong {
 

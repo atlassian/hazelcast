@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,20 +20,20 @@ import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.internal.serialization.impl.DefaultSerializationServiceBuilder;
-import com.hazelcast.query.SampleObjects.Employee;
-import com.hazelcast.query.SampleObjects.ObjectWithBigDecimal;
-import com.hazelcast.query.SampleObjects.ObjectWithBoolean;
-import com.hazelcast.query.SampleObjects.ObjectWithByte;
-import com.hazelcast.query.SampleObjects.ObjectWithChar;
-import com.hazelcast.query.SampleObjects.ObjectWithDate;
-import com.hazelcast.query.SampleObjects.ObjectWithDouble;
-import com.hazelcast.query.SampleObjects.ObjectWithFloat;
-import com.hazelcast.query.SampleObjects.ObjectWithInteger;
-import com.hazelcast.query.SampleObjects.ObjectWithLong;
-import com.hazelcast.query.SampleObjects.ObjectWithShort;
-import com.hazelcast.query.SampleObjects.ObjectWithSqlDate;
-import com.hazelcast.query.SampleObjects.ObjectWithSqlTimestamp;
-import com.hazelcast.query.SampleObjects.ObjectWithUUID;
+import com.hazelcast.query.SampleTestObjects.Employee;
+import com.hazelcast.query.SampleTestObjects.ObjectWithBigDecimal;
+import com.hazelcast.query.SampleTestObjects.ObjectWithBoolean;
+import com.hazelcast.query.SampleTestObjects.ObjectWithByte;
+import com.hazelcast.query.SampleTestObjects.ObjectWithChar;
+import com.hazelcast.query.SampleTestObjects.ObjectWithDate;
+import com.hazelcast.query.SampleTestObjects.ObjectWithDouble;
+import com.hazelcast.query.SampleTestObjects.ObjectWithFloat;
+import com.hazelcast.query.SampleTestObjects.ObjectWithInteger;
+import com.hazelcast.query.SampleTestObjects.ObjectWithLong;
+import com.hazelcast.query.SampleTestObjects.ObjectWithShort;
+import com.hazelcast.query.SampleTestObjects.ObjectWithSqlDate;
+import com.hazelcast.query.SampleTestObjects.ObjectWithSqlTimestamp;
+import com.hazelcast.query.SampleTestObjects.ObjectWithUUID;
 import com.hazelcast.query.impl.DateHelperTest;
 import com.hazelcast.query.impl.QueryEntry;
 import com.hazelcast.query.impl.getters.Extractors;
@@ -44,6 +44,7 @@ import com.hazelcast.query.impl.predicates.RegexPredicate;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
 import com.hazelcast.test.annotation.QuickTest;
+import com.hazelcast.util.UuidUtil;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -57,11 +58,11 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 
 import static com.hazelcast.instance.TestUtil.toData;
 import static com.hazelcast.test.HazelcastTestSupport.assertInstanceOf;
 import static com.hazelcast.test.HazelcastTestSupport.randomString;
+import static java.util.concurrent.TimeUnit.DAYS;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
@@ -72,7 +73,93 @@ import static org.junit.Assert.assertTrue;
 @Category(QuickTest.class)
 public class SqlPredicateTest {
 
+    private static final String[] TEST_MATCHING_SQL_PREDICATES = new String[]{
+            "name = 'Joe' and age = 25 and (city = 'austin' or city = 'AUSTIN')",
+            "name = 'Joe' or city = 'Athens'",
+            "(name = 'Jane' or name = 'Joe' or city = 'AUSTIN') and age = 25",
+            "(name = 'Jane' or name = 'Joe' or city = 'AUSTIN') and age = 25 and salary = 0",
+            "(name = 'Jane' or name = 'Joe') and age = 25 and salary = 0 or age = 24",
+            // correct precedence is "name = 'Jane' or (age = 25 and name = 'Joe')
+            "name = 'Jane' or age = 25 and name = 'Joe'",
+            "age = 35 or age = 24 or age = 31 or (name = 'Joe' and age = 25)",
+    };
+
+    private static final String[] TEST_NOT_MATCHING_SQL_PREDICATES = new String[]{
+            "name = 'Joe' and age = 21 and (city = 'austin' or city = 'ATHENS')",
+            "name = 'Jane' or city = 'Athens'",
+            "(name = 'Jane' or name = 'Catie' or city = 'San Jose') and age = 25",
+            "(name = 'Joe' or name = 'Catie' or city = 'San Jose') and age = 21",
+            "(name = 'Jane' or name = 'Joe' or city = 'AUSTIN') and age = 25 and salary = 10",
+            "(name = 'Jane' or name = 'Catie' or city = 'San Jose') and age = 25 and salary = 10",
+            "(name = 'Jane' or name = 'Joe') and age = 25 and salary = 13 or age = 24",
+            "name = 'Jane' or age = 25 and name = 'Catie'",
+            "age = 35 or age = 24 or age = 31 or (name = 'Joe' and age = 27)",
+    };
+
     private final InternalSerializationService serializationService = new DefaultSerializationServiceBuilder().build();
+
+    // these are used to test compound predicates flattening
+    private TruePredicate leftOfOr = new TruePredicate();
+    private TruePredicate rightOfOr = new TruePredicate();
+    private TruePredicate leftOfAnd = new TruePredicate();
+    private TruePredicate rightOfAnd = new TruePredicate();
+
+    @Test
+    public void testSqlPredicates() {
+        Employee employee = new Employee("Joe", "AUSTIN", 25, true, 0);
+        for (String s : TEST_MATCHING_SQL_PREDICATES) {
+            assertSqlMatching(s, employee);
+        }
+        for (String s : TEST_NOT_MATCHING_SQL_PREDICATES) {
+            assertSqlNotMatching(s, employee);
+        }
+    }
+
+    public static class Record {
+
+        private String str1;
+        private String str2;
+        private String str3;
+
+        public Record(String str1, String str2, String str3) {
+            this.str1 = str1;
+            this.str2 = str2;
+            this.str3 = str3;
+        }
+
+        public String getStr1() {
+            return str1;
+        }
+
+        public void setStr1(String str1) {
+            this.str1 = str1;
+        }
+
+        public String getStr2() {
+            return str2;
+        }
+
+        public void setStr2(String str2) {
+            this.str2 = str2;
+        }
+
+        public String getStr3() {
+            return str3;
+        }
+
+        public void setStr3(String str3) {
+            this.str3 = str3;
+        }
+    }
+
+    // ZD issue 1950
+    @Test
+    public void testRecordPredicate() {
+        Record record = new Record("ONE", "TWO", "THREE");
+        SqlPredicate predicate = new SqlPredicate("str1 = 'ONE' AND str2 = 'TWO' AND (str3 = 'THREE' OR str3 = 'three')");
+        Map.Entry entry = createEntry("1", record);
+        assertTrue(predicate.apply(entry));
+    }
 
     @Test
     public void testEqualsWhenSqlMatches() {
@@ -109,14 +196,14 @@ public class SqlPredicateTest {
     @Test
     public void testSql_withEnum() {
         Employee value = createValue();
-        value.setState(SampleObjects.State.STATE2);
+        value.setState(SampleTestObjects.State.STATE2);
         Employee nullNameValue = createValue(null);
 
-        assertSqlTrue("state == TestUtil.State.STATE2", value);
-        assertSqlTrue("state == " + SampleObjects.State.STATE2, value);
-        assertSqlFalse("state == TestUtil.State.STATE1", value);
-        assertSqlFalse("state == TestUtil.State.STATE1", nullNameValue);
-        assertSqlTrue("state == NULL", nullNameValue);
+        assertSqlMatching("state == TestUtil.State.STATE2", value);
+        assertSqlMatching("state == " + SampleTestObjects.State.STATE2, value);
+        assertSqlNotMatching("state == TestUtil.State.STATE1", value);
+        assertSqlNotMatching("state == TestUtil.State.STATE1", nullNameValue);
+        assertSqlMatching("state == NULL", nullNameValue);
     }
 
     @Test
@@ -124,10 +211,10 @@ public class SqlPredicateTest {
         Date date = new Date();
         ObjectWithDate value = new ObjectWithDate(date);
         SimpleDateFormat format = new SimpleDateFormat(DateHelperTest.DATE_FORMAT, Locale.US);
-        assertSqlTrue("attribute > '" + format.format(new Date(0)) + "'", value);
-        assertSqlTrue("attribute >= '" + format.format(new Date(0)) + "'", value);
-        assertSqlTrue("attribute < '" + format.format(new Date(date.getTime() + 1000)) + "'", value);
-        assertSqlTrue("attribute <= '" + format.format(new Date(date.getTime() + 1000)) + "'", value);
+        assertSqlMatching("attribute > '" + format.format(new Date(0)) + "'", value);
+        assertSqlMatching("attribute >= '" + format.format(new Date(0)) + "'", value);
+        assertSqlMatching("attribute < '" + format.format(new Date(date.getTime() + 1000)) + "'", value);
+        assertSqlMatching("attribute <= '" + format.format(new Date(date.getTime() + 1000)) + "'", value);
     }
 
     @Test
@@ -135,10 +222,10 @@ public class SqlPredicateTest {
         java.sql.Date date = new java.sql.Date(System.currentTimeMillis());
         ObjectWithSqlDate value = new ObjectWithSqlDate(date);
         SimpleDateFormat format = new SimpleDateFormat(DateHelperTest.SQL_DATE_FORMAT, Locale.US);
-        assertSqlTrue("attribute > '" + format.format(new java.sql.Date(0)) + "'", value);
-        assertSqlTrue("attribute >= '" + format.format(new java.sql.Date(0)) + "'", value);
-        assertSqlTrue("attribute < '" + format.format(new java.sql.Date(date.getTime() + TimeUnit.DAYS.toMillis(2))) + "'", value);
-        assertSqlTrue("attribute <= '" + format.format(new java.sql.Date(date.getTime() + TimeUnit.DAYS.toMillis(2))) + "'", value);
+        assertSqlMatching("attribute > '" + format.format(new java.sql.Date(0)) + "'", value);
+        assertSqlMatching("attribute >= '" + format.format(new java.sql.Date(0)) + "'", value);
+        assertSqlMatching("attribute < '" + format.format(new java.sql.Date(date.getTime() + DAYS.toMillis(2))) + "'", value);
+        assertSqlMatching("attribute <= '" + format.format(new java.sql.Date(date.getTime() + DAYS.toMillis(2))) + "'", value);
     }
 
     @Test
@@ -146,39 +233,39 @@ public class SqlPredicateTest {
         Timestamp timestamp = new Timestamp(System.currentTimeMillis());
         ObjectWithSqlTimestamp value = new ObjectWithSqlTimestamp(timestamp);
         SimpleDateFormat format = new SimpleDateFormat(DateHelperTest.TIMESTAMP_FORMAT, Locale.US);
-        assertSqlTrue("attribute > '" + format.format(new Timestamp(0)) + "'", value);
-        assertSqlTrue("attribute >= '" + format.format(new Timestamp(0)) + "'", value);
-        assertSqlTrue("attribute < '" + format.format(new Timestamp(timestamp.getTime() + 1000)) + "'", value);
-        assertSqlTrue("attribute <= '" + format.format(new Timestamp(timestamp.getTime() + 1000)) + "'", value);
+        assertSqlMatching("attribute > '" + format.format(new Timestamp(0)) + "'", value);
+        assertSqlMatching("attribute >= '" + format.format(new Timestamp(0)) + "'", value);
+        assertSqlMatching("attribute < '" + format.format(new Timestamp(timestamp.getTime() + 1000)) + "'", value);
+        assertSqlMatching("attribute <= '" + format.format(new Timestamp(timestamp.getTime() + 1000)) + "'", value);
     }
 
     @Test
     public void testSql_withBigDecimal() {
         ObjectWithBigDecimal value = new ObjectWithBigDecimal(new BigDecimal("1.23E3"));
-        assertSqlTrue("attribute > '" + new BigDecimal("1.23E2") + "'", value);
-        assertSqlTrue("attribute >= '" + new BigDecimal("1.23E3") + "'", value);
-        assertSqlFalse("attribute = '" + new BigDecimal("1.23") + "'", value);
-        assertSqlTrue("attribute = '1.23E3'", value);
-        assertSqlTrue("attribute = 1.23E3", value);
-        assertSqlFalse("attribute = 1.23", value);
+        assertSqlMatching("attribute > '" + new BigDecimal("1.23E2") + "'", value);
+        assertSqlMatching("attribute >= '" + new BigDecimal("1.23E3") + "'", value);
+        assertSqlNotMatching("attribute = '" + new BigDecimal("1.23") + "'", value);
+        assertSqlMatching("attribute = '1.23E3'", value);
+        assertSqlMatching("attribute = 1.23E3", value);
+        assertSqlNotMatching("attribute = 1.23", value);
     }
 
     @Test
     public void testSql_withBigInteger() {
-        SampleObjects.ObjectWithBigInteger value = new SampleObjects.ObjectWithBigInteger(new BigInteger("123"));
-        assertSqlTrue("attribute > '" + new BigInteger("122") + "'", value);
-        assertSqlTrue("attribute >= '" + new BigInteger("123") + "'", value);
-        assertSqlTrue("attribute = '" + new BigInteger("123") + "'", value);
-        assertSqlFalse("attribute = '" + new BigInteger("122") + "'", value);
-        assertSqlTrue("attribute < '" + new BigInteger("124") + "'", value);
-        assertSqlTrue("attribute <= '" + new BigInteger("123") + "'", value);
-        assertSqlTrue("attribute = 123", value);
-        assertSqlTrue("attribute = '123'", value);
-        assertSqlTrue("attribute != 124", value);
-        assertSqlTrue("attribute <> 124", value);
-        assertSqlFalse("attribute = 124", value);
-        assertSqlTrue("attribute between 122 and 124", value);
-        assertSqlTrue("attribute in (122, 123, 124)", value);
+        SampleTestObjects.ObjectWithBigInteger value = new SampleTestObjects.ObjectWithBigInteger(new BigInteger("123"));
+        assertSqlMatching("attribute > '" + new BigInteger("122") + "'", value);
+        assertSqlMatching("attribute >= '" + new BigInteger("123") + "'", value);
+        assertSqlMatching("attribute = '" + new BigInteger("123") + "'", value);
+        assertSqlNotMatching("attribute = '" + new BigInteger("122") + "'", value);
+        assertSqlMatching("attribute < '" + new BigInteger("124") + "'", value);
+        assertSqlMatching("attribute <= '" + new BigInteger("123") + "'", value);
+        assertSqlMatching("attribute = 123", value);
+        assertSqlMatching("attribute = '123'", value);
+        assertSqlMatching("attribute != 124", value);
+        assertSqlMatching("attribute <> 124", value);
+        assertSqlNotMatching("attribute = 124", value);
+        assertSqlMatching("attribute between 122 and 124", value);
+        assertSqlMatching("attribute in (122, 123, 124)", value);
     }
 
     @Test
@@ -186,128 +273,128 @@ public class SqlPredicateTest {
         Employee value = createValue();
         Employee nullNameValue = new Employee(null, 34, true, 10D);
 
-        assertSqlFalse("name = 'null'", nullNameValue);
-        assertSqlTrue("name = null", nullNameValue);
-        assertSqlTrue("name = NULL", nullNameValue);
-        assertSqlTrue("name != null", value);
-        assertSqlTrue("name != NULL", value);
-        assertSqlTrue("name <> null", value);
-        assertSqlTrue("name <> NULL", value);
-        assertSqlTrue(" (name LIKE 'abc-%') AND (age <= " + 40 + ")", value);
-        assertSqlTrue(" (name REGEX 'abc-.*') AND (age <= " + 40 + ")", value);
+        assertSqlNotMatching("name = 'null'", nullNameValue);
+        assertSqlMatching("name = null", nullNameValue);
+        assertSqlMatching("name = NULL", nullNameValue);
+        assertSqlMatching("name != null", value);
+        assertSqlMatching("name != NULL", value);
+        assertSqlMatching("name <> null", value);
+        assertSqlMatching("name <> NULL", value);
+        assertSqlMatching(" (name LIKE 'abc-%') AND (age <= " + 40 + ")", value);
+        assertSqlMatching(" (name REGEX 'abc-.*') AND (age <= " + 40 + ")", value);
 
-        assertSqlTrue("name='abc-123-xvz'", value);
-        assertSqlTrue("name='abc 123-xvz'", createValue("abc 123-xvz"));
-        assertSqlTrue("name='abc 123-xvz+(123)'", createValue("abc 123-xvz+(123)"));
-        assertSqlFalse("name='abc 123-xvz+(123)'", createValue("abc123-xvz+(123)"));
-        assertSqlTrue("name LIKE 'abc-%'", createValue("abc-123"));
-        assertSqlTrue("name REGEX '^\\w{3}-\\d{3}-\\w{3}$'", value);
-        assertSqlFalse("name REGEX '^[^\\w]{3}-\\d{3}-\\w{3}$'", value);
-        assertSqlTrue(" (name ILIKE 'ABC-%') AND (age <= " + 40 + ")", value);
+        assertSqlMatching("name='abc-123-xvz'", value);
+        assertSqlMatching("name='abc 123-xvz'", createValue("abc 123-xvz"));
+        assertSqlMatching("name='abc 123-xvz+(123)'", createValue("abc 123-xvz+(123)"));
+        assertSqlNotMatching("name='abc 123-xvz+(123)'", createValue("abc123-xvz+(123)"));
+        assertSqlMatching("name LIKE 'abc-%'", createValue("abc-123"));
+        assertSqlMatching("name REGEX '^\\w{3}-\\d{3}-\\w{3}$'", value);
+        assertSqlNotMatching("name REGEX '^[^\\w]{3}-\\d{3}-\\w{3}$'", value);
+        assertSqlMatching(" (name ILIKE 'ABC-%') AND (age <= " + 40 + ")", value);
     }
 
     @Test
     public void testSql_withInteger() {
         ObjectWithInteger value = new ObjectWithInteger(34);
-        assertSqlTrue("(attribute >= 20) AND (attribute <= 40)", value);
-        assertSqlTrue("(attribute >= 20 ) AND (attribute <= 34)", value);
-        assertSqlTrue("(attribute >= 34) AND (attribute <= 35)", value);
-        assertSqlTrue("attribute IN (34, 35)", value);
-        assertSqlFalse("attribute IN (33,35)", value);
-        assertSqlFalse("attribute = 33", value);
-        assertSqlTrue("attribute = 34", value);
-        assertSqlTrue("attribute > 5", value);
-        assertSqlTrue("attribute = -33", new ObjectWithInteger(-33));
+        assertSqlMatching("(attribute >= 20) AND (attribute <= 40)", value);
+        assertSqlMatching("(attribute >= 20 ) AND (attribute <= 34)", value);
+        assertSqlMatching("(attribute >= 34) AND (attribute <= 35)", value);
+        assertSqlMatching("attribute IN (34, 35)", value);
+        assertSqlNotMatching("attribute IN (33,35)", value);
+        assertSqlNotMatching("attribute = 33", value);
+        assertSqlMatching("attribute = 34", value);
+        assertSqlMatching("attribute > 5", value);
+        assertSqlMatching("attribute = -33", new ObjectWithInteger(-33));
     }
 
     @Test
     public void testSql_withLong() {
         ObjectWithLong value = new ObjectWithLong(34L);
-        assertSqlTrue("(attribute >= 20) AND (attribute <= 40)", value);
-        assertSqlTrue("(attribute >= 20 ) AND (attribute <= 34)", value);
-        assertSqlTrue("(attribute >= 34) AND (attribute <= 35)", value);
-        assertSqlTrue("attribute IN (34, 35)", value);
-        assertSqlFalse("attribute IN (33,35)", value);
-        assertSqlFalse("attribute = 33", value);
-        assertSqlTrue("attribute = 34", value);
-        assertSqlTrue("attribute > 5", value);
-        assertSqlTrue("attribute = -33", new ObjectWithLong(-33));
+        assertSqlMatching("(attribute >= 20) AND (attribute <= 40)", value);
+        assertSqlMatching("(attribute >= 20 ) AND (attribute <= 34)", value);
+        assertSqlMatching("(attribute >= 34) AND (attribute <= 35)", value);
+        assertSqlMatching("attribute IN (34, 35)", value);
+        assertSqlNotMatching("attribute IN (33,35)", value);
+        assertSqlNotMatching("attribute = 33", value);
+        assertSqlMatching("attribute = 34", value);
+        assertSqlMatching("attribute > 5", value);
+        assertSqlMatching("attribute = -33", new ObjectWithLong(-33));
     }
 
     @Test
     public void testSql_withDouble() {
         ObjectWithDouble value = new ObjectWithDouble(10.001D);
-        assertSqlTrue("attribute > 5", value);
-        assertSqlTrue("attribute > 5 and attribute < 11", value);
-        assertSqlFalse("attribute > 15 or attribute < 10", value);
-        assertSqlTrue("attribute between 9.99 and 10.01", value);
-        assertSqlTrue("attribute between 5 and 15", value);
+        assertSqlMatching("attribute > 5", value);
+        assertSqlMatching("attribute > 5 and attribute < 11", value);
+        assertSqlNotMatching("attribute > 15 or attribute < 10", value);
+        assertSqlMatching("attribute between 9.99 and 10.01", value);
+        assertSqlMatching("attribute between 5 and 15", value);
     }
 
     @Test
     public void testSql_withFloat() {
         ObjectWithFloat value = new ObjectWithFloat(10.001f);
-        assertSqlTrue("attribute > 5", value);
-        assertSqlTrue("attribute > 5 and attribute < 11", value);
-        assertSqlFalse("attribute > 15 or attribute < 10", value);
-        assertSqlTrue("attribute between 9.99 and 10.01", value);
-        assertSqlTrue("attribute between 5 and 15", value);
+        assertSqlMatching("attribute > 5", value);
+        assertSqlMatching("attribute > 5 and attribute < 11", value);
+        assertSqlNotMatching("attribute > 15 or attribute < 10", value);
+        assertSqlMatching("attribute between 9.99 and 10.01", value);
+        assertSqlMatching("attribute between 5 and 15", value);
     }
 
     @Test
     public void testSql_withShort() {
         ObjectWithShort value = new ObjectWithShort((short) 10);
-        assertSqlTrue("attribute = 10", value);
-        assertSqlFalse("attribute = 11", value);
-        assertSqlTrue("attribute >= 10", value);
-        assertSqlTrue("attribute <= 10", value);
-        assertSqlTrue("attribute > 5", value);
-        assertSqlTrue("attribute > 5 and attribute < 11", value);
-        assertSqlFalse("attribute > 15 or attribute < 10", value);
-        assertSqlTrue("attribute between 5 and 15", value);
-        assertSqlTrue("attribute in (5, 10, 15)", value);
-        assertSqlFalse("attribute in (5, 11, 15)", value);
+        assertSqlMatching("attribute = 10", value);
+        assertSqlNotMatching("attribute = 11", value);
+        assertSqlMatching("attribute >= 10", value);
+        assertSqlMatching("attribute <= 10", value);
+        assertSqlMatching("attribute > 5", value);
+        assertSqlMatching("attribute > 5 and attribute < 11", value);
+        assertSqlNotMatching("attribute > 15 or attribute < 10", value);
+        assertSqlMatching("attribute between 5 and 15", value);
+        assertSqlMatching("attribute in (5, 10, 15)", value);
+        assertSqlNotMatching("attribute in (5, 11, 15)", value);
     }
 
     @Test
     public void testSql_withByte() {
         ObjectWithByte value = new ObjectWithByte((byte) 10);
-        assertSqlTrue("attribute = 10", value);
-        assertSqlFalse("attribute = 11", value);
-        assertSqlTrue("attribute >= 10", value);
-        assertSqlTrue("attribute <= 10", value);
-        assertSqlTrue("attribute > 5", value);
-        assertSqlTrue("attribute > 5 and attribute < 11", value);
-        assertSqlFalse("attribute > 15 or attribute < 10", value);
-        assertSqlTrue("attribute between 5 and 15", value);
-        assertSqlTrue("attribute in (5, 10, 15)", value);
-        assertSqlFalse("attribute in (5, 11, 15)", value);
+        assertSqlMatching("attribute = 10", value);
+        assertSqlNotMatching("attribute = 11", value);
+        assertSqlMatching("attribute >= 10", value);
+        assertSqlMatching("attribute <= 10", value);
+        assertSqlMatching("attribute > 5", value);
+        assertSqlMatching("attribute > 5 and attribute < 11", value);
+        assertSqlNotMatching("attribute > 15 or attribute < 10", value);
+        assertSqlMatching("attribute between 5 and 15", value);
+        assertSqlMatching("attribute in (5, 10, 15)", value);
+        assertSqlNotMatching("attribute in (5, 11, 15)", value);
     }
 
     @Test
     public void testSql_withChar() {
         ObjectWithChar value = new ObjectWithChar('%');
-        assertSqlTrue("attribute = '%'", value);
-        assertSqlFalse("attribute = '$'", value);
-        assertSqlTrue("attribute in ('A', '#', '%')", value);
-        assertSqlFalse("attribute in ('A', '#', '&')", value);
+        assertSqlMatching("attribute = '%'", value);
+        assertSqlNotMatching("attribute = '$'", value);
+        assertSqlMatching("attribute in ('A', '#', '%')", value);
+        assertSqlNotMatching("attribute in ('A', '#', '&')", value);
     }
 
     @Test
     public void testSql_withBoolean() {
         ObjectWithBoolean value = new ObjectWithBoolean(true);
-        assertSqlTrue("attribute", value);
-        assertSqlTrue("attribute = true", value);
-        assertSqlFalse("attribute = false", value);
-        assertSqlFalse("not attribute", value);
+        assertSqlMatching("attribute", value);
+        assertSqlMatching("attribute = true", value);
+        assertSqlNotMatching("attribute = false", value);
+        assertSqlNotMatching("not attribute", value);
     }
 
     @Test
     public void testSql_withUUID() {
-        UUID uuid = UUID.randomUUID();
+        UUID uuid = UuidUtil.newUnsecureUUID();
         ObjectWithUUID value = new ObjectWithUUID(uuid);
-        assertSqlTrue("attribute = '" + uuid.toString() + "'", value);
-        assertSqlFalse("attribute = '" + UUID.randomUUID().toString() + "'", value);
+        assertSqlMatching("attribute = '" + uuid.toString() + "'", value);
+        assertSqlNotMatching("attribute = '" + UuidUtil.newUnsecureUuidString() + "'", value);
     }
 
     @Test
@@ -483,11 +570,87 @@ public class SqlPredicateTest {
         assertSame(predicate2, concatenatedOr.getPredicates()[1]);
     }
 
+    // (AND (OR A B) (AND C D)) is flattened to (AND (OR A B) C D)
+    @Test
+    public void testFlattenAnd_withOrAndPredicates() {
+        OrPredicate orPredicate = new OrPredicate(leftOfOr, rightOfOr);
+        AndPredicate andPredicate = new AndPredicate(leftOfAnd, rightOfAnd);
+
+        AndPredicate flattenedCompoundAnd = SqlPredicate.flattenCompound(orPredicate, andPredicate, AndPredicate.class);
+
+        assertSame(orPredicate, flattenedCompoundAnd.getPredicates()[0]);
+        assertSame(leftOfAnd, flattenedCompoundAnd.getPredicates()[1]);
+        assertSame(rightOfAnd, flattenedCompoundAnd.getPredicates()[2]);
+    }
+
+    // (AND (AND A B) (OR C D)) is flattened to (AND A B (OR C D))
+    @Test
+    public void testFlattenAnd_withAndORPredicates() {
+        OrPredicate orPredicate = new OrPredicate(leftOfOr, rightOfOr);
+        AndPredicate andPredicate = new AndPredicate(leftOfAnd, rightOfAnd);
+
+        AndPredicate flattenedCompoundAnd = SqlPredicate.flattenCompound(andPredicate, orPredicate, AndPredicate.class);
+
+        assertSame(leftOfAnd, flattenedCompoundAnd.getPredicates()[0]);
+        assertSame(rightOfAnd, flattenedCompoundAnd.getPredicates()[1]);
+        assertSame(orPredicate, flattenedCompoundAnd.getPredicates()[2]);
+    }
+
+    // (OR (OR A B) (AND C D)) is flattened to (OR A B (AND C D))
+    @Test
+    public void testFlattenOr_withOrAndPredicates() {
+        OrPredicate orPredicate = new OrPredicate(leftOfOr, rightOfOr);
+        AndPredicate andPredicate = new AndPredicate(leftOfAnd, rightOfAnd);
+
+        OrPredicate flattenedCompoundOr = SqlPredicate.flattenCompound(orPredicate, andPredicate, OrPredicate.class);
+
+        assertSame(leftOfOr, flattenedCompoundOr.getPredicates()[0]);
+        assertSame(rightOfOr, flattenedCompoundOr.getPredicates()[1]);
+        assertSame(andPredicate, flattenedCompoundOr.getPredicates()[2]);
+    }
+
+    // (OR (AND A B) (OR C D)) is flattened to (OR (AND A B) C D)
+    @Test
+    public void testFlattenOr_withAndOrPredicates() {
+        OrPredicate orPredicate = new OrPredicate(leftOfOr, rightOfOr);
+        AndPredicate andPredicate = new AndPredicate(leftOfAnd, rightOfAnd);
+
+        OrPredicate flattenedCompoundOr = SqlPredicate.flattenCompound(andPredicate, orPredicate, OrPredicate.class);
+
+        assertSame(andPredicate, flattenedCompoundOr.getPredicates()[0]);
+        assertSame(leftOfOr, flattenedCompoundOr.getPredicates()[1]);
+        assertSame(rightOfOr, flattenedCompoundOr.getPredicates()[2]);
+    }
+
+    // (OR (AND A B) (AND C D)) is not flattened
+    @Test
+    public void testFlattenOr_withTwoAndPredicates() {
+        AndPredicate andLeft = new AndPredicate(leftOfOr, rightOfOr);
+        AndPredicate andRight = new AndPredicate(leftOfAnd, rightOfAnd);
+
+        OrPredicate flattenedCompoundOr = SqlPredicate.flattenCompound(andLeft, andRight, OrPredicate.class);
+
+        assertSame(andLeft, flattenedCompoundOr.getPredicates()[0]);
+        assertSame(andRight, flattenedCompoundOr.getPredicates()[1]);
+    }
+
+    // (AND (OR A B) (OR C D)) is not flattened
+    @Test
+    public void testFlattenAnd_withTwoOrPredicates() {
+        OrPredicate orLeft = new OrPredicate(leftOfOr, rightOfOr);
+        OrPredicate orRight = new OrPredicate(leftOfAnd, rightOfAnd);
+
+        AndPredicate flattenedCompoundOr = SqlPredicate.flattenCompound(orLeft, orRight, AndPredicate.class);
+
+        assertSame(orLeft, flattenedCompoundOr.getPredicates()[0]);
+        assertSame(orRight, flattenedCompoundOr.getPredicates()[1]);
+    }
+
     @Test
     // http://stackoverflow.com/questions/37382505/hazelcast-imap-valuespredicate-miss-data
     public void testAndWithRegex_stackOverflowIssue() {
-        SqlPredicate sqlPredicate = new SqlPredicate("nextExecuteTime < 1463975296703 AND autoIncrementId REGEX '.*[5,6,7,8,9]$'");
-        Predicate predicate = sqlPredicate.predicate;
+        String sqlPredicate = "nextExecuteTime < 1463975296703 AND autoIncrementId REGEX '.*[5,6,7,8,9]$'";
+        Predicate predicate = new SqlPredicate(sqlPredicate).predicate;
 
         AndPredicate andPredicate = (AndPredicate) predicate;
         assertEquals(GreaterLessPredicate.class, andPredicate.getPredicates()[0].getClass());
@@ -499,19 +662,23 @@ public class SqlPredicateTest {
     }
 
     private Map.Entry createEntry(final Object key, final Object value) {
-        return new QueryEntry(serializationService, toData(key), value, Extractors.empty());
+        return new QueryEntry(serializationService, toData(key), value, newExtractor());
     }
 
-    private void assertSqlTrue(String s, Object value) {
-        final SqlPredicate predicate = new SqlPredicate(s);
-        final Map.Entry entry = createEntry("1", value);
-        assertTrue(predicate.apply(entry));
+    private Extractors newExtractor() {
+        return Extractors.newBuilder(serializationService).build();
     }
 
-    private void assertSqlFalse(String s, Object value) {
+    private void assertSqlMatching(String s, Object value) {
         final SqlPredicate predicate = new SqlPredicate(s);
         final Map.Entry entry = createEntry("1", value);
-        assertFalse(predicate.apply(entry));
+        assertTrue("SQL predicate \"" + s + "\" should match but did not match the value.", predicate.apply(entry));
+    }
+
+    private void assertSqlNotMatching(String s, Object value) {
+        final SqlPredicate predicate = new SqlPredicate(s);
+        final Map.Entry entry = createEntry("1", value);
+        assertFalse("SQL predicate \"" + s + "\" should not match but did match the value.", predicate.apply(entry));
     }
 
     private Employee createValue() {

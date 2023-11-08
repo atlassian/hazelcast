@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,10 @@ package com.hazelcast.internal.ascii;
 import com.hazelcast.instance.Node;
 import com.hazelcast.internal.ascii.memcache.Stats;
 
+import java.util.Map;
+import java.util.Set;
+
+@SuppressWarnings("checkstyle:methodcount")
 public interface TextCommandService {
 
     boolean offer(String queueName, Object value);
@@ -32,6 +36,8 @@ public interface TextCommandService {
     void sendResponse(TextCommand textCommand);
 
     Object get(String mapName, String key);
+
+    Map<String, Object> getAll(String mapName, Set<String> keys);
 
     byte[] getByteArray(String mapName, String key);
 
@@ -85,4 +91,6 @@ public interface TextCommandService {
     Node getNode();
 
     byte[] toByteArray(Object value);
+
+    void stop();
 }

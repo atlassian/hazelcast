@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,8 +23,9 @@ import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 
 /**
- * Generates blocks with the help of an {@link IAtomicLong}
- * For each block, id generation is simply a volatile increment
+ * Generates blocks with the help of an {@link IAtomicLong}.
+ * <p>
+ * For each block, ID generation is simply a volatile increment.
  */
 public class IdGeneratorImpl implements IdGenerator {
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,13 @@
 
 package com.hazelcast.spi.impl.operationservice.impl;
 
+import com.hazelcast.core.IndeterminateOperationState;
+import com.hazelcast.core.IndeterminateOperationStateException;
 import com.hazelcast.core.OperationTimeoutException;
+import com.hazelcast.nio.Packet;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.impl.AbstractInvocationFuture;
+import com.hazelcast.spi.impl.operationservice.impl.responses.NormalResponse;
 
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
@@ -34,7 +38,7 @@ import static com.hazelcast.util.StringUtil.timeToString;
 
 /**
  * The InvocationFuture is the {@link com.hazelcast.spi.InternalCompletableFuture} that waits on the completion
- * of a {@link Invocation}. The Invocation executes an operation.
+ * of an {@link Invocation}. The Invocation executes an operation.
  * <p>
  * In the past the InvocationFuture.get logic was also responsible for detecting the heartbeat for blocking operations
  * using the CONTINUE_WAIT and detecting if an operation is still running using the IsStillRunning functionality. This
@@ -89,6 +93,7 @@ final class InvocationFuture<E> extends AbstractInvocationFuture<E> {
         }
     }
 
+    @SuppressWarnings("checkstyle:npathcomplexity")
     @Override
     protected Object resolve(Object unresolved) {
         if (unresolved == null) {
@@ -99,6 +104,9 @@ final class InvocationFuture<E> extends AbstractInvocationFuture<E> {
             return newOperationTimeoutException(false);
         } else if (unresolved == HEARTBEAT_TIMEOUT) {
             return newOperationTimeoutException(true);
+        } else if (unresolved.getClass() == Packet.class) {
+            NormalResponse response = invocation.context.serializationService.toObject(unresolved);
+            unresolved = response.getValue();
         }
 
         Object value = unresolved;
@@ -107,6 +115,10 @@ final class InvocationFuture<E> extends AbstractInvocationFuture<E> {
             if (value == null) {
                 return null;
             }
+        }
+
+        if (invocation.shouldFailOnIndeterminateOperationState() && (value instanceof IndeterminateOperationState)) {
+            value = new IndeterminateOperationStateException("indeterminate operation state", (Throwable) value);
         }
 
         if (value instanceof Throwable) {
@@ -133,7 +145,7 @@ final class InvocationFuture<E> extends AbstractInvocationFuture<E> {
             appendHeartbeat(sb, lastHeartbeatMillis);
 
             long lastHeartbeatFromMemberMillis = invocation.context.invocationMonitor
-                    .getLastMemberHeartbeatMillis(invocation.invTarget);
+                    .getLastMemberHeartbeatMillis(invocation.getTargetAddress());
             sb.append("Last operation heartbeat from member: ");
             appendHeartbeat(sb, lastHeartbeatFromMemberMillis);
         } else {
@@ -158,4 +170,5 @@ final class InvocationFuture<E> extends AbstractInvocationFuture<E> {
             sb.append(timeToString(lastHeartbeatMillis)).append(". ");
         }
     }
+
 }

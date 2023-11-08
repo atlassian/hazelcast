@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,21 @@
 
 package com.hazelcast.client;
 
-import com.hazelcast.internal.nearcache.NearCacheManager;
-import com.hazelcast.client.impl.HazelcastClientInstanceImpl;
+import com.hazelcast.client.config.SocketOptions;
+import com.hazelcast.client.impl.clientside.HazelcastClientInstanceImpl;
 import com.hazelcast.client.spi.ClientProxyFactory;
+import com.hazelcast.config.SSLConfig;
+import com.hazelcast.config.SocketInterceptorConfig;
+import com.hazelcast.internal.nearcache.NearCacheManager;
+import com.hazelcast.internal.networking.ChannelInitializer;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.map.impl.MapService;
+import com.hazelcast.memory.MemoryStats;
 import com.hazelcast.nio.SocketInterceptor;
-import com.hazelcast.internal.networking.SocketChannelWrapperFactory;
 
 /**
  * ClientExtension is a client extension mechanism to be able to plug different implementations of
- * some modules, like; {@link InternalSerializationService}, {@link SocketChannelWrapperFactory} etc.
+ * some modules, like; {@link InternalSerializationService} etc.
  */
 public interface ClientExtension {
 
@@ -59,11 +63,21 @@ public interface ClientExtension {
     SocketInterceptor createSocketInterceptor();
 
     /**
-     * Creates a {@link SocketChannelWrapperFactory} instance to be used by this client.
+     * Create socket interceptor according to given config
      *
-     * @return the created {@link SocketChannelWrapperFactory} instance
+     * @param socketInterceptorConfig config for socket interceptor
+     * @return socket interceptor if it is able to created, null otherwise
      */
-    SocketChannelWrapperFactory createSocketChannelWrapperFactory();
+    SocketInterceptor createSocketInterceptor(SocketInterceptorConfig socketInterceptorConfig);
+
+    ChannelInitializer createChannelInitializer();
+
+    /**
+     * @param sslConfig     ssl config for channel initializer
+     * @param socketOptions socket options for channel initializer
+     * @return @return ChannelInitializer created from given configs
+     */
+    ChannelInitializer createChannelInitializer(SSLConfig sslConfig, SocketOptions socketOptions);
 
     /**
      * Creates a {@link NearCacheManager} instance to be used by this client.
@@ -80,4 +94,11 @@ public interface ClientExtension {
      * @throws java.lang.IllegalArgumentException if service is not known
      */
     <T> ClientProxyFactory createServiceProxyFactory(Class<T> service);
+
+    /**
+     * Returns MemoryStats of for the JVM and current HazelcastInstance.
+     *
+     * @return memory statistics
+     */
+    MemoryStats getMemoryStats();
 }

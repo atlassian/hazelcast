@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package com.hazelcast.map.impl.query;
 
 import com.hazelcast.query.PagingPredicate;
+import com.hazelcast.query.PartitionPredicate;
 import com.hazelcast.query.Predicate;
 import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.util.IterationType;
@@ -32,13 +33,19 @@ public final class QueryResultUtils {
     }
 
     public static Set transformToSet(
-            SerializationService ss, QueryResult queryResult, Predicate predicate, IterationType iterationType, boolean unique) {
-        if (predicate instanceof PagingPredicate) {
-            Set result = new QueryResultCollection(ss, IterationType.ENTRY, false, unique, queryResult);
-            return getSortedQueryResultSet(new ArrayList(result), (PagingPredicate) predicate, iterationType);
+            SerializationService ss, QueryResult queryResult, Predicate predicate,
+            IterationType iterationType, boolean unique, boolean binary) {
+        Predicate unwrappedPredicate = unwrapPartitionPredicate(predicate);
+
+        if (unwrappedPredicate instanceof PagingPredicate) {
+            Set result = new QueryResultCollection(ss, IterationType.ENTRY, binary, unique, queryResult);
+            return getSortedQueryResultSet(new ArrayList(result), (PagingPredicate) unwrappedPredicate, iterationType);
         } else {
-            return new QueryResultCollection(ss, iterationType, false, unique, queryResult);
+            return new QueryResultCollection(ss, iterationType, binary, unique, queryResult);
         }
     }
 
+    private static Predicate unwrapPartitionPredicate(Predicate predicate) {
+        return predicate instanceof PartitionPredicate ? ((PartitionPredicate) predicate).getTarget() : predicate;
+    }
 }

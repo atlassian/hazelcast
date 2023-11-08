@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -102,6 +102,16 @@ public class AsyncTest extends HazelcastTestSupport {
         Future<Void> f2 = map.setAsync(key, value2);
         f2.get();
         assertEquals(value2, map.get(key));
+    }
+
+    @Test
+    public void testSetAsync_issue9599() throws Exception {
+        IMap<String, String> map = instance.getMap(randomString());
+        Future<Void> f = map.setAsync(key, value1);
+
+        // the return value was not of type Void, but Boolean. So assignment to Void would fail.
+        Void v = f.get();
+        assertNull(v);
     }
 
     @Test

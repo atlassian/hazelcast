@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.client.partitionservice;
 
 import com.hazelcast.client.spi.ClientPartitionService;
@@ -14,8 +30,10 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import static com.hazelcast.client.impl.ClientTestUtil.getHazelcastClientInstanceImpl;
+import static com.hazelcast.client.impl.clientside.ClientTestUtil.getHazelcastClientInstanceImpl;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
@@ -39,7 +57,8 @@ public class ClientPartitionServiceLiteMemberTest {
 
         final HazelcastInstance client = factory.newHazelcastClient();
         final ClientPartitionService clientPartitionService = getClientPartitionService(client);
-        clientPartitionService.getPartitionOwner(0);
+        assertNull(clientPartitionService.getPartitionOwner(0));
+        clientPartitionService.getPartitionCount();
     }
 
     @Test
@@ -49,6 +68,7 @@ public class ClientPartitionServiceLiteMemberTest {
 
         final HazelcastInstance client = factory.newHazelcastClient();
         final ClientPartitionService clientPartitionService = getClientPartitionService(client);
+        assertNotEquals(0, clientPartitionService.getPartitionCount());
         assertNotNull(clientPartitionService.getPartitionOwner(0));
     }
 

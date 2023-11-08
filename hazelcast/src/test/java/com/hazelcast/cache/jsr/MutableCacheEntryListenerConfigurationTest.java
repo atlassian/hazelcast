@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.hazelcast.cache.jsr;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.AfterClass;
+import org.junit.BeforeClass;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
@@ -27,8 +28,13 @@ import org.junit.runner.RunWith;
 public class MutableCacheEntryListenerConfigurationTest
         extends javax.cache.configuration.MutableCacheEntryListenerConfigurationTest {
 
+    @BeforeClass
+    public static void init() {
+        JsrTestUtil.setup();
+    }
+
     @AfterClass
     public static void cleanup() {
-        JstTestUtil.cleanup();
+        JsrTestUtil.cleanup();
     }
 }

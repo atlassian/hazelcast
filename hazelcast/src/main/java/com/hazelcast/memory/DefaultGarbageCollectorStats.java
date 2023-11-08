@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -85,7 +85,7 @@ public class DefaultGarbageCollectorStats implements GarbageCollectorStats {
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder();
-        sb.append("GarbageCollectorStats {");
+        sb.append("GarbageCollectorStats{");
         sb.append("MinorGC -> Count: ").append(minorCount).append(", Time (ms): ").append(minorTime)
                 .append(", MajorGC -> Count: ").append(majorCount).append(", Time (ms): ").append(majorTime);
         if (unknownCount > 0) {

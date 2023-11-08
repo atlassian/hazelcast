@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,9 +30,7 @@ public class DistributedObjectEvent {
     protected DistributedObject distributedObject;
 
     private EventType eventType;
-
     private String serviceName;
-
     private String objectName;
 
     /**
@@ -103,10 +101,17 @@ public class DistributedObjectEvent {
     }
 
     /**
-     * Type of event.
+     * Type of the DistributedObjectEvent.
      */
     public enum EventType {
-        CREATED, DESTROYED
+        /**
+         * Event if a DistributedObjectEvent is created.
+         */
+        CREATED,
+        /**
+         * Event if a DistributedObjectEvent is destroyed.
+         */
+        DESTROYED
     }
 
     @Override

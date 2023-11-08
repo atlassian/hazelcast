@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,9 @@ package com.hazelcast.client;
 
 import com.hazelcast.client.config.ClientConfig;
 import com.hazelcast.client.connection.ClientConnectionManager;
-import com.hazelcast.client.connection.nio.ClientConnection;
-import com.hazelcast.client.impl.ClientEngineImpl;
-import com.hazelcast.client.impl.ClientTestUtil;
-import com.hazelcast.client.impl.HazelcastClientInstanceImpl;
+import com.hazelcast.client.impl.clientside.HazelcastClientInstanceImpl;
+import com.hazelcast.client.spi.impl.ClientExecutionServiceImpl;
+import com.hazelcast.client.test.ClientTestSupport;
 import com.hazelcast.client.test.TestHazelcastFactory;
 import com.hazelcast.config.Config;
 import com.hazelcast.config.ListenerConfig;
@@ -29,15 +28,14 @@ import com.hazelcast.core.Client;
 import com.hazelcast.core.ClientListener;
 import com.hazelcast.core.ClientService;
 import com.hazelcast.core.EntryAdapter;
+import com.hazelcast.core.EntryListener;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
 import com.hazelcast.core.LifecycleEvent;
 import com.hazelcast.core.LifecycleListener;
-import com.hazelcast.nio.Address;
 import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
-import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.NightlyTest;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
@@ -46,14 +44,11 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import java.net.InetSocketAddress;
-import java.net.UnknownHostException;
 import java.util.Collection;
 import java.util.LinkedList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.assertEquals;
@@ -63,7 +58,7 @@ import static org.mockito.Mockito.mock;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
-public class ClientServiceTest extends HazelcastTestSupport {
+public class ClientServiceTest extends ClientTestSupport {
 
     private final TestHazelcastFactory hazelcastFactory = new TestHazelcastFactory();
 
@@ -116,7 +111,7 @@ public class ClientServiceTest extends HazelcastTestSupport {
     public void testNumberOfClients_afterUnAuthenticatedClient() {
         final HazelcastInstance instance = hazelcastFactory.newHazelcastInstance();
         final ClientConfig clientConfig = new ClientConfig();
-        clientConfig.getGroupConfig().setPassword("wrongPassword");
+        clientConfig.getGroupConfig().setName("wrongName");
 
         try {
             hazelcastFactory.newHazelcastClient(clientConfig);
@@ -132,7 +127,7 @@ public class ClientServiceTest extends HazelcastTestSupport {
         final HazelcastInstance instance1 = hazelcastFactory.newHazelcastInstance();
         final HazelcastInstance instance2 = hazelcastFactory.newHazelcastInstance();
         final ClientConfig clientConfig = new ClientConfig();
-        clientConfig.getGroupConfig().setPassword("wrongPassword");
+        clientConfig.getGroupConfig().setName("wrongName");
 
         try {
             hazelcastFactory.newHazelcastClient(clientConfig);
@@ -151,7 +146,7 @@ public class ClientServiceTest extends HazelcastTestSupport {
         final HazelcastInstance instance1 = hazelcastFactory.newHazelcastInstance();
         final HazelcastInstance instance2 = hazelcastFactory.newHazelcastInstance();
         final ClientConfig clientConfig = new ClientConfig();
-        clientConfig.getGroupConfig().setPassword("wrongPassword");
+        clientConfig.getGroupConfig().setName("wrongName");
 
         try {
             hazelcastFactory.newHazelcastClient(clientConfig);
@@ -217,8 +212,8 @@ public class ClientServiceTest extends HazelcastTestSupport {
         client1.getLifecycleService().shutdown();
         client2.getLifecycleService().shutdown();
 
-        assertTrue(latchAdd.await(2 * ClientEngineImpl.ENDPOINT_REMOVE_DELAY_SECONDS, TimeUnit.SECONDS));
-        assertTrue(latchRemove.await(2 * ClientEngineImpl.ENDPOINT_REMOVE_DELAY_SECONDS, TimeUnit.SECONDS));
+        assertOpenEventually(latchAdd);
+        assertOpenEventually(latchRemove);
 
         assertTrue(clientService.removeClientListener(id));
 
@@ -226,14 +221,14 @@ public class ClientServiceTest extends HazelcastTestSupport {
 
         assertEquals(0, clientService.getConnectedClients().size());
 
-        final HazelcastInstance client3 = hazelcastFactory.newHazelcastClient();
+        hazelcastFactory.newHazelcastClient();
 
         assertTrueEventually(new AssertTask() {
             @Override
             public void run() throws Exception {
                 assertEquals(1, clientService.getConnectedClients().size());
             }
-        }, 4);
+        });
 
         assertEquals(2, totalAdd.get());
     }
@@ -294,10 +289,10 @@ public class ClientServiceTest extends HazelcastTestSupport {
         map.put(instance2Key, 0);
 
         assertClientConnected(clientService1, clientService2);
-        assertOpenEventually(clientListenerLatch, 5);
+        assertOpenEventually(clientListenerLatch);
     }
 
-    @Test(timeout = 120000)
+    @Test
     public void testClientListenerDisconnected() throws InterruptedException {
         Config config = new Config();
         config.setProperty(GroupProperty.IO_THREAD_COUNT.getName(), "1");
@@ -333,46 +328,23 @@ public class ClientServiceTest extends HazelcastTestSupport {
                 });
             }
 
-            assertOpenEventually(listenerLatch, 30);
+            assertOpenEventually("Not all disconnected events arrived", listenerLatch);
 
-            assertTrueEventually(new AssertTask() {
+            assertTrueEventually("First server still have connected clients", new AssertTask() {
                 @Override
                 public void run() throws Exception {
                     assertEquals(0, hz.getClientService().getConnectedClients().size());
                 }
-            }, 10);
-            assertTrueEventually(new AssertTask() {
+            });
+            assertTrueEventually("Second server still have connected clients", new AssertTask() {
                 @Override
                 public void run() throws Exception {
                     assertEquals(0, hz2.getClientService().getConnectedClients().size());
                 }
-            }, 10);
+            });
         } finally {
             ex.shutdown();
         }
-    }
-
-    @Test(timeout = 120000)
-    public void testPendingEventPacketsWithEvents() throws InterruptedException, UnknownHostException {
-        HazelcastInstance hazelcastInstance = hazelcastFactory.newHazelcastInstance();
-
-        HazelcastInstance client = hazelcastFactory.newHazelcastClient();
-        IMap map = client.getMap(randomName());
-        map.addEntryListener(new EntryAdapter(), false);
-        for (int i = 0; i < 10; i++) {
-            map.put(randomString(), randomString());
-        }
-        HazelcastClientInstanceImpl clientInstanceImpl = ClientTestUtil.getHazelcastClientInstanceImpl(client);
-        InetSocketAddress socketAddress = hazelcastInstance.getCluster().getLocalMember().getSocketAddress();
-        Address address = new Address(socketAddress.getAddress().getHostAddress(), socketAddress.getPort());
-        ClientConnectionManager connectionManager = clientInstanceImpl.getConnectionManager();
-        final ClientConnection connection = (ClientConnection) connectionManager.getConnection(address);
-        assertTrueEventually(new AssertTask() {
-            @Override
-            public void run() throws Exception {
-                assertEquals(0, connection.getPendingPacketCount());
-            }
-        });
     }
 
     private void assertClientConnected(ClientService... services) {
@@ -382,7 +354,7 @@ public class ClientServiceTest extends HazelcastTestSupport {
                 public void run() throws Exception {
                     assertEquals(1, service.getConnectedClients().size());
                 }
-            }, 5);
+            });
         }
     }
 
@@ -416,5 +388,144 @@ public class ClientServiceTest extends HazelcastTestSupport {
         public void clientDisconnected(Client client) {
             countDown();
         }
+    }
+
+
+    @Test
+    public void testClientShutdownDuration_whenServersDown() {
+        HazelcastInstance hazelcastInstance = hazelcastFactory.newHazelcastInstance();
+        final CountDownLatch countDownLatch = new CountDownLatch(1);
+        ClientConfig config = new ClientConfig();
+        config.getNetworkConfig().setConnectionAttemptPeriod(0).setConnectionAttemptLimit(1);
+        HazelcastInstance client = hazelcastFactory.newHazelcastClient(config);
+        client.getLifecycleService().addLifecycleListener(new LifecycleListener() {
+            @Override
+            public void stateChanged(LifecycleEvent event) {
+                if (event.getState() == LifecycleEvent.LifecycleState.SHUTDOWN) {
+                    countDownLatch.countDown();
+                }
+            }
+        });
+
+        hazelcastInstance.shutdown();
+        assertOpenEventually(countDownLatch, ClientExecutionServiceImpl.TERMINATE_TIMEOUT_SECONDS);
+    }
+
+    @Test
+    public void testClientListener_fromConfig() {
+        Config config = new Config();
+        final CountDownLatch connectedLatch = new CountDownLatch(1);
+        final CountDownLatch disconnectedLatch = new CountDownLatch(1);
+        ListenerConfig listenerConfig = new ListenerConfig(new ClientListener() {
+            @Override
+            public void clientConnected(Client client) {
+                connectedLatch.countDown();
+            }
+
+            @Override
+            public void clientDisconnected(Client client) {
+                disconnectedLatch.countDown();
+            }
+        });
+
+        config.addListenerConfig(listenerConfig);
+
+        HazelcastInstance instance = hazelcastFactory.newHazelcastInstance(config);
+        HazelcastInstance client = hazelcastFactory.newHazelcastClient();
+        client.shutdown();
+        assertOpenEventually(connectedLatch);
+        assertOpenEventually(disconnectedLatch);
+        instance.shutdown();
+    }
+
+    @Test
+    public void testClientListener_withDummyClient() {
+        Config config = new Config();
+        final CountDownLatch latch = new CountDownLatch(2);
+        final AtomicInteger eventCount = new AtomicInteger();
+        ListenerConfig listenerConfig = new ListenerConfig(new ClientListener() {
+            @Override
+            public void clientConnected(Client client) {
+                eventCount.incrementAndGet();
+                latch.countDown();
+            }
+
+            @Override
+            public void clientDisconnected(Client client) {
+                eventCount.incrementAndGet();
+                latch.countDown();
+            }
+        });
+
+        config.addListenerConfig(listenerConfig);
+
+        hazelcastFactory.newHazelcastInstance(config);
+        hazelcastFactory.newHazelcastInstance(config);
+
+        HazelcastInstance client = hazelcastFactory.newHazelcastClient();
+        client.shutdown();
+        assertOpenEventually(latch);
+        //client events will only be fired from one of the nodes.
+        assertTrueAllTheTime(new AssertTask() {
+            @Override
+            public void run() throws Exception {
+                assertEquals(2, eventCount.get());
+            }
+        }, 4);
+    }
+
+    @Test
+    public void testClientListener_withShuttingDownOwnerMember() throws InterruptedException {
+        Config config = new Config();
+        final CountDownLatch latch = new CountDownLatch(1);
+        final AtomicInteger atomicInteger = new AtomicInteger();
+        ListenerConfig listenerConfig = new ListenerConfig(new ClientListener() {
+            @Override
+            public void clientConnected(Client client) {
+                atomicInteger.incrementAndGet();
+                latch.countDown();
+            }
+
+            @Override
+            public void clientDisconnected(Client client) {
+                atomicInteger.incrementAndGet();
+            }
+        });
+
+        config.addListenerConfig(listenerConfig);
+        HazelcastInstance instance = hazelcastFactory.newHazelcastInstance();
+        //first member is owner connection
+        hazelcastFactory.newHazelcastClient();
+
+        config.setProperty(GroupProperty.CLIENT_ENDPOINT_REMOVE_DELAY_SECONDS.getName(), String.valueOf(Integer.MAX_VALUE));
+        hazelcastFactory.newHazelcastInstance(config);
+        //make sure connected to second one before proceeding
+        assertOpenEventually(latch);
+
+        //when first node is dead, client selects second one as owner
+        instance.shutdown();
+        //Testing that shutting down first member does not cause any client connected/disconnected event
+        assertTrueAllTheTime(new AssertTask() {
+            @Override
+            public void run() throws Exception {
+                assertEquals(1, atomicInteger.get());
+            }
+        }, 4);
+    }
+
+    @Test
+    public void testAddingListenersOpenConnectionsToAllCluster() {
+        int memberCount = 4;
+        for (int i = 0; i < memberCount; i++) {
+            hazelcastFactory.newHazelcastInstance();
+        }
+
+        HazelcastClientInstanceImpl client = getHazelcastClientInstanceImpl(hazelcastFactory.newHazelcastClient());
+        ClientConnectionManager connectionManager = client.getConnectionManager();
+        IMap<Object, Object> map = client.getMap("test");
+        map.addEntryListener(mock(EntryListener.class), false);
+
+        assertEquals(memberCount, connectionManager.getActiveConnections().size());
+
     }
 }

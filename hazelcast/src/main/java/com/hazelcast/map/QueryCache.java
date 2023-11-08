@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,50 +19,65 @@ package com.hazelcast.map;
 import com.hazelcast.core.IMap;
 import com.hazelcast.map.listener.MapListener;
 import com.hazelcast.query.Predicate;
-import com.hazelcast.spi.annotation.Beta;
 
 import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
 
 /**
- * A concurrent, queryable data structure which is used to cache results of a continuous query executed
- * on an {@code IMap}. It can be also think of an always up to date view or snapshot of the {@code IMap}.
- * <p/>
+ * A concurrent, queryable data structure which is used to cache results of
+ * a continuous query executed on an {@code IMap}. It can be also thought
+ * of as an always up to date view or snapshot of the {@code IMap}.
+ *
  * Typically, {@code QueryCache} is used for performance reasons.
- * <p/>
- * This {@code QueryCache} can be configured via {@link com.hazelcast.config.QueryCacheConfig QueryCacheConfig}.
- * <p/>
+ *
+ * This {@code QueryCache} can be configured via {@link
+ * com.hazelcast.config.QueryCacheConfig QueryCacheConfig}.
+ *
  * It can be reached like this:
  * <pre>
  * <code>
  *
  *     IMap map = hzInstance.getMap("mapName");
  *     Predicate predicate = TruePredicate.INSTANCE;
- *     QueryCache cache = map.getQueryCache(cacheName, predicate, includeValue);
+ *     QueryCache cache = map.getQueryCache(cacheId, predicate, includeValue);
  *
  * </code>
  * </pre>
  * <p/>
- * This cache is evictable. The eviction can be configured with {@link com.hazelcast.config.QueryCacheConfig#evictionConfig
- * evictionConfig}. Events caused by {@code IMap} eviction are not reflected to this cache. But the events published after
- * an explicit call to {@link com.hazelcast.core.IMap#evict} are reflected to this cache.
+ * This cache is evictable. The eviction can be configured with {@link
+ * com.hazelcast.config.QueryCacheConfig#setEvictionConfig}.
+ * Events caused by {@code IMap} eviction are not reflected to this cache.
+ * But the events published after an explicit call to {@link
+ * com.hazelcast.core.IMap#evict} are reflected to this cache.
  * <p/>
  * <b>GOTCHAS</b>
  * <ul>
  * <li>
- * This {@code QueryCache} implementation relies on the eventing system, if a listener is attached to this {@code QueryCache}
- * it may receive same event more than once in case of a system failure. Check out {@link QueryCache#tryRecover()}
+ * This {@code QueryCache} implementation relies on the eventing system, if
+ * a listener is attached to this {@code QueryCache} it may receive same
+ * event more than once in case of a system failure. Check out {@link
+ * QueryCache#tryRecover()}
  * </li>
  * <li>
- * All writes to this {@link QueryCache} is reflected to underlying {@code IMap} and that
- * write operation will eventually be reflected to this {@code QueryCache} after receiving the
- * event of that operation.
+ * All writes to this {@link QueryCache} is reflected to underlying {@code
+ * IMap} and that write operation will eventually be reflected to this
+ * {@code QueryCache} after receiving the event of that operation.
  * </li>
  * <li>
- * There are some gotchas same with underlying {@link com.hazelcast.core.IMap IMap} implementation,
- * one should take care of them before using this {@code QueryCache}.
- * Please check gotchas section in {@link com.hazelcast.core.IMap IMap} class for them.
+ * Currently, updates performed on the entries are reflected in the indexes
+ * in a non-atomic way. Therefore, if there are indexes configured for the
+ * query cache, their state may slightly lag behind the state of the
+ * entries. Use map listeners if you need to observe the state when the
+ * entry store and its indexes are consistent about the state of a
+ * particular entry, see {@link IMap#addEntryListener(MapListener, boolean)
+ * addEntryListener} for more details.
+ * </li>
+ * <li>
+ * There are some gotchas same with underlying {@link
+ * com.hazelcast.core.IMap IMap} implementation, one should take care of
+ * them before using this {@code QueryCache}. Please check gotchas section
+ * in {@link com.hazelcast.core.IMap IMap} class for them.
  * </li>
  * </ul>
  * <p/>
@@ -72,7 +87,6 @@ import java.util.Set;
  * @see com.hazelcast.config.QueryCacheConfig
  * @since 3.5
  */
-@Beta
 public interface QueryCache<K, V> {
 
     /**
@@ -173,7 +187,8 @@ public interface QueryCache<K, V> {
     String getName();
 
     /**
-     * This method can be used to recover from a possible event loss situation.
+     * This method can be used to recover from a possible event loss situation. You can detect event loss
+     * via {@link com.hazelcast.map.listener.EventLostListener}
      * <p/>
      * This method tries to make consistent the data in this {@code QueryCache} with the data in the underlying {@code IMap}
      * by replaying the events after last consistently received ones. As a result of this replaying logic, same event may

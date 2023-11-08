@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,9 @@ import java.util.Deque;
 import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.LinkedList;
+import java.util.Set;
+
+import static com.hazelcast.util.EmptyStatement.ignore;
 
 /**
  * AddressUtil contains Address helper methods.
@@ -236,7 +239,7 @@ public final class AddressUtil {
                 addPossibleAddress(inet6Address, possibleAddresses, ni);
             }
         } catch (IOException ignored) {
-            EmptyStatement.ignore(ignored);
+            ignore(ignored);
         }
 
         if (possibleAddresses.isEmpty()) {
@@ -333,6 +336,54 @@ public final class AddressUtil {
         return matcher;
     }
 
+    public static Collection<Integer> getOutboundPorts(Collection<Integer> ports,
+                                                       Collection<String> portDefinitions) {
+        if (ports == null) {
+            ports = Collections.emptySet();
+        }
+        if (portDefinitions == null) {
+            portDefinitions = Collections.emptySet();
+        }
+        if (portDefinitions.isEmpty() && ports.isEmpty()) {
+            // means any port
+            return Collections.emptySet();
+        }
+        if (portDefinitions.contains("*") || portDefinitions.contains("0")) {
+            // means any port
+            return Collections.emptySet();
+        }
+        Set<Integer> selectedPorts = new HashSet<Integer>(ports);
+        transformPortDefinitionsToPorts(portDefinitions, selectedPorts);
+        if (selectedPorts.contains(0)) {
+            // means any port
+            return Collections.emptySet();
+        }
+        return selectedPorts;
+    }
+
+    private static void transformPortDefinitionsToPorts(Collection<String> portDefinitions, Set<Integer> ports) {
+        // not checking port ranges...
+        for (String portDef : portDefinitions) {
+            String[] portDefs = portDef.split("[,; ]");
+            for (String def : portDefs) {
+                def = def.trim();
+                if (def.isEmpty()) {
+                    continue;
+                }
+                final int dashPos = def.indexOf('-');
+                if (dashPos > 0) {
+                    final int start = Integer.parseInt(def.substring(0, dashPos));
+                    final int end = Integer.parseInt(def.substring(dashPos + 1));
+                    for (int port = start; port <= end; port++) {
+                        ports.add(port);
+                    }
+                } else {
+                    ports.add(Integer.parseInt(def));
+                }
+            }
+        }
+    }
+
     private static void parseIpv4(AddressMatcher matcher, String address) {
         final String[] parts = address.split("\\.");
         if (parts.length != IPV4_LENGTH) {
@@ -396,7 +447,7 @@ public final class AddressUtil {
         if (ipString.size() != IPV6_LENGTH) {
             throw new InvalidAddressException(address);
         }
-        final String[] addressParts = ipString.toArray(new String[ipString.size()]);
+        final String[] addressParts = ipString.toArray(new String[0]);
         checkIfAddressPartsAreValid(addressParts, address);
         matcher.setAddress(addressParts);
     }
@@ -636,8 +687,12 @@ public final class AddressUtil {
      */
     public static class InvalidAddressException extends IllegalArgumentException {
 
-        public InvalidAddressException(final String s) {
-            super("Illegal IP address format: " + s);
+        public InvalidAddressException(final String message) {
+            this(message, true);
+        }
+
+        public InvalidAddressException(final String message, boolean prependText) {
+            super((prependText ? "Illegal IP address format: " : "") + message);
         }
     }
 }

@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.client.protocol;
 
 import com.hazelcast.client.impl.protocol.ClientMessage;
@@ -15,7 +31,6 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.nio.ByteBuffer;
 
@@ -53,7 +68,7 @@ public class ClientMessageTest {
         ClientMessage cmEncode = TestClientMessage.createForEncode(safeBuffer, 0);
 
         cmEncode.setMessageType(0x1122).setVersion((short) 0xEF).addFlag(ClientMessage.BEGIN_AND_END_FLAGS)
-                .setCorrelationId(0x1234567812345678l)
+                .setCorrelationId(0x1234567812345678L)
                 .setPartitionId(0x11223344);
 
         // little endian
@@ -143,8 +158,7 @@ public class ClientMessageTest {
 
 
     @Test
-    public void shouldEncodeAndDecodeClientMessageCorrectly_withPayLoadData_fromOffset()
-            throws UnsupportedEncodingException {
+    public void shouldEncodeAndDecodeClientMessageCorrectly_withPayLoadData_fromOffset() {
         SafeBuffer byteBuffer = new SafeBuffer(new byte[150]);
         int offset = 100;
 
@@ -156,8 +170,8 @@ public class ClientMessageTest {
                 .setCorrelationId(66).setPartitionId(77);
 
         byte[] bytes = VAR_DATA_STR_1.getBytes();
-        final int calculatedFrameSize = ClientMessage.HEADER_SIZE + Bits.INT_SIZE_IN_BYTES +
-                ParameterUtil.calculateDataSize(bytes);
+        final int calculatedFrameSize = ClientMessage.HEADER_SIZE + Bits.INT_SIZE_IN_BYTES
+                + ParameterUtil.calculateDataSize(bytes);
         cmEncode.set(1);
         cmEncode.set(bytes);
         cmEncode.updateFrameLength();
@@ -171,8 +185,7 @@ public class ClientMessageTest {
     }
 
     @Test
-    public void shouldEncodeWithNewVersionAndDecodeWithOldVersionCorrectly_withPayLoadData()
-            throws UnsupportedEncodingException {
+    public void shouldEncodeWithNewVersionAndDecodeWithOldVersionCorrectly_withPayLoadData() {
         SafeBuffer byteBuffer = new SafeBuffer(new byte[1024]);
 
         FutureClientMessage cmEncode = new FutureClientMessage();
@@ -202,8 +215,7 @@ public class ClientMessageTest {
     }
 
     @Test
-    public void shouldEncodeWithOldVersionAndDecodeWithNewVersionCorrectly_withPayLoadData()
-            throws UnsupportedEncodingException {
+    public void shouldEncodeWithOldVersionAndDecodeWithNewVersionCorrectly_withPayLoadData() {
         SafeBuffer byteBuffer = new SafeBuffer(new byte[1024]);
 
         ClientMessage cmEncode = TestClientMessage.createForEncode(byteBuffer, 0);
@@ -230,8 +242,7 @@ public class ClientMessageTest {
     }
 
     @Test
-    public void shouldEncodeAndDecodeClientMessageCorrectly_withPayLoadData_multipleMessages()
-            throws UnsupportedEncodingException {
+    public void shouldEncodeAndDecodeClientMessageCorrectly_withPayLoadData_multipleMessages() {
         SafeBuffer byteBuffer = new SafeBuffer(new byte[1024]);
         ClientMessage cmEncode = TestClientMessage.createForEncode(byteBuffer, 0);
         cmEncode.setMessageType(7).setVersion((short) 3).addFlag(ClientMessage.BEGIN_AND_END_FLAGS)
@@ -283,7 +294,7 @@ public class ClientMessageTest {
 
         @Override
         protected void wrapForEncode(ClientProtocolBuffer buffer, int offset) {
-            super.wrap(buffer, offset);
+            super.wrap(buffer.byteArray(), offset, true);
             setDataOffset(THE_NEW_HEADER_SIZE);
             setFrameLength(THE_NEW_HEADER_SIZE);
             index(getDataOffset());
@@ -376,7 +387,7 @@ public class ClientMessageTest {
     }
 
     @Test
-    public void testUnsignedFields() throws IOException {
+    public void testUnsignedFields() {
         ClientProtocolBuffer buffer = new SafeBuffer(new byte[22]);
 
         ClientMessage cmEncode = ClientMessage.createForEncode(buffer, 0);
@@ -395,8 +406,35 @@ public class ClientMessageTest {
     }
 
     @Test(expected = MaxMessageSizeExceeded.class)
-    public void testMessageSizeOverflow()
-            throws Exception {
-        ClientMessage.findSuitableMessageSize(Integer.MAX_VALUE << 1);
+    public void testMessageSizeOverflow() {
+        ClientMessage.createForEncode(Integer.MAX_VALUE << 1);
+    }
+
+    @Test
+    public void testCopyClientMessage() {
+        SafeBuffer byteBuffer = new SafeBuffer(new byte[1024]);
+
+        ClientMessage clientMessage = TestClientMessage.createForEncode(byteBuffer, 0);
+
+        clientMessage.setMessageType(7)
+                .setVersion((short) 3)
+                .addFlag(ClientMessage.BEGIN_AND_END_FLAGS)
+                .setCorrelationId(66).setPartitionId(77);
+
+        clientMessage.setRetryable(true);
+        clientMessage.setAcquiresResource(true);
+        clientMessage.setOperationName("operationName");
+
+
+        ClientMessage copyMessage = clientMessage.copy();
+        assertEquals(copyMessage, clientMessage);
+        assertEquals(copyMessage.getMessageType(), clientMessage.getMessageType());
+        assertEquals(copyMessage.getVersion(), clientMessage.getVersion());
+        assertEquals(copyMessage.getFlags(), clientMessage.getFlags());
+        assertEquals(copyMessage.getCorrelationId(), clientMessage.getCorrelationId());
+        assertEquals(copyMessage.getPartitionId(), clientMessage.getPartitionId());
+        assertEquals(copyMessage.isRetryable(), clientMessage.isComplete());
+        assertEquals(copyMessage.acquiresResource(), clientMessage.acquiresResource());
+        assertEquals(copyMessage.getOperationName(), clientMessage.getOperationName());
     }
 }

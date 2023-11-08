@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,13 @@
 package com.hazelcast.spi;
 
 import com.hazelcast.core.ExecutionCallback;
+import com.hazelcast.core.IndeterminateOperationStateException;
 import com.hazelcast.internal.partition.InternalPartition;
 import com.hazelcast.nio.Address;
+import com.hazelcast.nio.EndpointManager;
+
+import static com.hazelcast.spi.Operation.GENERIC_PARTITION_ID;
+import static com.hazelcast.util.Preconditions.checkFalse;
 
 /**
  * The InvocationBuilder is responsible for building an invocation of an operation and invoking it.
@@ -58,19 +63,22 @@ public abstract class InvocationBuilder {
     protected final int partitionId;
     protected final Address target;
     protected ExecutionCallback<Object> executionCallback;
+    protected Runnable doneCallback;
 
     protected long callTimeout = DEFAULT_CALL_TIMEOUT;
     protected int replicaIndex;
     protected int tryCount = DEFAULT_TRY_COUNT;
     protected long tryPauseMillis = DEFAULT_TRY_PAUSE_MILLIS;
     protected boolean resultDeserialized = DEFAULT_DESERIALIZE_RESULT;
+    protected boolean failOnIndeterminateOperationState;
+    protected EndpointManager endpointManager;
 
     /**
      * Creates an InvocationBuilder
      *
      * @param serviceName the name of the service
      * @param op          the operation to execute
-     * @param partitionId the id of the partition upon which to execute the operation
+     * @param partitionId the ID of the partition upon which to execute the operation
      * @param target      the target machine. Either the partitionId or the target needs to be set.
      */
     protected InvocationBuilder(String serviceName, Operation op, int partitionId, Address target) {
@@ -129,6 +137,29 @@ public abstract class InvocationBuilder {
      */
     public InvocationBuilder setTryCount(int tryCount) {
         this.tryCount = tryCount;
+        return this;
+    }
+
+    /**
+     * Returns true if {@link IndeterminateOperationStateException} is enabled for this invocation
+     *
+     * @return true if {@link IndeterminateOperationStateException} is enabled for this invocation
+     */
+    public boolean shouldFailOnIndeterminateOperationState() {
+        return failOnIndeterminateOperationState;
+    }
+
+    /**
+     * Enables / disables throwing {@link IndeterminateOperationStateException} for this invocation.
+     * Can be used only for partition invocations
+     * @see IndeterminateOperationStateException
+     *
+     * @return the InvocationBuilder
+     */
+    public InvocationBuilder setFailOnIndeterminateOperationState(boolean failOnIndeterminateOperationState) {
+        checkFalse((failOnIndeterminateOperationState && partitionId == GENERIC_PARTITION_ID),
+                "failOnIndeterminateOperationState can be used with only partition invocations");
+        this.failOnIndeterminateOperationState = failOnIndeterminateOperationState;
         return this;
     }
 
@@ -204,9 +235,9 @@ public abstract class InvocationBuilder {
     }
 
     /**
-     * Returns the partition id.
+     * Returns the partition ID.
      *
-     * @return the partition id.
+     * @return the partition ID.
      */
     public int getPartitionId() {
         return partitionId;
@@ -236,8 +267,25 @@ public abstract class InvocationBuilder {
         return this;
     }
 
+    public InvocationBuilder setEndpointManager(EndpointManager endpointManager) {
+        this.endpointManager = endpointManager;
+        return this;
+    }
+
     protected ExecutionCallback getTargetExecutionCallback() {
         return executionCallback;
+    }
+
+    /**
+     * Sets a callback that will respond to the "task done" event for the invocation this builder is about to create.
+     * It occurs upon the release of computational and other resources used by the task underlying the invocation.
+     * The user loses interest in the computation as soon as the invocation's future is canceled, but our
+     * internal concern is keeping track of resource usage. Therefore we need a lifecycle event independent
+     * of the regular future completion/cancellation.
+     */
+    public InvocationBuilder setDoneCallback(Runnable doneCallback) {
+        this.doneCallback = doneCallback;
+        return this;
     }
 
     public abstract <E> InternalCompletableFuture<E> invoke();

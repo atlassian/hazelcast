@@ -1,6 +1,22 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.monitor.impl;
 
-import com.eclipsesource.json.JsonObject;
+import com.hazelcast.internal.json.JsonObject;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
@@ -9,6 +25,10 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
+import java.util.HashMap;
+import java.util.Map;
+
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -34,12 +54,12 @@ public class LocalMapStatsImplTest {
         localMapStats.setLockedEntryCount(1231);
         localMapStats.setDirtyEntryCount(4252);
 
-        localMapStats.incrementPuts(5631);
-        localMapStats.incrementPuts(1);
-        localMapStats.incrementGets(1233);
-        localMapStats.incrementGets(5);
-        localMapStats.incrementGets(9);
-        localMapStats.incrementRemoves(1238);
+        localMapStats.incrementPutLatencyNanos(MILLISECONDS.toNanos(5631));
+        localMapStats.incrementPutLatencyNanos(MILLISECONDS.toNanos(1));
+        localMapStats.incrementGetLatencyNanos(MILLISECONDS.toNanos(1233));
+        localMapStats.incrementGetLatencyNanos(MILLISECONDS.toNanos(5));
+        localMapStats.incrementGetLatencyNanos(MILLISECONDS.toNanos(9));
+        localMapStats.incrementRemoveLatencyNanos(MILLISECONDS.toNanos(1238));
         localMapStats.incrementOtherOperations();
         localMapStats.incrementOtherOperations();
         localMapStats.incrementOtherOperations();
@@ -50,6 +70,13 @@ public class LocalMapStatsImplTest {
 
         localMapStats.setHeapCost(7461762);
         localMapStats.setNearCacheStats(new NearCacheStatsImpl());
+
+        localMapStats.setQueryCount(10);
+        localMapStats.setIndexedQueryCount(5);
+        Map<String, LocalIndexStatsImpl> indexStats = new HashMap<String, LocalIndexStatsImpl>();
+        LocalIndexStatsImpl index = new LocalIndexStatsImpl();
+        indexStats.put("index", index);
+        localMapStats.setIndexStats(indexStats);
     }
 
     @Test
@@ -82,6 +109,11 @@ public class LocalMapStatsImplTest {
         assertEquals(7461762, localMapStats.getHeapCost());
         assertNotNull(localMapStats.getNearCacheStats());
         assertNotNull(localMapStats.toString());
+
+        assertEquals(10, localMapStats.getQueryCount());
+        assertEquals(5, localMapStats.getIndexedQueryCount());
+        assertNotNull(localMapStats.getIndexStats());
+        assertEquals(1, localMapStats.getIndexStats().size());
     }
 
     @Test
@@ -118,5 +150,10 @@ public class LocalMapStatsImplTest {
         assertEquals(7461762, deserialized.getHeapCost());
         assertNotNull(deserialized.getNearCacheStats());
         assertNotNull(deserialized.toString());
+
+        assertEquals(10, deserialized.getQueryCount());
+        assertEquals(5, deserialized.getIndexedQueryCount());
+        assertNotNull(deserialized.getIndexStats());
+        assertEquals(1, deserialized.getIndexStats().size());
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,13 @@
 
 package com.hazelcast.internal.management.dto;
 
-import com.eclipsesource.json.JsonObject;
 import com.hazelcast.config.EvictionPolicy;
 import com.hazelcast.config.InMemoryFormat;
 import com.hazelcast.config.MapConfig;
 import com.hazelcast.config.MaxSizeConfig;
 import com.hazelcast.internal.management.JsonSerializable;
 import com.hazelcast.internal.management.ManagementDataSerializerHook;
+import com.hazelcast.internal.json.JsonObject;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,9 @@
 
 package com.hazelcast.config;
 
-import com.hazelcast.nio.serialization.impl.BinaryInterface;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.serialization.DataSerializable;
+import com.hazelcast.nio.serialization.BinaryInterface;
 import com.hazelcast.nio.serialization.TypedDataSerializable;
 
 import java.io.IOException;
@@ -30,7 +29,7 @@ import java.io.IOException;
  * Comparator support is not provided for compatibility.
  */
 @BinaryInterface
-public class LegacyCacheEvictionConfig implements DataSerializable, TypedDataSerializable {
+public class LegacyCacheEvictionConfig implements TypedDataSerializable {
 
     final CacheEvictionConfig config;
 

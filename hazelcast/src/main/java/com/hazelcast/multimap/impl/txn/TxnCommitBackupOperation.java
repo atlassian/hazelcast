@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 package com.hazelcast.multimap.impl.txn;
 
 import com.hazelcast.multimap.impl.MultiMapDataSerializerHook;
-import com.hazelcast.multimap.impl.operations.MultiMapKeyBasedOperation;
+import com.hazelcast.multimap.impl.operations.AbstractKeyBasedMultiMapOperation;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
@@ -28,10 +28,10 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-public class TxnCommitBackupOperation extends MultiMapKeyBasedOperation implements BackupOperation {
+public class TxnCommitBackupOperation extends AbstractKeyBasedMultiMapOperation implements BackupOperation {
 
-    List<Operation> opList;
-    String caller;
+    private List<Operation> opList;
+    private String caller;
 
     public TxnCommitBackupOperation() {
     }
@@ -53,7 +53,7 @@ public class TxnCommitBackupOperation extends MultiMapKeyBasedOperation implemen
         }
         // changed to forceUnlock because replica-sync of lock causes problems, same as IMap
         // real solution is to make 'lock-and-get' backup-aware
-        getOrCreateContainer().forceUnlock(dataKey);
+        getOrCreateContainerWithoutAccess().forceUnlock(dataKey);
     }
 
     @Override

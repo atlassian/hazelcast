@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,52 +16,49 @@
 
 package com.hazelcast.nio.tcp;
 
-import com.hazelcast.internal.metrics.DiscardableMetricsProvider;
-import com.hazelcast.internal.metrics.MetricsProvider;
-import com.hazelcast.internal.metrics.MetricsRegistry;
 import com.hazelcast.internal.metrics.Probe;
-import com.hazelcast.internal.networking.IOThreadingModel;
-import com.hazelcast.internal.networking.SocketChannelWrapper;
-import com.hazelcast.internal.networking.SocketConnection;
-import com.hazelcast.internal.networking.SocketReader;
-import com.hazelcast.internal.networking.SocketWriter;
+import com.hazelcast.internal.networking.Channel;
+import com.hazelcast.internal.networking.Networking;
+import com.hazelcast.internal.networking.OutboundFrame;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Address;
+import com.hazelcast.nio.Connection;
+import com.hazelcast.nio.ConnectionLifecycleListener;
 import com.hazelcast.nio.ConnectionType;
 import com.hazelcast.nio.IOService;
-import com.hazelcast.nio.OutboundFrame;
 
 import java.io.EOFException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.net.Socket;
-import java.net.SocketAddress;
-import java.net.SocketException;
+import java.nio.channels.CancelledKeyException;
+import java.util.Arrays;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.logging.Level;
+
+import static com.hazelcast.nio.ConnectionType.MEMBER;
+import static com.hazelcast.nio.ConnectionType.NONE;
 
 /**
  * The Tcp/Ip implementation of the {@link com.hazelcast.nio.Connection}.
  * <p>
- * A {@link TcpIpConnection} is not responsible for reading or writing data to a socket, this is done through:
- * <ol>
- * <li>{@link SocketReader}: which care of reading from the socket and feeding it into the system/li>
- * <li>{@link SocketWriter}: which care of writing data to the socket.</li>
- * </ol>
+ * A {@link TcpIpConnection} is not responsible for reading or writing data to the socket; that is task of
+ * the {@link Channel}.
  *
- * @see IOThreadingModel
+ * @see Networking
  */
 @SuppressWarnings("checkstyle:methodcount")
-public final class TcpIpConnection implements SocketConnection, MetricsProvider, DiscardableMetricsProvider {
+public class TcpIpConnection
+        implements Connection {
 
-    private final SocketChannelWrapper socketChannel;
+    private final Channel channel;
 
-    private final SocketReader socketReader;
-
-    private final SocketWriter socketWriter;
-
-    private final TcpIpConnectionManager connectionManager;
+    private final TcpIpEndpointManager endpointManager;
 
     private final AtomicBoolean alive = new AtomicBoolean(true);
+
+    // indicate whether connection bind exchange is in progress/done (true) or not yet initiated (when false)
+    private final AtomicBoolean binding = new AtomicBoolean();
 
     private final ILogger logger;
 
@@ -71,54 +68,31 @@ public final class TcpIpConnection implements SocketConnection, MetricsProvider,
 
     private Address endPoint;
 
-    private TcpIpConnectionMonitor monitor;
+    private TcpIpConnectionErrorHandler errorHandler;
 
-    private volatile ConnectionType type = ConnectionType.NONE;
+    private volatile ConnectionType type = NONE;
+
+    private volatile ConnectionLifecycleListener lifecycleListener;
 
     private volatile Throwable closeCause;
 
     private volatile String closeReason;
 
-    public TcpIpConnection(TcpIpConnectionManager connectionManager,
+    public TcpIpConnection(TcpIpEndpointManager endpointManager,
+                           ConnectionLifecycleListener lifecycleListener,
                            int connectionId,
-                           SocketChannelWrapper socketChannel,
-                           IOThreadingModel ioThreadingModel) {
+                           Channel channel) {
         this.connectionId = connectionId;
-        this.connectionManager = connectionManager;
-        this.ioService = connectionManager.getIoService();
+        this.endpointManager = endpointManager;
+        this.lifecycleListener = lifecycleListener;
+        this.ioService = endpointManager.getNetworkingService().getIoService();
         this.logger = ioService.getLoggingService().getLogger(TcpIpConnection.class);
-        this.socketChannel = socketChannel;
-        this.socketWriter = ioThreadingModel.newSocketWriter(this);
-        this.socketReader = ioThreadingModel.newSocketReader(this);
+        this.channel = channel;
+        channel.attributeMap().put(TcpIpConnection.class, this);
     }
 
-    @Override
-    public void provideMetrics(MetricsRegistry registry) {
-        Socket socket = socketChannel.socket();
-        SocketAddress localSocketAddress = socket != null ? socket.getLocalSocketAddress() : null;
-        SocketAddress remoteSocketAddress = socket != null ? socket.getRemoteSocketAddress() : null;
-        String metricsId = localSocketAddress + "->" + remoteSocketAddress;
-        registry.scanAndRegister(socketWriter, "tcp.connection[" + metricsId + "].out");
-        registry.scanAndRegister(socketReader, "tcp.connection[" + metricsId + "].in");
-    }
-
-    @Override
-    public void discardMetrics(MetricsRegistry registry) {
-        registry.deregister(socketReader);
-        registry.deregister(socketWriter);
-    }
-
-    public SocketReader getSocketReader() {
-        return socketReader;
-    }
-
-    public SocketWriter getSocketWriter() {
-        return socketWriter;
-    }
-
-    @Override
-    public SocketChannelWrapper getSocketChannel() {
-        return socketChannel;
+    public Channel getChannel() {
+        return channel;
     }
 
     @Override
@@ -128,8 +102,14 @@ public final class TcpIpConnection implements SocketConnection, MetricsProvider,
 
     @Override
     public void setType(ConnectionType type) {
-        if (this.type == ConnectionType.NONE) {
-            this.type = type;
+        if (this.type != NONE) {
+            return;
+        }
+
+        this.type = type;
+        if (type == MEMBER) {
+            logger.info("Initialized new cluster connection between "
+                        + channel.localSocketAddress() + " and " + channel.remoteSocketAddress());
         }
     }
 
@@ -139,23 +119,23 @@ public final class TcpIpConnection implements SocketConnection, MetricsProvider,
         return t == null ? -1 : t.ordinal();
     }
 
-    public TcpIpConnectionManager getConnectionManager() {
-        return connectionManager;
+    public TcpIpEndpointManager getEndpointManager() {
+        return endpointManager;
     }
 
     @Override
     public InetAddress getInetAddress() {
-        return socketChannel.socket().getInetAddress();
+        return channel.socket().getInetAddress();
     }
 
     @Override
     public int getPort() {
-        return socketChannel.socket().getPort();
+        return channel.socket().getPort();
     }
 
     @Override
     public InetSocketAddress getRemoteSocketAddress() {
-        return (InetSocketAddress) socketChannel.socket().getRemoteSocketAddress();
+        return (InetSocketAddress) channel.remoteSocketAddress();
     }
 
     @Override
@@ -165,12 +145,12 @@ public final class TcpIpConnection implements SocketConnection, MetricsProvider,
 
     @Override
     public long lastWriteTimeMillis() {
-        return socketWriter.lastWriteTimeMillis();
+        return channel.lastWriteTimeMillis();
     }
 
     @Override
     public long lastReadTimeMillis() {
-        return socketReader.lastReadTimeMillis();
+        return channel.lastReadTimeMillis();
     }
 
     @Override
@@ -182,69 +162,51 @@ public final class TcpIpConnection implements SocketConnection, MetricsProvider,
         this.endPoint = endPoint;
     }
 
-    public void setMonitor(TcpIpConnectionMonitor monitor) {
-        this.monitor = monitor;
-    }
-
-    public TcpIpConnectionMonitor getMonitor() {
-        return monitor;
+    public void setErrorHandler(TcpIpConnectionErrorHandler errorHandler) {
+        this.errorHandler = errorHandler;
     }
 
     public int getConnectionId() {
         return connectionId;
     }
 
-    public void setSendBufferSize(int size) throws SocketException {
-        socketChannel.socket().setSendBufferSize(size);
-    }
-
-    public void setReceiveBufferSize(int size) throws SocketException {
-        socketChannel.socket().setReceiveBufferSize(size);
-    }
-
     @Override
     public boolean isClient() {
         ConnectionType t = type;
-        return (t != null) && t != ConnectionType.NONE && t.isClient();
-    }
-
-
-    /**
-     * Starts this connection.
-     * <p>
-     * Starting means that the connection is going to register itself to listen to incoming traffic.
-     */
-    public void start() {
-        socketReader.init();
+        return t != null && t != NONE && t.isClient();
     }
 
     @Override
     public boolean write(OutboundFrame frame) {
-        if (!alive.get()) {
-            if (logger.isFinestEnabled()) {
-                logger.finest("Connection is closed, won't write packet -> " + frame);
-            }
-            return false;
-        }
-        socketWriter.write(frame);
-        return true;
-    }
-
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) {
+        if (channel.write(frame)) {
             return true;
         }
-        if (!(o instanceof TcpIpConnection)) {
-            return false;
+
+        if (logger.isFinestEnabled()) {
+            logger.finest("Connection is closed, won't write packet -> " + frame);
         }
-        TcpIpConnection that = (TcpIpConnection) o;
-        return connectionId == that.getConnectionId();
+        return false;
     }
 
     @Override
     public int hashCode() {
-        return connectionId;
+        return hash(channel.isClientMode(), connectionId);
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (obj == null) {
+            return false;
+        }
+        if (getClass() != obj.getClass()) {
+            return false;
+        }
+        TcpIpConnection other = (TcpIpConnection) obj;
+        return channel.isClientMode() == other.channel.isClientMode() && connectionId == other.connectionId
+                && equals(endPoint, other.endPoint);
     }
 
     @Override
@@ -260,23 +222,28 @@ public final class TcpIpConnection implements SocketConnection, MetricsProvider,
         logClose();
 
         try {
-            if (socketChannel != null && socketChannel.isOpen()) {
-                socketReader.close();
-                socketWriter.close();
-                socketChannel.close();
-            }
+            channel.close();
         } catch (Exception e) {
             logger.warning(e);
         }
 
-        connectionManager.onClose(this);
+        lifecycleListener.onConnectionClose(this, null, false);
         ioService.onDisconnect(endPoint, cause);
-        if (cause != null && monitor != null) {
-            monitor.onError(cause);
+        if (cause != null && errorHandler != null) {
+            errorHandler.onError(cause);
         }
     }
 
+    public boolean setBinding() {
+        return binding.compareAndSet(false, true);
+    }
+
     private void logClose() {
+        Level logLevel = resolveLogLevelOnClose();
+        if (!logger.isLoggable(logLevel)) {
+            return;
+        }
+
         String message = toString() + " closed. Reason: ";
         if (closeReason != null) {
             message += closeReason;
@@ -286,18 +253,29 @@ public final class TcpIpConnection implements SocketConnection, MetricsProvider,
             message += "Socket explicitly closed";
         }
 
-        if (ioService.isActive()) {
-            if (closeCause == null || closeCause instanceof EOFException) {
-                logger.info(message);
+        if (Level.FINEST.equals(logLevel)) {
+            logger.log(logLevel, message, closeCause);
+        } else if (closeCause == null || closeCause instanceof EOFException || closeCause instanceof CancelledKeyException) {
+            logger.log(logLevel, message);
+        } else {
+            logger.log(logLevel, message, closeCause);
+        }
+    }
+
+    private Level resolveLogLevelOnClose() {
+        if (!ioService.isActive()) {
+            return Level.FINEST;
+        }
+
+        if (closeCause == null || closeCause instanceof EOFException || closeCause instanceof CancelledKeyException) {
+            if (type == ConnectionType.REST_CLIENT || type == ConnectionType.MEMCACHE_CLIENT) {
+                // text-based clients are expected to come and go frequently.
+                return Level.FINE;
             } else {
-                logger.warning(message, closeCause);
+                return Level.INFO;
             }
         } else {
-            if (closeCause == null) {
-                logger.finest(message);
-            } else {
-                logger.finest(message, closeCause);
-            }
+            return Level.WARNING;
         }
     }
 
@@ -317,14 +295,21 @@ public final class TcpIpConnection implements SocketConnection, MetricsProvider,
 
     @Override
     public String toString() {
-        Socket socket = socketChannel.socket();
-        SocketAddress localSocketAddress = socket != null ? socket.getLocalSocketAddress() : null;
-        SocketAddress remoteSocketAddress = socket != null ? socket.getRemoteSocketAddress() : null;
         return "Connection[id=" + connectionId
-                + ", " + localSocketAddress + "->" + remoteSocketAddress
+                + ", " + channel.localSocketAddress() + "->" + channel.remoteSocketAddress()
+                + ", qualifier=" + endpointManager.getEndpointQualifier()
                 + ", endpoint=" + endPoint
                 + ", alive=" + alive
                 + ", type=" + type
                 + "]";
     }
+
+    private static int hash(Object... values) {
+        return Arrays.hashCode(values);
+    }
+
+    private static boolean equals(Object a, Object b) {
+        return (a == b) || (a != null && a.equals(b));
+    }
+
 }

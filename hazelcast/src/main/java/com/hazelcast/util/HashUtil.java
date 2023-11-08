@@ -1,6 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
- * Portions Copyright 2014 the original author or authors.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -284,6 +283,13 @@ public final class HashUtil {
         return k;
     }
 
+    /**
+     * Hash function based on Knuth's multiplicative method. This version is faster than using Murmur hash but provides
+     * acceptable behavior.
+     *
+     * @param k the long for which the hash will be calculated
+     * @return the hash
+     */
     public static long fastLongMix(long k) {
         // phi = 2^64 / goldenRatio
         final long phi = 0x9E3779B97F4A7C15L;
@@ -292,6 +298,13 @@ public final class HashUtil {
         return h ^ (h >>> 16);
     }
 
+    /**
+     * Hash function based on Knuth's multiplicative method. This version is faster than using Murmur hash but provides
+     * acceptable behavior.
+     *
+     * @param k the integer for which the hash will be calculated
+     * @return the hash
+     */
     public static int fastIntMix(int k) {
         // phi = 2^32 / goldenRatio
         final int phi = 0x9E3779B9;
@@ -318,15 +331,13 @@ public final class HashUtil {
      * @throws IllegalArgumentException if mod smaller than 1.
      */
     public static int hashToIndex(int hash, int length) {
-        checkPositive(length, "mod must be larger than 0");
+        checkPositive(length, "length must be larger than 0");
 
         if (hash == Integer.MIN_VALUE) {
-            hash = 0;
-        } else {
-            hash = abs(hash);
+            return 0;
         }
 
-        return hash % length;
+        return abs(hash) % length;
     }
 
     /**

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,9 +19,9 @@ package com.hazelcast.query.impl.predicates;
 import com.hazelcast.nio.ClassLoaderUtil;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.BinaryInterface;
 import com.hazelcast.nio.serialization.HazelcastSerializationException;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
-import com.hazelcast.nio.serialization.impl.BinaryInterface;
 import com.hazelcast.query.Predicate;
 
 import java.io.IOException;
@@ -36,6 +36,9 @@ import static com.hazelcast.internal.serialization.impl.FactoryIdHelper.PREDICAT
 @BinaryInterface
 public class InstanceOfPredicate
         implements Predicate, IdentifiedDataSerializable {
+
+    private static final long serialVersionUID = 1L;
+
     private Class klass;
 
     public InstanceOfPredicate(Class klass) {
@@ -82,5 +85,23 @@ public class InstanceOfPredicate
     @Override
     public int getId() {
         return PredicateDataSerializerHook.INSTANCEOF_PREDICATE;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || !(o instanceof InstanceOfPredicate)) {
+            return false;
+        }
+
+        InstanceOfPredicate that = (InstanceOfPredicate) o;
+        return klass != null ? klass.equals(that.klass) : that.klass == null;
+    }
+
+    @Override
+    public int hashCode() {
+        return klass != null ? klass.hashCode() : 0;
     }
 }

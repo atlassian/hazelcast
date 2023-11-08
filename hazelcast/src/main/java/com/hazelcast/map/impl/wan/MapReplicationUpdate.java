@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,28 +17,39 @@
 package com.hazelcast.map.impl.wan;
 
 import com.hazelcast.core.EntryView;
-import com.hazelcast.map.merge.MapMergePolicy;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.wan.ReplicationEventObject;
+import com.hazelcast.wan.impl.DistributedServiceWanEventCounters;
 import com.hazelcast.wan.impl.WanDataSerializerHook;
 
 import java.io.IOException;
 
+/**
+ * WAN replication object for map update operations.
+ */
 public class MapReplicationUpdate implements ReplicationEventObject, IdentifiedDataSerializable {
-
-    String mapName;
-    MapMergePolicy mergePolicy;
-    EntryView entryView;
+    private String mapName;
+    /** The policy how to merge the entry on the receiving cluster */
+    private Object mergePolicy;
+    /** The updated entry */
+    private WanMapEntryView<Data, Data> entryView;
 
     public MapReplicationUpdate() {
     }
 
-    public MapReplicationUpdate(String mapName, MapMergePolicy mergePolicy, EntryView entryView) {
+    public MapReplicationUpdate(String mapName,
+                                Object mergePolicy,
+                                EntryView<Data, Data> entryView) {
         this.mergePolicy = mergePolicy;
         this.mapName = mapName;
-        this.entryView = entryView;
+        if (entryView instanceof WanMapEntryView) {
+            this.entryView = (WanMapEntryView<Data, Data>) entryView;
+        } else {
+            this.entryView = new WanMapEntryView<Data, Data>(entryView);
+        }
     }
 
     public String getMapName() {
@@ -49,19 +60,19 @@ public class MapReplicationUpdate implements ReplicationEventObject, IdentifiedD
         this.mapName = mapName;
     }
 
-    public MapMergePolicy getMergePolicy() {
+    public Object getMergePolicy() {
         return mergePolicy;
     }
 
-    public void setMergePolicy(MapMergePolicy mergePolicy) {
+    public void setMergePolicy(Object mergePolicy) {
         this.mergePolicy = mergePolicy;
     }
 
-    public EntryView getEntryView() {
+    public WanMapEntryView<Data, Data> getEntryView() {
         return entryView;
     }
 
-    public void setEntryView(EntryView entryView) {
+    public void setEntryView(WanMapEntryView<Data, Data> entryView) {
         this.entryView = entryView;
     }
 
@@ -76,7 +87,13 @@ public class MapReplicationUpdate implements ReplicationEventObject, IdentifiedD
     public void readData(ObjectDataInput in) throws IOException {
         mapName = in.readUTF();
         mergePolicy = in.readObject();
-        entryView = in.readObject();
+        EntryView<Data, Data> entryView = in.readObject();
+
+        if (entryView instanceof WanMapEntryView) {
+            this.entryView = (WanMapEntryView<Data, Data>) entryView;
+        } else {
+            this.entryView = new WanMapEntryView<Data, Data>(entryView);
+        }
     }
 
     @Override
@@ -87,5 +104,15 @@ public class MapReplicationUpdate implements ReplicationEventObject, IdentifiedD
     @Override
     public int getId() {
         return WanDataSerializerHook.MAP_REPLICATION_UPDATE;
+    }
+
+    @Override
+    public void incrementEventCount(DistributedServiceWanEventCounters counters) {
+        counters.incrementUpdate(mapName);
+    }
+
+    @Override
+    public Data getKey() {
+        return entryView.getKey();
     }
 }

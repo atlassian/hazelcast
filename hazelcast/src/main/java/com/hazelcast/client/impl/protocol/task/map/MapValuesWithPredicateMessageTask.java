@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.hazelcast.client.impl.protocol.task.map;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.MapValuesWithPredicateCodec;
 import com.hazelcast.instance.Node;
+import com.hazelcast.map.impl.MapService;
 import com.hazelcast.map.impl.query.QueryResultRow;
 import com.hazelcast.nio.Connection;
 import com.hazelcast.nio.serialization.Data;
@@ -28,6 +29,8 @@ import com.hazelcast.util.IterationType;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+
+import static com.hazelcast.map.impl.LocalMapStatsUtil.incrementOtherOperationsCount;
 
 public class MapValuesWithPredicateMessageTask
         extends DefaultMapQueryMessageTask<MapValuesWithPredicateCodec.RequestParameters> {
@@ -42,6 +45,7 @@ public class MapValuesWithPredicateMessageTask
         for (QueryResultRow resultEntry : result) {
             values.add(resultEntry.getValue());
         }
+        incrementOtherOperationsCount((MapService) getService(MapService.SERVICE_NAME), parameters.name);
         return values;
     }
 

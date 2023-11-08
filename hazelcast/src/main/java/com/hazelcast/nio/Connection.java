@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.hazelcast.nio;
 
+import com.hazelcast.internal.networking.OutboundFrame;
 import com.hazelcast.spi.annotation.PrivateApi;
 
 import java.net.InetAddress;
@@ -55,6 +56,8 @@ public interface Connection {
      * @return the ConnectionType. It could be that <code>null</code> is returned.
      */
     ConnectionType getType();
+
+    EndpointManager getEndpointManager();
 
     /**
      * Sets the type of the connection
@@ -128,7 +131,7 @@ public interface Connection {
      * If the Connection is already closed, the call is ignored. So it can safely be called multiple times.
      *
      * @param reason the reason this connection is going to be closed. Is allowed to be null.
-     * @param cause the Throwable responsible for closing this connection. Is allowed to be null.
+     * @param cause  the Throwable responsible for closing this connection. Is allowed to be null.
      */
     void close(String reason, Throwable cause);
 

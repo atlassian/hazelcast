@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,14 +16,12 @@
 
 package com.hazelcast.internal.partition;
 
-import com.hazelcast.core.HazelcastException;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.instance.Node;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.nio.Address;
-import com.hazelcast.nio.ObjectDataInput;
-import com.hazelcast.nio.Packet;
-import com.hazelcast.nio.tcp.FirewallingMockConnectionManager;
+import com.hazelcast.nio.tcp.FirewallingNetworkingService;
+import com.hazelcast.nio.tcp.OperationPacketFilter;
 import com.hazelcast.nio.tcp.PacketFilter;
 import com.hazelcast.spi.impl.SpiDataSerializerHook;
 import com.hazelcast.test.HazelcastParametersRunnerFactory;
@@ -33,33 +31,35 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
+import org.junit.runners.Parameterized.Parameters;
+import org.junit.runners.Parameterized.UseParametersRunnerFactory;
 
-import java.io.IOException;
-import java.util.Arrays;
 import java.util.Collection;
 
+import static java.util.Arrays.asList;
+
 @RunWith(Parameterized.class)
-@Parameterized.UseParametersRunnerFactory(HazelcastParametersRunnerFactory.class)
+@UseParametersRunnerFactory(HazelcastParametersRunnerFactory.class)
 @Category({QuickTest.class, ParallelTest.class})
 public class DirtyBackupTest extends PartitionCorrectnessTestSupport {
 
-    @Parameterized.Parameters(name = "backups:{0},nodes:{1}")
+    @Parameters(name = "backups:{0},nodes:{1}")
     public static Collection<Object[]> parameters() {
-        return Arrays.asList(new Object[][] {
+        return asList(new Object[][]{
                 {1, 2},
                 {2, 3},
-                {3, 4}
+                {3, 4},
         });
     }
 
     @Test
-    public void testPartitionData_withoutAntiEntropy() throws InterruptedException {
+    public void testPartitionData_withoutAntiEntropy() {
         startInstancesAndFillPartitions(false);
         assertSizeAndDataEventually(true);
     }
 
     @Test
-    public void testPartitionData_withAntiEntropy() throws InterruptedException {
+    public void testPartitionData_withAntiEntropy() {
         startInstancesAndFillPartitions(true);
         assertSizeAndDataEventually(false);
     }
@@ -81,36 +81,22 @@ public class DirtyBackupTest extends PartitionCorrectnessTestSupport {
 
     private static void setBackupPacketReorderFilter(HazelcastInstance instance) {
         Node node = getNode(instance);
-        FirewallingMockConnectionManager cm = (FirewallingMockConnectionManager) node.getConnectionManager();
-        cm.setDelayingPacketFilter(new BackupPacketReorderFilter(node.getSerializationService()));
+        FirewallingNetworkingService.FirewallingEndpointManager
+                em = (FirewallingNetworkingService.FirewallingEndpointManager) node.getEndpointManager();
+        em.setPacketFilter(new BackupPacketReorderFilter(node.getSerializationService()));
+        em.setDelayMillis(100, 1000);
     }
 
-    private static class BackupPacketReorderFilter implements PacketFilter {
-        final InternalSerializationService serializationService;
+    private static class BackupPacketReorderFilter extends OperationPacketFilter implements PacketFilter {
 
         BackupPacketReorderFilter(InternalSerializationService serializationService) {
-            this.serializationService = serializationService;
+            super(serializationService);
         }
 
         @Override
-        public boolean allow(Packet packet, Address endpoint) {
-            return !packet.isFlagSet(Packet.FLAG_OP) || allowOperation(packet);
-        }
-
-        private boolean allowOperation(Packet packet) {
-            try {
-                ObjectDataInput input = serializationService.createObjectDataInput(packet);
-                boolean identified = input.readBoolean();
-                if (identified) {
-                    int factory = input.readInt();
-                    int type = input.readInt();
-                    boolean isBackup = factory == SpiDataSerializerHook.F_ID && type == SpiDataSerializerHook.BACKUP;
-                    return !isBackup;
-                }
-            } catch (IOException e) {
-                throw new HazelcastException(e);
-            }
-            return true;
+        protected Action filterOperation(Address endpoint, int factory, int type) {
+            boolean isBackup = factory == SpiDataSerializerHook.F_ID && type == SpiDataSerializerHook.BACKUP;
+            return isBackup ? Action.DELAY : Action.ALLOW;
         }
     }
 }

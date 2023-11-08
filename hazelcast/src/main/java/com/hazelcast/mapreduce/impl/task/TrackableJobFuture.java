@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -62,11 +62,10 @@ public class TrackableJobFuture<V>
     }
 
     @Override
-    public void setResult(Object result) {
+    public boolean setResult(Object result) {
         Object finalResult = result;
         if (finalResult instanceof Throwable && !(finalResult instanceof CancellationException)) {
-            super.setResult(new ExecutionException((Throwable) finalResult));
-            return;
+            return super.setResult(new ExecutionException((Throwable) finalResult));
         }
         // If collator is available we need to execute it now
         if (collator != null) {
@@ -80,7 +79,7 @@ public class TrackableJobFuture<V>
         if (finalResult instanceof Throwable && !(finalResult instanceof CancellationException)) {
             finalResult = new ExecutionException((Throwable) finalResult);
         }
-        super.setResult(finalResult);
+        return super.setResult(finalResult);
     }
 
     @Override

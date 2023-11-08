@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,10 @@ import com.hazelcast.util.FutureUtil;
 
 import java.util.concurrent.ExecutionException;
 
+/**
+ * Exception handler which logs the {@link #message} in case the exception is a {@link MemberLeftException},
+ * otherwise wraps the exception in a {@link HazelcastException} and rethrows it.
+ */
 public final class FutureUtilExceptionHandler implements FutureUtil.ExceptionHandler {
 
     private final ILogger logger;

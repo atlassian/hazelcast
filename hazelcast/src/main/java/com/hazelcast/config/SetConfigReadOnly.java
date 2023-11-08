@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import java.util.List;
 /**
  * Contains configuration for Set(read only)
  *
- * @deprecated this class will be removed in 3.8; it is meant for internal usage only.
+ * @deprecated this class will be removed in 4.0; it is meant for internal usage only.
  */
 public class SetConfigReadOnly extends SetConfig {
 
@@ -73,7 +73,17 @@ public class SetConfigReadOnly extends SetConfig {
     }
 
     @Override
+    public SetConfig setMergePolicyConfig(MergePolicyConfig mergePolicyConfig) {
+        throw new UnsupportedOperationException("This config is read-only set: " + getName());
+    }
+
+    @Override
     public void addItemListenerConfig(ItemListenerConfig itemListenerConfig) {
+        throw new UnsupportedOperationException("This config is read-only set: " + getName());
+    }
+
+    @Override
+    public SetConfig setQuorumName(String quorumName) {
         throw new UnsupportedOperationException("This config is read-only set: " + getName());
     }
 }

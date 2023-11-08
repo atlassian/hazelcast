@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,10 +22,11 @@ import com.hazelcast.map.MapInterceptor;
 import com.hazelcast.map.impl.MapContainer;
 import com.hazelcast.map.impl.MapService;
 import com.hazelcast.query.IndexAwarePredicate;
-import com.hazelcast.query.impl.ComparisonType;
+import com.hazelcast.query.impl.Comparison;
 import com.hazelcast.query.impl.Index;
 import com.hazelcast.query.impl.QueryContext;
 import com.hazelcast.query.impl.QueryableEntry;
+import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
@@ -142,9 +143,8 @@ public class PostJoinMapOperationTest extends HazelcastTestSupport {
         public Set<QueryableEntry> filter(QueryContext queryContext) {
             Index ix = queryContext.getIndex("age");
             if (ix != null) {
-                return ix.getSubRecords(ComparisonType.GREATER, 50);
-            }
-            else {
+                return ix.getRecords(Comparison.GREATER, 50);
+            } else {
                 return null;
             }
         }
@@ -155,8 +155,7 @@ public class PostJoinMapOperationTest extends HazelcastTestSupport {
             if (ix != null) {
                 isIndexedInvocationCounter.incrementAndGet();
                 return true;
-            }
-            else {
+            } else {
                 return false;
             }
         }
@@ -164,9 +163,8 @@ public class PostJoinMapOperationTest extends HazelcastTestSupport {
         @Override
         public boolean apply(Map.Entry mapEntry) {
             if (mapEntry.getValue() instanceof Person) {
-                return ((Person)mapEntry.getValue()).getAge() > 50;
-            }
-            else {
+                return ((Person) mapEntry.getValue()).getAge() > 50;
+            } else {
                 return false;
             }
         }
@@ -219,29 +217,22 @@ public class PostJoinMapOperationTest extends HazelcastTestSupport {
         waitAllForSafeState(hz1, hz2);
 
         hzFactory.terminate(hz1);
-        waitAllForSafeState(hz1, hz2);
+        waitAllForSafeState(hz2);
 
         // then: once all migrations are committed, the query is executed *with* the index and
         // returns the expected results.
-        IMap<String, Person> mapOnNode2 = hz2.getMap("map");
-        MapService mapService = getNodeEngineImpl(hz2).getService(MapService.SERVICE_NAME);
-        // Ensure MigrationAwareService.commitMigration has completed execution.
-        // There is a slim chance to observe mapService.getMigrationsInFlight()==0 while migration is still in progress,
-        // however for this to happen it would require that before & commit/rollback migration methods are executed in an
-        // interleaved fashion.
-        while (true) {
-            Thread.sleep(100);
-            if (mapService.getOwnerMigrationsInFlight() == 0) {
-                break;
-            }
-        }
-
+        final IMap<String, Person> mapOnNode2 = hz2.getMap("map");
         final AtomicInteger invocationCounter = new AtomicInteger(0);
-        Collection<Person> personsWithAgePredicate = mapOnNode2.values(new AgePredicate(invocationCounter));
-        assertEquals("isIndexed should have located an index", 1, invocationCounter.get());
-        assertEquals("index should return 1 match", 1, personsWithAgePredicate.size());
 
-        hzFactory.terminate(hz2);
+        // eventually index should be created after join
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run() throws Exception {
+                Collection<Person> personsWithAgePredicate = mapOnNode2.values(new AgePredicate(invocationCounter));
+                assertEquals("isIndexed should have located an index", 1, invocationCounter.get());
+                assertEquals("index should return 1 match", 1, personsWithAgePredicate.size());
+            }
+        });
     }
 
     @Test
@@ -263,12 +254,15 @@ public class PostJoinMapOperationTest extends HazelcastTestSupport {
         // then: index & interceptor exist on internal MapContainer on node that joined the cluster
         MapService mapService = getNodeEngineImpl(hz2).getService(MapService.SERVICE_NAME);
         MapContainer mapContainerOnNode2 = mapService.getMapServiceContext().getMapContainer("map");
-        assertEquals(1,  mapContainerOnNode2.getIndexes().getIndexes().length);
-        assertEquals(1,  mapContainerOnNode2.getInterceptorRegistry().getInterceptors().size());
+
+
+        assertEquals(1, mapContainerOnNode2.getIndexes().getIndexes().length);
+
+        assertEquals(1, mapContainerOnNode2.getInterceptorRegistry().getInterceptors().size());
         assertEquals(Person.class,
                 mapContainerOnNode2.getInterceptorRegistry().getInterceptors().get(0).interceptGet("anything").getClass());
         assertEquals(RETURNED_FROM_INTERCEPTOR.getAge(),
-                ((Person)mapContainerOnNode2.getInterceptorRegistry().getInterceptors().get(0).interceptGet("anything")).getAge());
+                ((Person) mapContainerOnNode2.getInterceptorRegistry().getInterceptors().get(0).interceptGet("anything")).getAge());
 
         // also verify via user API
         IMap<String, Person> mapOnNode2 = hz2.getMap("map");

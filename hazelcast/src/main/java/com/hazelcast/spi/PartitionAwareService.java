@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,8 +28,8 @@ public interface PartitionAwareService {
 
     /**
      * Invoked when a partition lost is detected
-     * @param event The event object that contains the partition id and the number of replicas that is lost
+     *
+     * @param event The event object that contains the partition ID and the number of replicas that is lost
      */
     void onPartitionLost(IPartitionLostEvent event);
-
 }

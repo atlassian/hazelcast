@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,8 +33,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * {@link org.springframework.transaction.PlatformTransactionManager} implementation
  * for a single {@link HazelcastInstance}. Binds a Hazelcast {@link TransactionContext}
  * from the instance to the thread (as it is already bounded by Hazelcast itself) and makes it available for access.
- * <p><i>Note:</i> This transaction manager doesn't supports nested transactions, since
- * Hazelcast doesn't support them either.
+ * <p>
+ * <i>Note:</i> This transaction manager doesn't supports nested transactions, since Hazelcast doesn't support them either.
  *
  * @author Balint Krivan
  * @see #getTransactionContext(HazelcastInstance)
@@ -183,25 +183,25 @@ public class HazelcastTransactionManager extends AbstractPlatformTransactionMana
         private boolean newTransactionContextHolder;
         private boolean rollbackOnly;
 
-        public void setRollbackOnly(boolean rollbackOnly) {
+        void setRollbackOnly(boolean rollbackOnly) {
             this.rollbackOnly = rollbackOnly;
         }
 
-        public void setTransactionContextHolder(TransactionContextHolder transactionContextHolder,
-                                                boolean newTransactionContextHolder) {
+        void setTransactionContextHolder(TransactionContextHolder transactionContextHolder,
+                                         boolean newTransactionContextHolder) {
             this.transactionContextHolder = transactionContextHolder;
             this.newTransactionContextHolder = newTransactionContextHolder;
         }
 
-        public TransactionContextHolder getTransactionContextHolder() {
+        TransactionContextHolder getTransactionContextHolder() {
             return transactionContextHolder;
         }
 
-        public boolean isNewTransactionContextHolder() {
+        boolean isNewTransactionContextHolder() {
             return newTransactionContextHolder;
         }
 
-        public boolean hasTransaction() {
+        boolean hasTransaction() {
             return this.transactionContextHolder != null && this.transactionContextHolder.isTransactionActive();
         }
 
@@ -212,7 +212,7 @@ public class HazelcastTransactionManager extends AbstractPlatformTransactionMana
 
         @Override
         public void flush() {
-            //Do nothing here.
+            // do nothing here
         }
     }
 }

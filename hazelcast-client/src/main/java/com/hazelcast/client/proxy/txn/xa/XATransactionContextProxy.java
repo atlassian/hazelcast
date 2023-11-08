@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 package com.hazelcast.client.proxy.txn.xa;
 
 import com.hazelcast.client.connection.nio.ClientConnection;
-import com.hazelcast.client.impl.HazelcastClientInstanceImpl;
+import com.hazelcast.client.impl.clientside.HazelcastClientInstanceImpl;
 import com.hazelcast.client.proxy.txn.ClientTxnListProxy;
 import com.hazelcast.client.proxy.txn.ClientTxnMapProxy;
 import com.hazelcast.client.proxy.txn.ClientTxnMultiMapProxy;
@@ -61,6 +61,7 @@ public class XATransactionContextProxy implements ClientTransactionContext {
     final HazelcastClientInstanceImpl client;
     final XATransactionProxy transaction;
     final ClientConnection connection;
+
     private final Map<TransactionalObjectKey, TransactionalObject> txnObjectMap =
             new HashMap<TransactionalObjectKey, TransactionalObject>(2);
 
@@ -70,24 +71,24 @@ public class XATransactionContextProxy implements ClientTransactionContext {
         try {
             connection = transactionManager.connect();
         } catch (Exception e) {
-            throw new HazelcastException("Could not obtain Connection!!!", e);
+            throw new HazelcastException("Could not obtain Connection!", e);
         }
         this.transaction = new XATransactionProxy(client, connection, xid, timeout);
     }
 
     @Override
     public void beginTransaction() {
-        throw new UnsupportedOperationException("XA Transaction cannot be started manually!!!");
+        throw new UnsupportedOperationException("XA Transaction cannot be started manually!");
     }
 
     @Override
     public void commitTransaction() throws TransactionException {
-        throw new UnsupportedOperationException("XA Transaction cannot be committed manually!!!");
+        throw new UnsupportedOperationException("XA Transaction cannot be committed manually!");
     }
 
     @Override
     public void rollbackTransaction() {
-        throw new UnsupportedOperationException("XA Transaction cannot be rollbacked manually!!!");
+        throw new UnsupportedOperationException("XA Transaction cannot be rolled back manually!");
     }
 
     @Override
@@ -165,6 +166,6 @@ public class XATransactionContextProxy implements ClientTransactionContext {
 
     @Override
     public XAResource getXaResource() {
-        throw new UnsupportedOperationException("Use HazelcastInstance.getXAResource() instead!!!");
+        throw new UnsupportedOperationException("Use HazelcastInstance.getXAResource() instead!");
     }
 }

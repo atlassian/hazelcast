@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,12 @@
 package com.hazelcast.client.map;
 
 import com.hazelcast.client.test.TestHazelcastFactory;
+import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
 import com.hazelcast.map.EntryBackupProcessor;
 import com.hazelcast.map.EntryProcessor;
+import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.annotation.ParallelTest;
@@ -43,6 +45,7 @@ import static com.hazelcast.test.HazelcastTestSupport.assertTrueEventually;
 import static com.hazelcast.test.HazelcastTestSupport.randomString;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
@@ -54,13 +57,21 @@ public class ClientMapLockTest {
 
     @Before
     public void setup() {
-        hazelcastFactory.newHazelcastInstance();
+        Config config = new Config();
+        config.setProperty(GroupProperty.LOCK_MAX_LEASE_TIME_SECONDS.getName(), String.valueOf(Long.MAX_VALUE / 1000));
+        hazelcastFactory.newHazelcastInstance(config);
         client = hazelcastFactory.newHazelcastClient();
     }
 
     @After
     public void tearDown() {
         hazelcastFactory.terminateAll();
+    }
+
+    @Test
+    public void testTryLock() {
+        IMap map = client.getMap(randomString());
+        assertTrue(map.tryLock("key"));
     }
 
     @Test(expected = NullPointerException.class)
@@ -277,7 +288,7 @@ public class ClientMapLockTest {
         map.unlock(key);
 
         assertFalse(map.isLocked(key));
-        assertEquals(null, map.get(key));
+        assertNull(map.get(key));
     }
 
     @Test
@@ -292,7 +303,7 @@ public class ClientMapLockTest {
         map.unlock(key);
 
         assertFalse(map.isLocked(key));
-        assertEquals(null, map.get(key));
+        assertNull(map.get(key));
     }
 
     @Test
@@ -307,7 +318,7 @@ public class ClientMapLockTest {
         map.unlock(key);
 
         assertFalse(map.isLocked(key));
-        assertEquals(null, map.get(key));
+        assertNull(map.get(key));
     }
 
     @Test
@@ -389,7 +400,7 @@ public class ClientMapLockTest {
         }.start();
 
         removeWhileLocked.await();
-        assertEquals(null, map.get(key));
+        assertNull(map.get(key));
         checkingKey.countDown();
     }
 
@@ -637,38 +648,39 @@ public class ClientMapLockTest {
     public void testExecuteOnKeyWhenLock() throws InterruptedException {
         final IMap map = getMapForLock();
         final String key = randomString();
-        
+
         map.lock(key);
         assertTrueEventually(new AssertTask() {
             @Override
             public void run() throws Exception {
-            	String payload = randomString();
+                String payload = randomString();
                 Object ret = map.executeOnKey(key, new LockEntryProcessor(payload));
                 assertEquals(payload, ret);
             }
         }, 30);
         map.unlock(key);
     }
-    
-    private static class LockEntryProcessor implements EntryProcessor<Object,Object>, Serializable {
 
-    	public final String payload;
-    	public LockEntryProcessor(String payload) {
-    		this.payload = payload;
-    	}
-    	
-		@Override
-		public Object process(Entry entry) {
-			return payload;
-		}
+    private static class LockEntryProcessor implements EntryProcessor<Object, Object>, Serializable {
 
-		@Override
-		public EntryBackupProcessor getBackupProcessor() {
-			return null;
-		}
-    	
+        public final String payload;
+
+        public LockEntryProcessor(String payload) {
+            this.payload = payload;
+        }
+
+        @Override
+        public Object process(Entry entry) {
+            return payload;
+        }
+
+        @Override
+        public EntryBackupProcessor getBackupProcessor() {
+            return null;
+        }
+
     }
-    
+
     private IMap getMapForLock() {
         return client.getMap(randomString());
     }

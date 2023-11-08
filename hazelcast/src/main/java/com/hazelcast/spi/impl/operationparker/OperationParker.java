@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,7 +37,7 @@ public interface OperationParker {
      *
      * If wait time-outs, {@link BlockingOperation#onWaitExpire()} method is called.
      *
-     * This method should be called in the thread executes the actual {@link BlockingOperation} operation.
+     * This method should be called in the thread that executes the actual {@link BlockingOperation} operation.
      *
      *
      * @param op operation which will wait for notification

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,24 +17,30 @@
 package com.hazelcast.internal.partition.operation;
 
 import com.hazelcast.core.MigrationEvent;
-import com.hazelcast.internal.partition.impl.InternalPartitionImpl;
+import com.hazelcast.internal.partition.MigrationInfo;
+import com.hazelcast.internal.partition.PartitionReplicaVersionManager;
 import com.hazelcast.internal.partition.impl.InternalPartitionServiceImpl;
 import com.hazelcast.internal.partition.impl.PartitionEventManager;
 import com.hazelcast.internal.partition.impl.PartitionStateManager;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.spi.MigrationAwareService;
 import com.hazelcast.spi.PartitionMigrationEvent;
+import com.hazelcast.spi.ServiceNamespace;
+import com.hazelcast.spi.partition.IPartitionLostEvent;
 
 import java.util.Arrays;
 
 import static com.hazelcast.core.MigrationEvent.MigrationStatus.COMPLETED;
 import static com.hazelcast.core.MigrationEvent.MigrationStatus.FAILED;
 
-// Runs locally when the node becomes owner of a partition
-//
-// Finds the replica indices that are on the sync-waiting state. Those indices represents the lost backups of the partition.
-// Therefore, it publishes InternalPartitionLostEvent objects to notify related services. It also updates the version for the
-// lost replicas to the first available version value after the lost backups, or 0 if N/A
+/**
+ * Runs locally when the node becomes owner of a partition.
+ * Finds the replica indices that are on the sync-waiting state. Those indices represents the lost backups of the partition.
+ * Therefore, it publishes {@link IPartitionLostEvent} to listeners and updates the version for the lost replicas to the
+ * first available version value after the lost backups, or {@code 0} if N/A.
+ * In the end it sends a {@link PartitionMigrationEvent} to notify {@link MigrationAwareService}s and a {@link MigrationEvent}
+ * to notify registered listeners of promotion commit or rollback.
+ */
 final class FinalizePromotionOperation extends AbstractPromotionOperation {
 
     private final boolean success;
@@ -45,22 +51,18 @@ final class FinalizePromotionOperation extends AbstractPromotionOperation {
      * coding conventions.
      */
     public FinalizePromotionOperation() {
-        super(-1);
+        super(null);
         success = false;
     }
 
-    FinalizePromotionOperation(int currentReplicaIndex, boolean success) {
-        super(currentReplicaIndex);
+    FinalizePromotionOperation(MigrationInfo migrationInfo, boolean success) {
+        super(migrationInfo);
         this.success = success;
-    }
-
-    private void initLogger() {
-        logger = getLogger();
     }
 
     @Override
     public void beforeRun() throws Exception {
-        initLogger();
+        logger = getLogger();
     }
 
     @Override
@@ -79,33 +81,46 @@ final class FinalizePromotionOperation extends AbstractPromotionOperation {
 
     @Override
     public void afterRun() throws Exception {
-        clearPartitionMigratingFlag();
-        MigrationEvent.MigrationStatus status = success ? COMPLETED : FAILED;
-        sendMigrationEvent(status);
+        InternalPartitionServiceImpl service = getService();
+        PartitionStateManager partitionStateManager = service.getPartitionStateManager();
+        partitionStateManager.clearMigratingFlag(getPartitionId());
+
+        sendMigrationEvent(success ? COMPLETED : FAILED);
     }
 
+    /**
+     * Sets replica versions up to this replica to the version of the last lost replica and
+     * sends a {@link IPartitionLostEvent}.
+     */
     private void shiftUpReplicaVersions() {
-        final int partitionId = getPartitionId();
+        int partitionId = getPartitionId();
+        int currentReplicaIndex = migrationInfo.getDestinationCurrentReplicaIndex();
+        int lostReplicaIndex = currentReplicaIndex - 1;
+
         try {
-            final InternalPartitionServiceImpl partitionService = getService();
-            // returns the internal array itself, not the copy
-            final long[] versions = partitionService.getPartitionReplicaVersions(partitionId);
+            InternalPartitionServiceImpl partitionService = getService();
+            PartitionReplicaVersionManager partitionReplicaVersionManager = partitionService.getPartitionReplicaVersionManager();
 
-            final int lostReplicaIndex = currentReplicaIndex - 1;
+            for (ServiceNamespace namespace : partitionReplicaVersionManager.getNamespaces(partitionId)) {
+                // returns the internal array itself, not the copy
+                long[] versions = partitionReplicaVersionManager.getPartitionReplicaVersions(partitionId, namespace);
 
-            if (currentReplicaIndex > 1) {
-                final long[] versionsCopy = Arrays.copyOf(versions, versions.length);
-                final long version = versions[lostReplicaIndex];
-                Arrays.fill(versions, 0, lostReplicaIndex, version);
+                if (currentReplicaIndex > 1) {
+                    long[] versionsCopy = Arrays.copyOf(versions, versions.length);
+                    long version = versions[lostReplicaIndex];
+                    Arrays.fill(versions, 0, lostReplicaIndex, version);
 
-                if (logger.isFinestEnabled()) {
-                    logger.finest(
-                            "Partition replica is lost! partitionId=" + partitionId + " lost replicaIndex=" + lostReplicaIndex
-                                    + " replica versions before shift up=" + Arrays.toString(versionsCopy)
-                                    + " replica versions after shift up=" + Arrays.toString(versions));
+                    if (logger.isFinestEnabled()) {
+                        logger.finest(
+                                "Partition replica is lost! partitionId=" + partitionId
+                                        + " namespace: " + namespace + " lost replicaIndex=" + lostReplicaIndex
+                                        + " replica versions before shift up=" + Arrays.toString(versionsCopy)
+                                        + " replica versions after shift up=" + Arrays.toString(versions));
+                    }
+                } else if (logger.isFinestEnabled()) {
+                    logger.finest("PROMOTE partitionId=" + getPartitionId() + " namespace: " + namespace
+                            + " from currentReplicaIndex=" + currentReplicaIndex);
                 }
-            } else if (logger.isFinestEnabled()) {
-                logger.finest("PROMOTE partitionId=" + getPartitionId() + " from currentReplicaIndex=" + currentReplicaIndex);
             }
 
             PartitionEventManager partitionEventManager = partitionService.getPartitionEventManager();
@@ -115,32 +130,27 @@ final class FinalizePromotionOperation extends AbstractPromotionOperation {
         }
     }
 
+    /** Calls commit on all {@link MigrationAwareService}. */
     private void commitServices() {
         PartitionMigrationEvent event = getPartitionMigrationEvent();
         for (MigrationAwareService service : getMigrationAwareServices()) {
             try {
                 service.commitMigration(event);
             } catch (Throwable e) {
-                logger.warning("While promoting partitionId=" + getPartitionId(), e);
+                logger.warning("While promoting " + getPartitionMigrationEvent(), e);
             }
         }
     }
 
+    /** Calls rollback on all {@link MigrationAwareService}. */
     private void rollbackServices() {
         PartitionMigrationEvent event = getPartitionMigrationEvent();
         for (MigrationAwareService service : getMigrationAwareServices()) {
             try {
                 service.rollbackMigration(event);
             } catch (Throwable e) {
-                logger.warning("While promoting partitionId=" + getPartitionId(), e);
+                logger.warning("While promoting " + getPartitionMigrationEvent(), e);
             }
         }
-    }
-
-    private void clearPartitionMigratingFlag() {
-        final InternalPartitionServiceImpl service = getService();
-        PartitionStateManager partitionStateManager = service.getPartitionStateManager();
-        final InternalPartitionImpl partition = partitionStateManager.getPartitionImpl(getPartitionId());
-        partition.setMigrating(false);
     }
 }

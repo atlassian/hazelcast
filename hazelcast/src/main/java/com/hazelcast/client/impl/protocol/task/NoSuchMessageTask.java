@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,11 +22,7 @@ import com.hazelcast.nio.Connection;
 
 import java.security.Permission;
 
-/**
- *
- */
-public class NoSuchMessageTask
-        extends AbstractMessageTask<ClientMessage> {
+public class NoSuchMessageTask extends AbstractMessageTask<ClientMessage> {
 
     public NoSuchMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
@@ -44,8 +40,15 @@ public class NoSuchMessageTask
 
     @Override
     protected void processMessage() {
-        logger.warning("Unrecognized client message received with type: 0x"
-                + Integer.toHexString(parameters.getMessageType()));
+        String message = "Unrecognized client message received with type: 0x"
+                + Integer.toHexString(parameters.getMessageType());
+        logger.warning(message);
+        throw new UnsupportedOperationException(message);
+    }
+
+    @Override
+    protected boolean requiresAuthentication() {
+        return false;
     }
 
     @Override
@@ -68,7 +71,7 @@ public class NoSuchMessageTask
         return null;
     }
 
-    //Overriding the partition id send from client as it is not recognized
+    // overriding the partition ID send from client as it is not recognized
     @Override
     public int getPartitionId() {
         return -1;

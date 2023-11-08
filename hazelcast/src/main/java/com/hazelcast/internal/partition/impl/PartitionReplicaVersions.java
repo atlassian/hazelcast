@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,97 +16,88 @@
 
 package com.hazelcast.internal.partition.impl;
 
-import com.hazelcast.internal.partition.InternalPartition;
+import com.hazelcast.spi.ServiceNamespace;
 
-import java.util.Arrays;
-
-import static java.lang.System.arraycopy;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
 
 // read and updated only by partition threads
 final class PartitionReplicaVersions {
     private final int partitionId;
-    private final long[] versions = new long[InternalPartition.MAX_BACKUP_COUNT];
-    /**
-     * Shows whether partition has missing backups somewhere between the last applied backup
-     * and the last incremental backup received.
-     */
-    private boolean dirty;
+
+    private final Map<ServiceNamespace, PartitionReplicaFragmentVersions> fragmentVersionsMap
+            = new HashMap<ServiceNamespace, PartitionReplicaFragmentVersions>();
 
     PartitionReplicaVersions(int partitionId) {
         this.partitionId = partitionId;
     }
 
-    long[] incrementAndGet(int backupCount) {
-        for (int i = 0; i < backupCount; i++) {
-            versions[i]++;
-        }
-        return versions;
+    long[] incrementAndGet(ServiceNamespace namespace, int backupCount) {
+        return getFragmentVersions(namespace).incrementAndGet(backupCount);
     }
 
-    long[] get() {
-        return versions;
+    long[] get(ServiceNamespace namespace) {
+        return getFragmentVersions(namespace).get();
     }
 
     /**
      * Returns whether given replica version is behind the current version or not.
+     * @param namespace replica namespace
      * @param newVersions new replica versions
      * @param replicaIndex replica index
      * @return true if given version is stale, false otherwise
      */
-    boolean isStale(long[] newVersions, int replicaIndex) {
-        int index = replicaIndex - 1;
-        long currentVersion = versions[index];
-        long newVersion = newVersions[index];
-        return currentVersion > newVersion;
+    boolean isStale(ServiceNamespace namespace, long[] newVersions, int replicaIndex) {
+        return getFragmentVersions(namespace).isStale(newVersions, replicaIndex);
     }
 
     /**
      * Updates replica version if it is newer than current version. Otherwise has no effect.
      * Marks versions as dirty if version increase is not incremental.
      *
+     * @param namespace replica namespace
      * @param newVersions new replica versions
      * @param replicaIndex replica index
      * @return returns false if versions are dirty, true otherwise
      */
-    boolean update(long[] newVersions, int replicaIndex) {
-        int index = replicaIndex - 1;
-        long currentVersion = versions[index];
-        long nextVersion = newVersions[index];
+    boolean update(ServiceNamespace namespace, long[] newVersions, int replicaIndex) {
+        return getFragmentVersions(namespace).update(newVersions, replicaIndex);
+    }
 
-        boolean incremental = (currentVersion == nextVersion - 1);
-        boolean newer = currentVersion < nextVersion;
+    void set(ServiceNamespace namespace, long[] newVersions, int fromReplica) {
+        getFragmentVersions(namespace).set(newVersions, fromReplica);
+    }
 
-        if (newer) {
-            setVersions(newVersions, replicaIndex);
-            dirty = dirty || !incremental;
+    boolean isDirty(ServiceNamespace namespace) {
+        return getFragmentVersions(namespace).isDirty();
+    }
+
+    void clear(ServiceNamespace namespace) {
+        getFragmentVersions(namespace).clear();
+    }
+
+    private PartitionReplicaFragmentVersions getFragmentVersions(ServiceNamespace namespace) {
+        PartitionReplicaFragmentVersions fragmentVersions = fragmentVersionsMap.get(namespace);
+        if (fragmentVersions == null) {
+            fragmentVersions = new PartitionReplicaFragmentVersions(partitionId, namespace);
+            fragmentVersionsMap.put(namespace, fragmentVersions);
         }
-        return !dirty;
+        return fragmentVersions;
     }
 
-    private void setVersions(long[] newVersions, int fromReplica) {
-        int fromIndex = fromReplica - 1;
-        int len = newVersions.length - fromIndex;
-        arraycopy(newVersions, fromIndex, versions, fromIndex, len);
+    void retainNamespaces(Set<ServiceNamespace> namespaces) {
+        fragmentVersionsMap.keySet().retainAll(namespaces);
     }
 
-    void set(long[] newVersions, int fromReplica) {
-        setVersions(newVersions, fromReplica);
-        dirty = false;
-    }
-
-    boolean isDirty() {
-        return dirty;
-    }
-
-    void clear() {
-        for (int i = 0; i < versions.length; i++) {
-            versions[i] = 0;
-        }
-        dirty = false;
+    Collection<ServiceNamespace> getNamespaces() {
+        return fragmentVersionsMap.keySet();
     }
 
     @Override
     public String toString() {
-        return getClass().getSimpleName() + "{partitionId=" + partitionId + ", versions=" + Arrays.toString(versions) + '}';
+        return "PartitionReplicaVersions{" + "partitionId=" + partitionId + ", fragmentVersions=" + fragmentVersionsMap
+                + '}';
     }
 }

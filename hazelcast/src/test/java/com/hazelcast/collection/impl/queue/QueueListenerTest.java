@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -114,7 +114,7 @@ public class QueueListenerTest extends HazelcastTestSupport {
         for (int i = 0; i < TOTAL_QUEUE_PUT / 4; i++) {
             queue.put(i);
         }
-        assertTrue(countdownItemListener.added.await(3, TimeUnit.SECONDS));
+        assertOpenEventually(countdownItemListener.added);
     }
 
     @Test

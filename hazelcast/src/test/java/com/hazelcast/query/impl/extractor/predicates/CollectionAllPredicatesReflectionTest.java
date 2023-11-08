@@ -1,14 +1,33 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.query.impl.extractor.predicates;
 
 import com.hazelcast.config.InMemoryFormat;
 import com.hazelcast.query.Predicates;
 import com.hazelcast.query.impl.extractor.AbstractExtractionTest;
+import com.hazelcast.test.HazelcastParametersRunnerFactory;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
+import org.junit.runners.Parameterized.Parameters;
+import org.junit.runners.Parameterized.UseParametersRunnerFactory;
 
 import java.util.Collection;
 
@@ -28,9 +47,9 @@ import static java.util.Arrays.asList;
  * Tests whether all predicates work with the extraction in collections.
  * Each predicate is tested with and without the extraction including "any" operator.
  * Extraction with the "any" operator may return multiple results, thus each predicate has to handle it.
- *
+ * <p>
  * Extraction mechanism: IN-BUILT REFLECTION EXTRACTION
- *
+ * <p>
  * The trick here is that each multi-value attribute in the used data structure is present as both an array and as
  * a collection. For more details have a look at CollectionDataStructure.
  * This test is parametrised, so that it's executed for both options too (arrays and collections).
@@ -38,18 +57,28 @@ import static java.util.Arrays.asList;
  * limbs_[1].power is unfolded to: limbs_array[1].power and limbs_list[1].power in two separate tests run.
  * In this way we are testing extraction in collection and arrays making sure that the default behavior is consistent
  * for both extraction sources!
- *
+ * <p>
  * It's not the only parametrisation in this test; the other ones are:
  * - each test is executed separately for BINARY and OBJECT in memory format
  * - each test is executed separately having each query using NO_INDEX, UNORDERED_INDEX and ORDERED_INDEX.
  * In this way we are spec-testing most of the reasonable combinations of the configuration of map & extraction.
  */
 @RunWith(Parameterized.class)
+@UseParametersRunnerFactory(HazelcastParametersRunnerFactory.class)
 @Category({QuickTest.class, ParallelTest.class})
 public class CollectionAllPredicatesReflectionTest extends AbstractExtractionTest {
 
     private static final Person BOND = person(limb("left", 49), limb("right", 51));
     private static final Person KRUEGER = person(limb("links", 27), limb("rechts", 29));
+
+    @Parameters(name = "{index}: {0}, {1}, {2}")
+    public static Collection<Object[]> data() {
+        return axes(
+                asList(BINARY, OBJECT),
+                asList(NO_INDEX, UNORDERED, ORDERED),
+                asList(ARRAY, LIST)
+        );
+    }
 
     public CollectionAllPredicatesReflectionTest(InMemoryFormat inMemoryFormat, Index index, Multivalue multivalue) {
         super(inMemoryFormat, index, multivalue);
@@ -165,14 +194,5 @@ public class CollectionAllPredicatesReflectionTest extends AbstractExtractionTes
         execute(Input.of(BOND, KRUEGER),
                 Query.of(Predicates.regex("limbs_[any].name", "li.*"), mv),
                 Expected.of(KRUEGER));
-    }
-
-    @Parameterized.Parameters(name = "{index}: {0}, {1}, {2}")
-    public static Collection<Object[]> data() {
-        return axes(
-                asList(BINARY, OBJECT),
-                asList(NO_INDEX, UNORDERED, ORDERED),
-                asList(ARRAY, LIST)
-        );
     }
 }

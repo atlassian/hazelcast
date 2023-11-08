@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,14 +44,14 @@ import java.io.IOException;
 public interface Portable {
 
     /**
-     * Returns PortableFactory id for this portable class
-     * @return factory id
+     * Returns PortableFactory ID for this portable class
+     * @return factory ID
      */
     int getFactoryId();
 
     /**
-     * Returns class identifier for this portable class. Class id should be unique per PortableFactory.
-     * @return class id
+     * Returns class identifier for this portable class. Class ID should be unique per PortableFactory.
+     * @return class ID
      */
     int getClassId();
 

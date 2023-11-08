@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,8 @@ import java.io.IOException;
 import static com.hazelcast.map.impl.MapListenerFlagOperator.SET_ALL_LISTENER_FLAGS;
 
 /**
+ * Event filter matching events of specified types. This filter also contains an another filter but it does not
+ * involve it when evaluating if the event matches.
  * Prevents sending of not requested events to a {@link com.hazelcast.map.listener.MapListener MapListener}
  * by filtering events according the implemented {@link com.hazelcast.map.listener.MapListener MapListener} sub-interfaces.
  * <p/>

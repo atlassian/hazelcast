@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.hazelcast.client.listeners;
 
+import com.hazelcast.collection.impl.set.SetService;
 import com.hazelcast.core.ISet;
 import com.hazelcast.core.ItemEvent;
 import com.hazelcast.core.ItemListener;
@@ -25,8 +26,6 @@ import com.hazelcast.test.annotation.QuickTest;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import java.util.concurrent.atomic.AtomicInteger;
-
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
 public class SetItemListenerOnReconnectTest extends AbstractListenersOnReconnectTest {
@@ -34,13 +33,18 @@ public class SetItemListenerOnReconnectTest extends AbstractListenersOnReconnect
     private ISet<String> iSet;
 
     @Override
-    protected String addListener(final AtomicInteger eventCount) {
+    String getServiceName() {
+        return SetService.SERVICE_NAME;
+    }
+
+    @Override
+    protected String addListener() {
         iSet = client.getSet(randomString());
 
         ItemListener<String> listener = new ItemListener<String>() {
             @Override
-            public void itemAdded(ItemEvent item) {
-                eventCount.incrementAndGet();
+            public void itemAdded(ItemEvent<String> item) {
+                onEvent(item.getItem());
             }
 
             @Override
@@ -51,8 +55,8 @@ public class SetItemListenerOnReconnectTest extends AbstractListenersOnReconnect
     }
 
     @Override
-    public void produceEvent() {
-        iSet.add(randomString());
+    public void produceEvent(String event) {
+        iSet.add(event);
     }
 
     @Override

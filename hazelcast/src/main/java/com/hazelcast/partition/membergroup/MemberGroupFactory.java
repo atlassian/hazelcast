@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,16 @@
 
 package com.hazelcast.partition.membergroup;
 
+import com.hazelcast.config.PartitionGroupConfig;
 import com.hazelcast.core.Member;
 
 import java.util.Collection;
 
+/**
+ * Defines how members will be grouped (e.g. during partition arrangement).
+ *
+ * @see PartitionGroupConfig#getGroupType()
+ */
 public interface MemberGroupFactory {
 
     Collection<MemberGroup> createMemberGroups(Collection<? extends Member> members);

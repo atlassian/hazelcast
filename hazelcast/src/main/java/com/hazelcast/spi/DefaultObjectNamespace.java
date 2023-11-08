@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,17 +18,23 @@ package com.hazelcast.spi;
 
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.SerializableByConvention;
 
 import java.io.IOException;
 
+import static com.hazelcast.nio.serialization.SerializableByConvention.Reason.PUBLIC_API;
+
 /**
- * Default {@link com.hazelcast.spi.ObjectNamespace} implementation.
+ * Default {@link ObjectNamespace} implementation.
+ * @deprecated please use {@link DistributedObjectNamespace}
  */
-public final class DefaultObjectNamespace implements ObjectNamespace {
+@SerializableByConvention(PUBLIC_API)
+@Deprecated
+public class DefaultObjectNamespace implements ObjectNamespace {
 
-    private String service;
+    protected String service;
 
-    private String objectName;
+    protected String objectName;
 
     public DefaultObjectNamespace() {
     }
@@ -36,6 +42,10 @@ public final class DefaultObjectNamespace implements ObjectNamespace {
     public DefaultObjectNamespace(String serviceName, String objectName) {
         this.service = serviceName;
         this.objectName = objectName;
+    }
+
+    public DefaultObjectNamespace(ObjectNamespace namespace) {
+        this(namespace.getServiceName(), namespace.getObjectName());
     }
 
     @Override
@@ -62,30 +72,24 @@ public final class DefaultObjectNamespace implements ObjectNamespace {
     }
 
     @Override
-    public boolean equals(Object o) {
+    public final boolean equals(Object o) {
         if (this == o) {
             return true;
         }
-        if (o == null || getClass() != o.getClass()) {
+
+        // allow subclasses
+        if (!(o instanceof DefaultObjectNamespace)) {
             return false;
         }
 
         DefaultObjectNamespace that = (DefaultObjectNamespace) o;
-
-        if (objectName != null ? !objectName.equals(that.objectName) : that.objectName != null) {
-            return false;
-        }
-        if (service != null ? !service.equals(that.service) : that.service != null) {
-            return false;
-        }
-
-        return true;
+        return service.equals(that.service) && objectName.equals(that.objectName);
     }
 
     @Override
-    public int hashCode() {
-        int result = service != null ? service.hashCode() : 0;
-        result = 31 * result + (objectName != null ? objectName.hashCode() : 0);
+    public final int hashCode() {
+        int result = service.hashCode();
+        result = 31 * result + objectName.hashCode();
         return result;
     }
 

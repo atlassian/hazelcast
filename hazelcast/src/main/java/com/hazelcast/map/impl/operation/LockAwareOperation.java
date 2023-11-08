@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,13 +17,11 @@
 package com.hazelcast.map.impl.operation;
 
 import com.hazelcast.concurrent.lock.LockWaitNotifyKey;
-import com.hazelcast.map.impl.MapService;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.BlockingOperation;
-import com.hazelcast.spi.DefaultObjectNamespace;
 import com.hazelcast.spi.WaitNotifyKey;
 
-public abstract class LockAwareOperation extends MutatingKeyBasedMapOperation implements BlockingOperation {
+public abstract class LockAwareOperation extends KeyBasedMapOperation implements BlockingOperation {
 
     protected LockAwareOperation() {
     }
@@ -32,12 +30,12 @@ public abstract class LockAwareOperation extends MutatingKeyBasedMapOperation im
         super(name, dataKey);
     }
 
-    protected LockAwareOperation(String name, Data dataKey, long ttl) {
-        super(name, dataKey, ttl);
+    protected LockAwareOperation(String name, Data dataKey, long ttl, long maxIdle) {
+        super(name, dataKey, ttl, maxIdle);
     }
 
-    protected LockAwareOperation(String name, Data dataKey, Data dataValue, long ttl) {
-        super(name, dataKey, dataValue, ttl);
+    protected LockAwareOperation(String name, Data dataKey, Data dataValue, long ttl, long maxIdle) {
+        super(name, dataKey, dataValue, ttl, maxIdle);
     }
 
     @Override
@@ -50,6 +48,6 @@ public abstract class LockAwareOperation extends MutatingKeyBasedMapOperation im
 
     @Override
     public final WaitNotifyKey getWaitKey() {
-        return new LockWaitNotifyKey(new DefaultObjectNamespace(MapService.SERVICE_NAME, name), dataKey);
+        return new LockWaitNotifyKey(getServiceNamespace(), dataKey);
     }
 }

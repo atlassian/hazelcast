@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,11 +20,13 @@ import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
+import com.hazelcast.util.Clock;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
+import static com.hazelcast.test.HazelcastTestSupport.assumeDifferentHashCodes;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 import static org.mockito.Mockito.mock;
@@ -61,7 +63,7 @@ public class ObjectRecordWithStatsTest {
 
         recordOtherExpirationTime = new ObjectRecordWithStats(VALUE);
         recordOtherExpirationTime.setKey(key);
-        recordOtherExpirationTime.setExpirationTime(2342);
+        recordOtherExpirationTime.setExpirationTime(Clock.currentTimeMillis());
 
         recordOtherKeyAndValue = new ObjectRecordWithStats();
         recordOtherKeyAndValue.setKey(otherKey);
@@ -104,6 +106,7 @@ public class ObjectRecordWithStatsTest {
         assertEquals(record.hashCode(), record.hashCode());
         assertEquals(record.hashCode(), recordSameAttributes.hashCode());
 
+        assumeDifferentHashCodes();
         assertNotEquals(record.hashCode(), dataRecord.hashCode());
         assertNotEquals(record.hashCode(), recordOtherLastStoredTime.hashCode());
         assertNotEquals(record.hashCode(), recordOtherExpirationTime.hashCode());

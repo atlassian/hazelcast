@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
 package com.hazelcast.cache.impl;
 
 import javax.cache.management.CacheStatisticsMXBean;
-import java.io.Serializable;
 
 /**
  * Implementation of {@link javax.cache.management.CacheStatisticsMXBean}
@@ -26,12 +25,9 @@ import java.io.Serializable;
  *     into one by accessing each node's statistics through JMX.
  * </p>
  */
-public class CacheStatisticsMXBeanImpl
-        implements CacheStatisticsMXBean, Serializable {
+public class CacheStatisticsMXBeanImpl implements CacheStatisticsMXBean {
 
-    private static final long serialVersionUID = -1;
-
-    private transient CacheStatisticsImpl statistics;
+    private CacheStatisticsImpl statistics;
 
     public CacheStatisticsMXBeanImpl(CacheStatisticsImpl statistics) {
         this.statistics = statistics;

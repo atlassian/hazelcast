@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.hazelcast.config;
 
+import com.hazelcast.security.jsm.HazelcastRuntimePermission;
 import com.hazelcast.util.StringUtil;
 
 import java.util.Collection;
@@ -24,12 +25,15 @@ import java.util.HashSet;
 /**
  * Contains configuration for Network.
  */
+@SuppressWarnings("checkstyle:methodcount")
 public class NetworkConfig {
 
     /**
-     * Default value of port number
+     * Default value of port number.
      */
     public static final int DEFAULT_PORT = 5701;
+
+    private static final int PORT_MAX = 0xFFFF;
 
     private static final int PORT_AUTO_INCREMENT = 100;
 
@@ -57,6 +61,14 @@ public class NetworkConfig {
 
     private SSLConfig sslConfig;
 
+    private MemberAddressProviderConfig memberAddressProviderConfig = new MemberAddressProviderConfig();
+
+    private IcmpFailureDetectorConfig icmpFailureDetectorConfig;
+
+    private RestApiConfig restApiConfig;
+
+    private MemcacheProtocolConfig memcacheProtocolConfig;
+
     public NetworkConfig() {
         String os = StringUtil.lowerCaseInternal(System.getProperty("os.name"));
         reuseAddress = (!os.contains("win"));
@@ -64,6 +76,7 @@ public class NetworkConfig {
 
     /**
      * Returns the port the Hazelcast member will try to bind on.
+     * A port number of 0 will let the system pick up an ephemeral port.
      *
      * @return the port the Hazelcast member will try to bind on
      * @see #setPort(int)
@@ -75,12 +88,18 @@ public class NetworkConfig {
     /**
      * Sets the port the Hazelcast member will try to bind on.
      *
+     * A valid port value is between 0 and 65535.
+     * A port number of 0 will let the system pick up an ephemeral port.
+     *
      * @param port the port the Hazelcast member will try to bind on
      * @return NetworkConfig the updated NetworkConfig
      * @see #getPort()
-     * @see #setPortAutoIncrement(boolean) for more information.
+     * @see #setPortAutoIncrement(boolean) for more information
      */
     public NetworkConfig setPort(int port) {
+        if (port < 0 || port > PORT_MAX) {
+            throw new IllegalArgumentException("Port out of range: " + port + ". Allowed range [0,65535]");
+        }
         this.port = port;
         return this;
     }
@@ -90,7 +109,7 @@ public class NetworkConfig {
      *
      * @return the maximum number of ports allowed to try to bind on
      * @see #setPortCount(int)
-     * @see #setPortAutoIncrement(boolean) for more information.
+     * @see #setPortAutoIncrement(boolean) for more information
      */
     public int getPortCount() {
         return portCount;
@@ -99,8 +118,8 @@ public class NetworkConfig {
     /**
      * The maximum number of ports allowed to use.
      *
-     * @param portCount the maximum number of ports allowed to use.
-     * @see #setPortAutoIncrement(boolean) for more information.
+     * @param portCount the maximum number of ports allowed to use
+     * @see #setPortAutoIncrement(boolean) for more information
      */
     public void setPortCount(int portCount) {
         if (portCount < 1) {
@@ -123,11 +142,11 @@ public class NetworkConfig {
     /**
      * Sets if a Hazelcast member is allowed to find a free port by incrementing the port number when it encounters
      * an occupied port.
-     * <p/>
+     * <p>
      * If you explicitly want to control the port a Hazelcast member is going to use, you probably want to set
      * portAutoincrement to false. In this case, the Hazelcast member is going to try the port {@link #setPort(int)}
      * and if the port is not free, the member will not start and throw an exception.
-     * <p/>
+     * <p>
      * If this value is set to true, Hazelcast will start at the port specified by {@link #setPort(int)} and will try
      * until it finds a free port, or until it runs out of ports to try {@link #setPortCount(int)}.
      *
@@ -148,13 +167,13 @@ public class NetworkConfig {
 
     /**
      * Sets the reuse address.
-     *
+     * <p>
      * When should setReuseAddress(true) be used?
-     *
+     * <p>
      * When the member is shutdown, the server socket port will be in TIME_WAIT state for the next 2 minutes or so. If you
      * start the member right after shutting it down, you may not be able to bind to the same port because it is in TIME_WAIT
      * state. if you set reuseAddress=true then TIME_WAIT will be ignored and you will be able to bind to the same port again.
-     *
+     * <p>
      * This property should not be set to true on the Windows platform: see
      * <ol>
      * <li>http://bugs.sun.com/bugdatabase/view_bug.do?bug_id=6421091</li>
@@ -250,7 +269,7 @@ public class NetworkConfig {
     }
 
     /**
-     * Gets the {@link SocketInterceptorConfig}. The value can be null if no socket interception is needed.
+     * Gets the {@link SocketInterceptorConfig}. The value can be {@code null} if no socket interception is needed.
      *
      * @return the SocketInterceptorConfig
      * @see #setSocketInterceptorConfig(SocketInterceptorConfig)
@@ -260,7 +279,7 @@ public class NetworkConfig {
     }
 
     /**
-     * Sets the {@link SocketInterceptorConfig}. The value can be null if no socket interception is needed.
+     * Sets the {@link SocketInterceptorConfig}. The value can be {@code null} if no socket interception is needed.
      *
      * @param socketInterceptorConfig the SocketInterceptorConfig to set
      * @return the updated NetworkConfig
@@ -271,7 +290,7 @@ public class NetworkConfig {
     }
 
     /**
-     * Gets the {@link SymmetricEncryptionConfig}. The value can be null which means that no symmetric encryption should
+     * Gets the {@link SymmetricEncryptionConfig}. The value can be {@code null} which means that no symmetric encryption should
      * be used.
      *
      * @return the SymmetricEncryptionConfig
@@ -281,10 +300,10 @@ public class NetworkConfig {
     }
 
     /**
-     * Sets the {@link SymmetricEncryptionConfig}. The value can be null if no symmetric encryption should be used.
+     * Sets the {@link SymmetricEncryptionConfig}. The value can be {@code null} if no symmetric encryption should be used.
      *
      * @param symmetricEncryptionConfig the SymmetricEncryptionConfig to set
-     * @return the updated NetworkConfig.
+     * @return the updated NetworkConfig
      * @see #getSymmetricEncryptionConfig()
      */
     public NetworkConfig setSymmetricEncryptionConfig(final SymmetricEncryptionConfig symmetricEncryptionConfig) {
@@ -293,25 +312,86 @@ public class NetworkConfig {
     }
 
     /**
-     * Returns the current {@link SSLConfig}. It is possible that null is returned if no SSLConfig has been
-     * set.
+     * Returns the current {@link SSLConfig}. It is possible that null is returned if no SSLConfig has been set.
      *
-     * @return the SSLConfig.
+     * @return the SSLConfig
      * @see #setSSLConfig(SSLConfig)
+     * @throws SecurityException If a security manager exists and the calling method doesn't have corresponding
+     *         {@link HazelcastRuntimePermission}
      */
     public SSLConfig getSSLConfig() {
+        SecurityManager sm = System.getSecurityManager();
+        if (sm != null) {
+            sm.checkPermission(new HazelcastRuntimePermission("com.hazelcast.config.NetworkConfig.getSSLConfig"));
+        }
         return sslConfig;
     }
 
     /**
      * Sets the {@link SSLConfig}. null value indicates that no SSLConfig should be used.
      *
-     * @param sslConfig the SSLConfig.
-     * @return the updated NetworkConfig.
+     * @param sslConfig the SSLConfig
+     * @return the updated NetworkConfig
      * @see #getSSLConfig()
+     * @throws SecurityException If a security manager exists and the calling method doesn't have corresponding
+     *         {@link HazelcastRuntimePermission}
      */
     public NetworkConfig setSSLConfig(SSLConfig sslConfig) {
+        SecurityManager sm = System.getSecurityManager();
+        if (sm != null) {
+            sm.checkPermission(new HazelcastRuntimePermission("com.hazelcast.config.NetworkConfig.setSSLConfig"));
+        }
         this.sslConfig = sslConfig;
+        return this;
+    }
+
+    public MemberAddressProviderConfig getMemberAddressProviderConfig() {
+        return memberAddressProviderConfig;
+    }
+
+    public NetworkConfig setMemberAddressProviderConfig(MemberAddressProviderConfig memberAddressProviderConfig) {
+        this.memberAddressProviderConfig = memberAddressProviderConfig;
+        return this;
+    }
+
+    /**
+     * Sets the {@link IcmpFailureDetectorConfig}. The value can be {@code null} if this detector isn't needed.
+     *
+     * @param icmpFailureDetectorConfig the IcmpFailureDetectorConfig to set
+     * @return the updated NetworkConfig
+     * @see #getIcmpFailureDetectorConfig()
+     */
+    public NetworkConfig setIcmpFailureDetectorConfig(final IcmpFailureDetectorConfig icmpFailureDetectorConfig) {
+        this.icmpFailureDetectorConfig = icmpFailureDetectorConfig;
+        return this;
+    }
+
+    /**
+     * Returns the current {@link IcmpFailureDetectorConfig}. It is possible that null is returned if no
+     * IcmpFailureDetectorConfig has been set.
+     *
+     * @return the IcmpFailureDetectorConfig
+     * @see #setIcmpFailureDetectorConfig(IcmpFailureDetectorConfig)
+     */
+    public IcmpFailureDetectorConfig getIcmpFailureDetectorConfig() {
+        return icmpFailureDetectorConfig;
+    }
+
+    public RestApiConfig getRestApiConfig() {
+        return restApiConfig;
+    }
+
+    public NetworkConfig setRestApiConfig(RestApiConfig restApiConfig) {
+        this.restApiConfig = restApiConfig;
+        return this;
+    }
+
+    public MemcacheProtocolConfig getMemcacheProtocolConfig() {
+        return memcacheProtocolConfig;
+    }
+
+    public NetworkConfig setMemcacheProtocolConfig(MemcacheProtocolConfig memcacheProtocolConfig) {
+        this.memcacheProtocolConfig = memcacheProtocolConfig;
         return this;
     }
 
@@ -327,6 +407,9 @@ public class NetworkConfig {
                 + ", sslConfig=" + sslConfig
                 + ", socketInterceptorConfig=" + socketInterceptorConfig
                 + ", symmetricEncryptionConfig=" + symmetricEncryptionConfig
+                + ", icmpFailureDetectorConfig=" + icmpFailureDetectorConfig
+                + ", restApiConfig=" + restApiConfig
+                + ", memcacheProtocolConfig=" + memcacheProtocolConfig
                 + '}';
     }
 }

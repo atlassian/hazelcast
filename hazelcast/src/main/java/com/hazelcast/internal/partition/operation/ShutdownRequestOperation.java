@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.hazelcast.internal.partition.operation;
 
+import com.hazelcast.core.Member;
 import com.hazelcast.internal.cluster.ClusterService;
 import com.hazelcast.internal.partition.InternalPartitionService;
 import com.hazelcast.internal.partition.MigrationCycleOperation;
@@ -23,7 +24,6 @@ import com.hazelcast.internal.partition.impl.InternalPartitionServiceImpl;
 import com.hazelcast.internal.partition.impl.PartitionDataSerializerHook;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Address;
-import com.hazelcast.spi.NodeEngine;
 
 public class ShutdownRequestOperation extends AbstractPartitionOperation implements MigrationCycleOperation {
 
@@ -33,18 +33,17 @@ public class ShutdownRequestOperation extends AbstractPartitionOperation impleme
     @Override
     public void run() {
         InternalPartitionServiceImpl partitionService = getService();
-        final ILogger logger = getLogger();
-        final Address caller = getCallerAddress();
+        ILogger logger = getLogger();
+        Address caller = getCallerAddress();
 
-        final NodeEngine nodeEngine = getNodeEngine();
-        final ClusterService clusterService = nodeEngine.getClusterService();
-
-        if (clusterService.isMaster()) {
-            if (clusterService.getMember(caller) != null) {
+        if (partitionService.isLocalMemberMaster()) {
+            ClusterService clusterService = getNodeEngine().getClusterService();
+            Member member = clusterService.getMember(caller);
+            if (member != null) {
                 if (logger.isFinestEnabled()) {
                     logger.finest("Received shutdown request from " + caller);
                 }
-                partitionService.onShutdownRequest(caller);
+                partitionService.onShutdownRequest(member);
             } else {
                 logger.warning("Ignoring shutdown request from " + caller + " because it is not a member");
             }

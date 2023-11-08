@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -63,10 +63,10 @@ public class TestHibernateApplicationContext {
     @Test
     public void testInstance() {
         assertNotNull(instance);
-        final Set<Member> members = instance.getCluster().getMembers();
+        Set<Member> members = instance.getCluster().getMembers();
         assertEquals(1, members.size());
-        final Member member = members.iterator().next();
-        final InetSocketAddress inetSocketAddress = member.getSocketAddress();
+        Member member = members.iterator().next();
+        InetSocketAddress inetSocketAddress = member.getSocketAddress();
         assertEquals(5700, inetSocketAddress.getPort());
     }
 

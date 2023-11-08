@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,9 +31,8 @@ public final class Hazelcast {
     }
 
     /**
-     * Shuts down all running Hazelcast Instances on this JVM.
-     * It doesn't shutdown all members of the
-     * cluster but just the ones running on this JVM.
+     * Shuts down all member {@link HazelcastInstance}s running on this JVM.
+     * It doesn't shutdown all members of the cluster but just the ones running on this JVM.
      *
      * @see #newHazelcastInstance(Config)
      */
@@ -69,11 +68,16 @@ public final class Hazelcast {
      * Hazelcast will look into two places for the configuration file:
      * <ol>
      *     <li>
-     *         System property: Hazelcast will first check if "hazelcast.config" system property is set to a file path.
-     *         Example: -Dhazelcast.config=C:/myhazelcast.xml.
+     *         System property: Hazelcast will first check if "hazelcast.config" system property is set to a file or a
+     *         {@code classpath:...} path.
+     *         Examples: -Dhazelcast.config=C:/myhazelcast.xml , -Dhazelcast.config=classpath:the-hazelcast-config.xml ,
+     *         -Dhazelcast.config=classpath:com/mydomain/hazelcast.xml
      *     </li>
      *     <li>
-     *         Classpath: If config file is not set as a system property, Hazelcast will check classpath for hazelcast.xml file.
+     *         "hazelcast.xml" file in current working directory
+     *     </li>
+     *     <li>
+     *         Classpath: Hazelcast will check classpath for hazelcast.xml file.
      *     </li>
      * </ol>
      * If Hazelcast doesn't find any config file, it will start with the default configuration (hazelcast-default.xml)
@@ -103,14 +107,59 @@ public final class Hazelcast {
     }
 
     /**
+     * Gets or creates a HazelcastInstance with the default XML configuration looked up in:
+     * <ol>
+     *     <li>
+     *         System property: Hazelcast will first check if "hazelcast.config" system property is set to a file or a
+     *         {@code classpath:...} path.
+     *         Examples: -Dhazelcast.config=C:/myhazelcast.xml , -Dhazelcast.config=classpath:the-hazelcast-config.xml ,
+     *         -Dhazelcast.config=classpath:com/mydomain/hazelcast.xml
+     *     </li>
+     *     <li>
+     *         "hazelcast.xml" file in current working directory
+     *     </li>
+     *     <li>
+     *         Classpath: Hazelcast will check classpath for hazelcast.xml file.
+     *     </li>
+     * </ol>
+     *
+     * If a configuration file is not located, an {@link IllegalArgumentException} will be thrown.
+     *
+     * If a Hazelcast instance with the same name as the configuration exists, then it is returned, otherwise it is created.
+     *
+     * @return the HazelcastInstance
+     * @throws IllegalArgumentException if the instance name of the config is null or empty or if no config file can be
+     * located.
+     */
+    public static HazelcastInstance getOrCreateHazelcastInstance() {
+        return HazelcastInstanceFactory.getOrCreateHazelcastInstance(null);
+    }
+
+    /**
      * Gets or creates the HazelcastInstance with a certain name.
      *
      * If a Hazelcast instance with the same name as the configuration exists, then it is returned, otherwise it is created.
      *
+     * If {@code config} is {@code null}, then an XML configuration file is looked up in the following order:
+     * <ol>
+     *     <li>
+     *         System property: Hazelcast will first check if "hazelcast.config" system property is set to a file or a
+     *         {@code classpath:...} path.
+     *         Examples: -Dhazelcast.config=C:/myhazelcast.xml , -Dhazelcast.config=classpath:the-hazelcast-config.xml ,
+     *         -Dhazelcast.config=classpath:com/mydomain/hazelcast.xml
+     *     </li>
+     *     <li>
+     *         "hazelcast.xml" file in current working directory
+     *     </li>
+     *     <li>
+     *         Classpath: Hazelcast will check classpath for hazelcast.xml file.
+     *     </li>
+     * </ol>
+     *
      * @param config the Config.
      * @return the HazelcastInstance
-     * @throws NullPointerException if config is null.
-     * @throws IllegalArgumentException if the instance name of the config is null or empty.
+     * @throws IllegalArgumentException if the instance name of the config is null or empty or if no config file can be
+     * located.
      */
     public static HazelcastInstance getOrCreateHazelcastInstance(Config config) {
         return HazelcastInstanceFactory.getOrCreateHazelcastInstance(config);

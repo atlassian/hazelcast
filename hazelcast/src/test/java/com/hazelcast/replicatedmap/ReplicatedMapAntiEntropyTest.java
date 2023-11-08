@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,7 +43,7 @@ import java.util.Collections;
 import static org.junit.Assert.assertEquals;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category(value = {QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelTest.class})
 public class ReplicatedMapAntiEntropyTest extends ReplicatedMapAbstractTest {
 
     @After
@@ -52,16 +52,20 @@ public class ReplicatedMapAntiEntropyTest extends ReplicatedMapAbstractTest {
     }
 
     @Test
-    public void testMapConvergesToSameValueWhenMissingReplicationUpdate() throws Exception {
-        Config config = new Config();
-        SerializationConfig serializationConfig = new SerializationConfig();
-        SerializerConfig serializerConfig = new SerializerConfig();
-        serializerConfig.setTypeClassName(PutOperation.class.getName());
-        serializerConfig.setImplementation(new PutOperationWithNoReplicationSerializer());
-        serializationConfig.addSerializerConfig(serializerConfig);
-        config.setSerializationConfig(serializationConfig);
-        System.setProperty("hazelcast.serialization.custom.override", "true");
+    public void testMapConvergesToSameValueWhenMissingReplicationUpdate() {
         String mapName = randomMapName();
+        System.setProperty("hazelcast.serialization.custom.override", "true");
+
+        SerializerConfig serializerConfig = new SerializerConfig()
+                .setTypeClassName(PutOperation.class.getName())
+                .setImplementation(new PutOperationWithNoReplicationSerializer());
+
+        SerializationConfig serializationConfig = new SerializationConfig()
+                .addSerializerConfig(serializerConfig);
+
+        Config config = new Config()
+                .setSerializationConfig(serializationConfig);
+
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory();
         HazelcastInstance instance1 = factory.newHazelcastInstance(config);
         HazelcastInstance instance2 = factory.newHazelcastInstance(config);
@@ -84,6 +88,7 @@ public class ReplicatedMapAntiEntropyTest extends ReplicatedMapAbstractTest {
     }
 
     public class PutOperationWithNoReplicationSerializer implements StreamSerializer<PutOperation> {
+
         @Override
         public void write(ObjectDataOutput out, PutOperation object) throws IOException {
             object.writeData(out);
@@ -103,7 +108,6 @@ public class ReplicatedMapAntiEntropyTest extends ReplicatedMapAbstractTest {
 
         @Override
         public void destroy() {
-
         }
     }
 
@@ -112,11 +116,9 @@ public class ReplicatedMapAntiEntropyTest extends ReplicatedMapAbstractTest {
         public PutOperationWithNoReplication() {
         }
 
-
         @Override
         protected Collection<Address> getMemberAddresses() {
             return Collections.emptyList();
         }
     }
-
 }

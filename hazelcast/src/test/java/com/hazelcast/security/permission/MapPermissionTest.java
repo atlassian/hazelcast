@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,8 @@ import java.security.Permission;
 
 @RunWith(HazelcastSerialClassRunner.class)
 @Category(QuickTest.class)
-public class MapPermissionTest extends AbstractPermissionTest {
+public class MapPermissionTest
+        extends AbstractMapPermissionTest {
 
     @Override
     protected String[] getActions() {
@@ -39,7 +40,7 @@ public class MapPermissionTest extends AbstractPermissionTest {
                 "index",
                 "intercept",
                 "create",
-                "destroy"
+                "destroy",
         };
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import com.hazelcast.collection.impl.queue.QueueContainer;
 import com.hazelcast.collection.impl.queue.QueueDataSerializerHook;
 import com.hazelcast.collection.impl.queue.QueueItem;
 import com.hazelcast.collection.impl.queue.operations.QueueBackupAwareOperation;
+import com.hazelcast.core.TransactionalQueue;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.spi.BlockingOperation;
@@ -30,7 +31,13 @@ import com.hazelcast.spi.impl.MutatingOperation;
 import java.io.IOException;
 
 /**
- * Reserve poll operation for the transactional queue.
+ * Transaction prepare operation for a queue poll, executed on the primary replica.
+ * <p>
+ * The operation can also wait until there is at least one item reserved or the
+ * wait timeout has elapsed.
+ *
+ * @see TransactionalQueue#poll
+ * @see TxnPollOperation
  */
 public class TxnReservePollOperation extends QueueBackupAwareOperation implements BlockingOperation, MutatingOperation {
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,10 +19,8 @@ package com.hazelcast.map.impl.operation;
 import com.hazelcast.concurrent.lock.LockWaitNotifyKey;
 import com.hazelcast.core.OperationTimeoutException;
 import com.hazelcast.map.impl.MapDataSerializerHook;
-import com.hazelcast.map.impl.MapService;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.BlockingOperation;
-import com.hazelcast.spi.DefaultObjectNamespace;
 import com.hazelcast.spi.WaitNotifyKey;
 
 public class ContainsKeyOperation extends ReadonlyKeyBasedMapOperation implements BlockingOperation {
@@ -39,7 +37,7 @@ public class ContainsKeyOperation extends ReadonlyKeyBasedMapOperation implement
 
     @Override
     public void run() {
-        containsKey = recordStore.containsKey(dataKey);
+        containsKey = recordStore.containsKey(dataKey, getCallerAddress());
     }
 
     @Override
@@ -54,8 +52,7 @@ public class ContainsKeyOperation extends ReadonlyKeyBasedMapOperation implement
 
     @Override
     public WaitNotifyKey getWaitKey() {
-        DefaultObjectNamespace namespace = new DefaultObjectNamespace(MapService.SERVICE_NAME, name);
-        return new LockWaitNotifyKey(namespace, dataKey);
+        return new LockWaitNotifyKey(getServiceNamespace(), dataKey);
     }
 
     @Override

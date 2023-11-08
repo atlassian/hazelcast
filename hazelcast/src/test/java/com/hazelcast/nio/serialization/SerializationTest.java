@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,21 +22,24 @@ import com.hazelcast.config.SerializerConfig;
 import com.hazelcast.core.Member;
 import com.hazelcast.core.MemberLeftException;
 import com.hazelcast.core.PartitioningStrategy;
+import com.hazelcast.instance.BuildInfoProvider;
 import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.instance.SimpleMemberImpl;
 import com.hazelcast.internal.serialization.impl.DefaultSerializationServiceBuilder;
 import com.hazelcast.internal.serialization.impl.HeapData;
-import com.hazelcast.internal.serialization.impl.JavaDefaultSerializers;
+import com.hazelcast.internal.serialization.impl.JavaDefaultSerializers.JavaSerializer;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.IOUtil;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.SerializationConcurrencyTest.Person;
 import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.QuickTest;
 import com.hazelcast.util.UuidUtil;
 import com.hazelcast.version.MemberVersion;
+import com.hazelcast.version.Version;
 import org.junit.Assert;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -57,7 +60,6 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.Properties;
@@ -65,6 +67,7 @@ import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static java.util.Arrays.asList;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -72,13 +75,9 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
-/**
- * @author mdogan 30/10/13
- */
 @RunWith(HazelcastSerialClassRunner.class)
 @Category(QuickTest.class)
-public class SerializationTest
-        extends HazelcastTestSupport {
+public class SerializationTest extends HazelcastTestSupport {
 
     @Test
     public void testGlobalSerializer_withOverrideJavaSerializable() {
@@ -86,9 +85,10 @@ public class SerializationTest
         globalSerializerConfig.setOverrideJavaSerialization(true);
         final AtomicInteger writeCounter = new AtomicInteger();
         final AtomicInteger readCounter = new AtomicInteger();
-        final JavaDefaultSerializers.JavaSerializer javaSerializer = new JavaDefaultSerializers.JavaSerializer(true, false);
+        final JavaSerializer javaSerializer = new JavaSerializer(true, false, null);
         SerializationConfig serializationConfig = new SerializationConfig().setGlobalSerializerConfig(
                 globalSerializerConfig.setImplementation(new StreamSerializer<Object>() {
+                    @Override
                     public void write(ObjectDataOutput out, Object v) throws IOException {
                         writeCounter.incrementAndGet();
                         if (v instanceof Serializable) {
@@ -101,6 +101,7 @@ public class SerializationTest
                         }
                     }
 
+                    @Override
                     public Object read(ObjectDataInput in) throws IOException {
                         readCounter.incrementAndGet();
                         boolean java = in.readBoolean();
@@ -142,12 +143,14 @@ public class SerializationTest
         final AtomicInteger readCounter = new AtomicInteger();
         SerializationConfig serializationConfig = new SerializationConfig().setGlobalSerializerConfig(
                 globalSerializerConfig.setImplementation(new StreamSerializer<Object>() {
+                    @Override
                     public void write(ObjectDataOutput out, Object v) throws IOException {
                         writeCounter.incrementAndGet();
                         out.writeUTF(((DummyValue) v).s);
                         out.writeInt(((DummyValue) v).k);
                     }
 
+                    @Override
                     public Object read(ObjectDataInput in) throws IOException {
                         readCounter.incrementAndGet();
                         return new DummyValue(in.readUTF(), in.readInt());
@@ -188,13 +191,21 @@ public class SerializationTest
 
         @Override
         public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
 
             DummyValue that = (DummyValue) o;
 
-            if (k != that.k) return false;
-            if (s != null ? !s.equals(that.s) : that.s != null) return false;
+            if (k != that.k) {
+                return false;
+            }
+            if (s != null ? !s.equals(that.s) : that.s != null) {
+                return false;
+            }
 
             return true;
         }
@@ -212,17 +223,21 @@ public class SerializationTest
         SerializationConfig serializationConfig = new SerializationConfig().addSerializerConfig(
                 new SerializerConfig().setTypeClass(SingletonValue.class)
                         .setImplementation(new StreamSerializer<SingletonValue>() {
+                            @Override
                             public void write(ObjectDataOutput out, SingletonValue v) throws IOException {
                             }
 
+                            @Override
                             public SingletonValue read(ObjectDataInput in) throws IOException {
                                 return new SingletonValue();
                             }
 
+                            @Override
                             public int getTypeId() {
                                 return 123;
                             }
 
+                            @Override
                             public void destroy() {
                             }
                         }));
@@ -237,8 +252,15 @@ public class SerializationTest
     }
 
     private static class SingletonValue {
+
+        @Override
         public boolean equals(Object obj) {
             return obj instanceof SingletonValue;
+        }
+
+        @Override
+        public int hashCode() {
+            return super.hashCode();
         }
     }
 
@@ -264,9 +286,9 @@ public class SerializationTest
     @Test
     public void testLinkedListSerialization() {
         SerializationService ss = new DefaultSerializationServiceBuilder().build();
-        LinkedList linkedList = new LinkedList();
-        linkedList.add(new SerializationConcurrencyTest.Person(35, 180, 100, "Orhan", null));
-        linkedList.add(new SerializationConcurrencyTest.Person(12, 120, 60, "Osman", null));
+        LinkedList<Person> linkedList = new LinkedList<Person>();
+        linkedList.add(new Person(35, 180, 100, "Orhan", null));
+        linkedList.add(new Person(12, 120, 60, "Osman", null));
         Data data = ss.toData(linkedList);
         LinkedList deserialized = ss.toObject(data);
         assertTrue("Objects are not identical!", linkedList.equals(deserialized));
@@ -275,9 +297,9 @@ public class SerializationTest
     @Test
     public void testArrayListSerialization() {
         SerializationService ss = new DefaultSerializationServiceBuilder().build();
-        ArrayList arrayList = new ArrayList();
-        arrayList.add(new SerializationConcurrencyTest.Person(35, 180, 100, "Orhan", null));
-        arrayList.add(new SerializationConcurrencyTest.Person(12, 120, 60, "Osman", null));
+        ArrayList<Person> arrayList = new ArrayList<Person>();
+        arrayList.add(new Person(35, 180, 100, "Orhan", null));
+        arrayList.add(new Person(12, 120, 60, "Osman", null));
         Data data = ss.toData(arrayList);
         ArrayList deserialized = ss.toObject(data);
         assertTrue("Objects are not identical!", arrayList.equals(deserialized));
@@ -345,15 +367,17 @@ public class SerializationTest
         }
     }
 
-
     /**
      * Ensures that SerializationService correctly handles compressed Serializables,
      * using a Properties object as a test case.
      */
     @Test
-    public void testCompressionOnSerializables() throws Exception {
-        SerializationService serializationService = new DefaultSerializationServiceBuilder().setEnableCompression(true).build();
-        long key = 1, value = 5000;
+    public void testCompressionOnSerializables() {
+        SerializationService serializationService = new DefaultSerializationServiceBuilder()
+                .setEnableCompression(true)
+                .build();
+        long key = 1;
+        long value = 5000;
         Properties properties = new Properties();
         properties.put(key, value);
         Data data = serializationService.toData(properties);
@@ -367,8 +391,10 @@ public class SerializationTest
      * using a test-specific object as a test case.
      */
     @Test
-    public void testCompressionOnExternalizables() throws Exception {
-        SerializationService serializationService = new DefaultSerializationServiceBuilder().setEnableCompression(true).build();
+    public void testCompressionOnExternalizables() {
+        SerializationService serializationService = new DefaultSerializationServiceBuilder()
+                .setEnableCompression(true)
+                .build();
         String test = "test";
         ExternalizableString ex = new ExternalizableString(test);
         Data data = serializationService.toData(ex);
@@ -382,7 +408,6 @@ public class SerializationTest
         String value;
 
         public ExternalizableString() {
-
         }
 
         public ExternalizableString(String value) {
@@ -398,22 +423,23 @@ public class SerializationTest
         public void readExternal(ObjectInput in) throws IOException, ClassNotFoundException {
             value = in.readUTF();
         }
-
     }
 
     @Test
-    public void testMemberLeftException_usingMemberImpl() throws IOException, ClassNotFoundException {
+    public void testMemberLeftException_usingMemberImpl() throws Exception {
         String uuid = UuidUtil.newUnsecureUuidString();
         String host = "127.0.0.1";
         int port = 5000;
 
-        Member member = new MemberImpl(new Address(host, port), MemberVersion.of("3.8.0"), false, uuid, null);
+        Member member = new MemberImpl.Builder(new Address(host, port))
+                .version(MemberVersion.of("3.8.0"))
+                .uuid(uuid).build();
 
         testMemberLeftException(uuid, host, port, member);
     }
 
     @Test
-    public void testMemberLeftException_usingSimpleMember() throws IOException, ClassNotFoundException {
+    public void testMemberLeftException_usingSimpleMember() throws Exception {
         String uuid = UuidUtil.newUnsecureUuidString();
         String host = "127.0.0.1";
         int port = 5000;
@@ -423,18 +449,22 @@ public class SerializationTest
     }
 
     @Test
-    public void testMemberLeftException_withLiteMemberImpl() throws IOException, ClassNotFoundException {
+    public void testMemberLeftException_withLiteMemberImpl() throws Exception {
         String uuid = UuidUtil.newUnsecureUuidString();
         String host = "127.0.0.1";
         int port = 5000;
 
-        Member member = new MemberImpl(new Address(host, port), MemberVersion.of("3.8.0"), false, uuid, null, null, true);
+        Member member = new MemberImpl.Builder(new Address(host, port))
+                .version(MemberVersion.of("3.8.0"))
+                .liteMember(true)
+                .uuid(uuid)
+                .build();
 
         testMemberLeftException(uuid, host, port, member);
     }
 
     @Test
-    public void testMemberLeftException_withLiteSimpleMemberImpl() throws IOException, ClassNotFoundException {
+    public void testMemberLeftException_withLiteSimpleMemberImpl() throws Exception {
         String uuid = UuidUtil.newUnsecureUuidString();
         String host = "127.0.0.1";
         int port = 5000;
@@ -443,8 +473,7 @@ public class SerializationTest
         testMemberLeftException(uuid, host, port, member);
     }
 
-    private void testMemberLeftException(String uuid, String host, int port, Member member)
-            throws IOException, ClassNotFoundException {
+    private void testMemberLeftException(String uuid, String host, int port, Member member) throws Exception {
 
         MemberLeftException exception = new MemberLeftException(member);
 
@@ -465,17 +494,16 @@ public class SerializationTest
     }
 
     @Test
-    public void testInternallySupportedClassExtended() throws Exception {
+    public void testInternallySupportedClassExtended() {
         SerializationService ss = new DefaultSerializationServiceBuilder().build();
         TheClassThatExtendArrayList obj = new TheClassThatExtendArrayList();
         Data data = ss.toData(obj);
         Object obj2 = ss.toObject(data);
 
         assertEquals(obj2.getClass(), TheClassThatExtendArrayList.class);
-
     }
 
-    static class TheClassThatExtendArrayList extends ArrayList implements DataSerializable {
+    static class TheClassThatExtendArrayList<E> extends ArrayList<E> implements DataSerializable {
         @Override
         public void writeData(ObjectDataOutput out) throws IOException {
             out.writeInt(size());
@@ -485,10 +513,11 @@ public class SerializationTest
         }
 
         @Override
+        @SuppressWarnings("unchecked")
         public void readData(ObjectDataInput in) throws IOException {
             int size = in.readInt();
             for (int k = 0; k < size; k++) {
-                add(in.readObject());
+                add((E) in.readObject());
             }
         }
     }
@@ -505,7 +534,7 @@ public class SerializationTest
         try {
             IObjectA.class.cast(o);
             Assert.fail("the serialized object should not be castable");
-        } catch (ClassCastException e) {
+        } catch (ClassCastException expected) {
             // expected
         }
     }
@@ -518,14 +547,15 @@ public class SerializationTest
             DynamicProxyTestClassLoader cl = new DynamicProxyTestClassLoader(current);
             Thread.currentThread().setContextClassLoader(cl);
             SerializationService ss = new DefaultSerializationServiceBuilder().setClassLoader(cl).build();
-            IObjectA oa = (IObjectA) Proxy.newProxyInstance(current, new Class[]{IObjectA.class}, DummyInvocationHandler.INSTANCE);
+            IObjectA oa
+                    = (IObjectA) Proxy.newProxyInstance(current, new Class[]{IObjectA.class}, DummyInvocationHandler.INSTANCE);
             Data data = ss.toData(oa);
             Object o = ss.toObject(data);
             Assert.assertSame("context classloader is not used", cl, o.getClass().getClassLoader());
             try {
                 IObjectA.class.cast(o);
                 Assert.fail("the serialized object should not be castable");
-            } catch (ClassCastException e) {
+            } catch (ClassCastException expected) {
                 // expected
             }
         } finally {
@@ -539,19 +569,39 @@ public class SerializationTest
         DynamicProxyTestClassLoader cl1 = new DynamicProxyTestClassLoader(current, IPrivateObjectB.class.getName());
         DynamicProxyTestClassLoader cl2 = new DynamicProxyTestClassLoader(cl1, IPrivateObjectC.class.getName());
         SerializationService ss = new DefaultSerializationServiceBuilder().setClassLoader(cl2).build();
-        Object ocd = Proxy.newProxyInstance(current, new Class[]{IPrivateObjectB.class, IPrivateObjectC.class}, DummyInvocationHandler.INSTANCE);
+        Object ocd
+                = Proxy.newProxyInstance(current, new Class[]{IPrivateObjectB.class, IPrivateObjectC.class}, DummyInvocationHandler.INSTANCE);
         Data data = ss.toData(ocd);
         try {
             ss.toObject(data);
             Assert.fail("the object should not be deserializable");
-        } catch (IllegalAccessError e) {
+        } catch (IllegalAccessError expected) {
             // expected
         }
     }
 
+    @Test
+    public void testVersionedDataSerializable_outputHasMemberVersion() {
+        SerializationService ss = new DefaultSerializationServiceBuilder().build();
+        VersionedDataSerializable object = new VersionedDataSerializable();
+        ss.toData(object);
+        assertEquals("ObjectDataOutput.getVersion should be equal to member version",
+                Version.of(BuildInfoProvider.getBuildInfo().getVersion()), object.getVersion());
+    }
+
+    @Test
+    public void testVersionedDataSerializable_inputHasMemberVersion() {
+        SerializationService ss = new DefaultSerializationServiceBuilder().build();
+        VersionedDataSerializable object = new VersionedDataSerializable();
+        VersionedDataSerializable otherObject = ss.toObject(ss.toData(object));
+        assertEquals("ObjectDataInput.getVersion should be equal to member version",
+                Version.of(BuildInfoProvider.getBuildInfo().getVersion()), otherObject.getVersion());
+    }
+
     private static final class DynamicProxyTestClassLoader extends ClassLoader {
 
-        private static final Set<String> WELL_KNOWN_TEST_CLASSES = new HashSet<String>(Arrays.asList(IObjectA.class.getName(), IPrivateObjectB.class.getName(), IPrivateObjectC.class.getName()));
+        private static final Set<String> WELL_KNOWN_TEST_CLASSES = new HashSet<String>(asList(IObjectA.class.getName(),
+                IPrivateObjectB.class.getName(), IPrivateObjectC.class.getName()));
 
         private final Set<String> wellKnownClasses = new HashSet<String>();
 
@@ -560,16 +610,17 @@ public class SerializationTest
             if (classesToLoad.length == 0) {
                 wellKnownClasses.addAll(WELL_KNOWN_TEST_CLASSES);
             } else {
-                wellKnownClasses.addAll(Arrays.asList(classesToLoad));
+                wellKnownClasses.addAll(asList(classesToLoad));
             }
         }
 
+        @Override
         protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
             if (!WELL_KNOWN_TEST_CLASSES.contains(name)) {
                 return super.loadClass(name, resolve);
             }
             synchronized (this) {
-                // First, check if the class has already been loaded
+                // first, check if the class has already been loaded
                 Class<?> c = findLoadedClass(name);
                 if (c == null) {
                     c = findClass(name);
@@ -581,6 +632,7 @@ public class SerializationTest
             }
         }
 
+        @Override
         protected Class<?> findClass(String name) throws ClassNotFoundException {
             if (!wellKnownClasses.contains(name)) {
                 return super.findClass(name);
@@ -591,7 +643,7 @@ public class SerializationTest
                 in = getParent().getResourceAsStream(path);
                 ByteArrayOutputStream bout = new ByteArrayOutputStream();
                 byte[] buf = new byte[1024];
-                int read = 0;
+                int read;
                 while ((read = in.read(buf)) != -1) {
                     bout.write(buf, 0, read);
                 }
@@ -603,7 +655,6 @@ public class SerializationTest
                 IOUtil.closeResource(in);
             }
         }
-
     }
 
     public static final class DummyInvocationHandler implements InvocationHandler, Serializable {
@@ -616,19 +667,20 @@ public class SerializationTest
         public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
             return null;
         }
-
     }
 
-    public static interface IObjectA {
+    @SuppressWarnings("unused")
+    public interface IObjectA {
         void doA();
     }
 
-    static interface IPrivateObjectB {
+    @SuppressWarnings("unused")
+    interface IPrivateObjectB {
         void doC();
     }
 
-    static interface IPrivateObjectC {
+    @SuppressWarnings("unused")
+    interface IPrivateObjectC {
         void doD();
     }
-
 }

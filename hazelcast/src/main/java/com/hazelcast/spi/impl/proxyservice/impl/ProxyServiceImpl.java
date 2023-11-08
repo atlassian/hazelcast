@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,7 +37,6 @@ import com.hazelcast.spi.impl.proxyservice.InternalProxyService;
 import com.hazelcast.spi.impl.proxyservice.impl.operations.DistributedObjectDestroyOperation;
 import com.hazelcast.spi.impl.proxyservice.impl.operations.PostJoinProxyOperation;
 import com.hazelcast.util.ConstructorFunction;
-import com.hazelcast.util.EmptyStatement;
 import com.hazelcast.util.FutureUtil.ExceptionHandler;
 import com.hazelcast.util.UuidUtil;
 
@@ -55,6 +54,7 @@ import static com.hazelcast.core.DistributedObjectEvent.EventType.CREATED;
 import static com.hazelcast.internal.metrics.ProbeLevel.MANDATORY;
 import static com.hazelcast.internal.util.counters.MwCounter.newMwCounter;
 import static com.hazelcast.util.ConcurrencyUtil.getOrPutIfAbsent;
+import static com.hazelcast.util.EmptyStatement.ignore;
 import static com.hazelcast.util.ExceptionUtil.peel;
 import static com.hazelcast.util.FutureUtil.waitWithDeadline;
 import static com.hazelcast.util.Preconditions.checkNotNull;
@@ -124,6 +124,12 @@ public class ProxyServiceImpl
         return count;
     }
 
+    public void initializeAndPublishProxies() {
+        for (ProxyRegistry registry : registries.values()) {
+            registry.initializeAndPublishProxies();
+        }
+    }
+
     @Override
     public void initializeDistributedObject(String serviceName, String name) {
         checkServiceNameNotNull(serviceName);
@@ -144,7 +150,7 @@ public class ProxyServiceImpl
         checkObjectNameNotNull(name);
 
         ProxyRegistry registry = getOrCreateRegistry(serviceName);
-        return registry.getOrCreateProxy(name, true, true);
+        return registry.getOrCreateProxy(name, true);
     }
 
     @Override
@@ -171,6 +177,7 @@ public class ProxyServiceImpl
         waitWithDeadline(calls, DESTROY_TIMEOUT_SECONDS, TimeUnit.SECONDS, destroyProxyExceptionHandler);
     }
 
+    @Override
     public void destroyLocalDistributedObject(String serviceName, String name, boolean fireEvent) {
         ProxyRegistry registry = registries.get(serviceName);
         if (registry != null) {
@@ -203,7 +210,7 @@ public class ProxyServiceImpl
 
         ProxyRegistry registry = registries.get(serviceName);
         if (registry == null) {
-            return Collections.EMPTY_SET;
+            return Collections.emptySet();
         } else {
             return registry.getDistributedObjectNames();
         }
@@ -237,12 +244,11 @@ public class ProxyServiceImpl
             try {
                 final ProxyRegistry registry = getOrCreateRegistry(serviceName);
                 if (!registry.contains(eventPacket.getName())) {
-                    registry.createProxy(eventPacket.getName(), false,
-                            true);
+                    registry.createProxy(eventPacket.getName(), false, true);
                     // listeners will be called if proxy is created here.
                 }
             } catch (HazelcastInstanceNotActiveException ignored) {
-                EmptyStatement.ignore(ignored);
+                ignore(ignored);
             }
         } else {
             final ProxyRegistry registry = registries.get(serviceName);

@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.config;
 
 import com.hazelcast.internal.serialization.impl.DefaultSerializationServiceBuilder;
@@ -20,23 +36,23 @@ public class NearCachePreloaderConfigTest {
     private NearCachePreloaderConfig config = new NearCachePreloaderConfig();
 
     @Test
-    public void testConstructor_withFileName() {
-        config = new NearCachePreloaderConfig("myStorage.store");
+    public void testConstructor_withDirectory() {
+        config = new NearCachePreloaderConfig("myParentDirectory");
 
         assertTrue(config.isEnabled());
-        assertEquals("myStorage.store", config.getFileName());
+        assertEquals("myParentDirectory", config.getDirectory());
     }
 
     @Test
-    public void testFileName() {
-        config.setFileName("myStorage.store");
+    public void setDirectory() {
+        config.setDirectory("myParentDirectory");
 
-        assertEquals("myStorage.store", config.getFileName());
+        assertEquals("myParentDirectory", config.getDirectory());
     }
 
     @Test(expected = NullPointerException.class)
-    public void testFileName_withNull() {
-        config.setFileName(null);
+    public void setDirectory_withNull() {
+        config.setDirectory(null);
     }
 
     @Test
@@ -72,7 +88,7 @@ public class NearCachePreloaderConfigTest {
     @Test
     public void testSerialization() {
         config.setEnabled(true);
-        config.setFileName("foobar");
+        config.setDirectory("myParentDirectory");
         config.setStoreInitialDelaySeconds(23);
         config.setStoreIntervalSeconds(42);
 
@@ -81,7 +97,7 @@ public class NearCachePreloaderConfigTest {
         NearCachePreloaderConfig deserialized = serializationService.toObject(serialized);
 
         assertEquals(config.isEnabled(), deserialized.isEnabled());
-        assertEquals(config.getFileName(), deserialized.getFileName());
+        assertEquals(config.getDirectory(), deserialized.getDirectory());
         assertEquals(config.getStoreInitialDelaySeconds(), deserialized.getStoreInitialDelaySeconds());
         assertEquals(config.getStoreIntervalSeconds(), deserialized.getStoreIntervalSeconds());
         assertEquals(config.toString(), deserialized.toString());

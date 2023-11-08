@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ~ Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+  ~ Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
   ~ you may not use this file except in compliance with the License.
@@ -93,6 +93,65 @@
                                 </xs:attribute>
                             </xs:complexType>
                         </xs:element>
+                        <xs:element name="scheduled-executor-service" minOccurs="0" maxOccurs="unbounded">
+                            <xs:complexType>
+                                <xs:sequence/>
+                                <xs:attribute name="name" use="required" type="xs:string"/>
+                                <xs:attribute name="pool-size" use="optional" type="xs:string" default="16">
+                                    <xs:annotation>
+                                        <xs:documentation>
+                                            The number of executor threads per member for the executor.
+                                        </xs:documentation>
+                                    </xs:annotation>
+                                </xs:attribute>
+                                <xs:attribute name="durability" use="optional" type="xs:string" default="1">
+                                    <xs:annotation>
+                                        <xs:documentation>
+                                            The durability of the scheduled executor.
+                                        </xs:documentation>
+                                    </xs:annotation>
+                                </xs:attribute>
+                                <xs:attribute name="capacity" use="optional" type="xs:string" default="100">
+                                    <xs:annotation>
+                                        <xs:documentation>
+                                            The maximum number of tasks that a scheduler can have at any given point
+                                            in time per partition.
+                                        </xs:documentation>
+                                    </xs:annotation>
+                                </xs:attribute>
+                            </xs:complexType>
+                        </xs:element>
+                        <xs:element name="cardinality-estimator" minOccurs="0" maxOccurs="unbounded">
+                            <xs:complexType>
+                                <xs:all>
+                                    <xs:element name="backup-count" type="backup-count" minOccurs="0" maxOccurs="1" default="1">
+                                        <xs:annotation>
+                                            <xs:documentation>
+                                                Number of synchronous backups. For example, if 1 is set as the backup-count,
+                                                then the cardinality estimation will be copied to one other JVM for
+                                                fail-safety. Valid numbers are 0 (no backup), 1, 2 ... 6.
+                                            </xs:documentation>
+                                        </xs:annotation>
+                                    </xs:element>
+                                    <xs:element name="async-backup-count" type="backup-count" minOccurs="0" maxOccurs="1" default="0">
+                                        <xs:annotation>
+                                            <xs:documentation>
+                                                Number of asynchronous backups. For example, if 1 is set as the async-backup-count,
+                                                then cardinality estimation will be copied to one other JVM (asynchronously) for
+                                                fail-safety. Valid numbers are 0 (no backup), 1, 2 ... 6.
+                                            </xs:documentation>
+                                        </xs:annotation>
+                                    </xs:element>
+                                </xs:all>
+                                <xs:attribute name="name" type="xs:string" use="optional" default="default">
+                                    <xs:annotation>
+                                        <xs:documentation>
+                                            Name of the cardinality estimator.
+                                        </xs:documentation>
+                                    </xs:annotation>
+                                </xs:attribute>
+                            </xs:complexType>
+                        </xs:element>
                         <xs:element name="queue" minOccurs="0" maxOccurs="unbounded">
                             <xs:complexType>
                                 <xs:sequence>
@@ -162,6 +221,14 @@
                                 </xs:attribute>
                             </xs:complexType>
                         </xs:element>
+                        <xs:element name="lock" minOccurs="0" maxOccurs="unbounded">
+                            <xs:complexType>
+                                <xs:sequence>
+                                    <xs:element name="quorum-ref" minOccurs="0" maxOccurs="1"/>
+                                </xs:sequence>
+                                <xs:attribute name="name" use="required" type="xs:string"/>
+                            </xs:complexType>
+                        </xs:element>
                         <xs:element name="ringbuffer" minOccurs="0" maxOccurs="unbounded">
                             <xs:complexType>
                                 <xs:sequence>
@@ -194,7 +261,7 @@
                                             Number of items in the ringbuffer. If no time-to-live-seconds is set, the size will
                                             always
                                             be equal to capacity after the head completed the first loop around the ring. This is
-                                            because no items are getting retired.
+                                            because no items are getting retired. The default value is 10000.
                                         </xs:documentation>
                                     </xs:annotation>
                                 </xs:attribute>
@@ -852,10 +919,24 @@
                                         </xs:documentation>
                                     </xs:annotation>
                                 </xs:attribute>
+                                <xs:attribute name="cache-loader" type="xs:string" use="optional">
+                                    <xs:annotation>
+                                        <xs:documentation>
+                                            Defines the cache loader class name.
+                                        </xs:documentation>
+                                    </xs:annotation>
+                                </xs:attribute>
                                 <xs:attribute name="cache-writer-factory" type="xs:string" use="optional">
                                     <xs:annotation>
                                         <xs:documentation>
                                             Defines the cache writer factory class name.
+                                        </xs:documentation>
+                                    </xs:annotation>
+                                </xs:attribute>
+                                <xs:attribute name="cache-writer" type="xs:string" use="optional">
+                                    <xs:annotation>
+                                        <xs:documentation>
+                                            Defines the cache writer class name.
                                         </xs:documentation>
                                     </xs:annotation>
                                 </xs:attribute>
@@ -1086,7 +1167,7 @@
                                             </xs:sequence>
                                         </xs:complexType>
                                     </xs:element>
-                                    <xs:element name="multi-threading-enabled" type="xs:boolean" minOccurs="0" maxOccurs="1" 
+                                    <xs:element name="multi-threading-enabled" type="parameterized-boolean" minOccurs="0" maxOccurs="1"
                                                 default="false">
                                         <xs:annotation>
 		                                    <xs:documentation>
@@ -1125,7 +1206,7 @@
                                     <xs:annotation>
                                         <xs:documentation>
                                             The queue-size defines the maximum number of tasks are able to wait to be
-                                            processed. A value of 0 means unbounded queue.
+                                            processed. A value of 0 means number of partitions * 2.
                                         </xs:documentation>
                                     </xs:annotation>
                                 </xs:attribute>
@@ -1295,7 +1376,8 @@
                             maxOccurs="unbounded">
                     <xs:annotation>
                         <xs:documentation>
-                            DataSerializableFactory class to be registered.
+                            Custom classes implementing com.hazelcast.nio.serialization.DataSerializableFactory to be registered.
+                            These can be used to speed up serialization/deserialization of objects.
                         </xs:documentation>
                     </xs:annotation>
                 </xs:element>
@@ -1389,7 +1471,7 @@
         <xs:complexType>
             <xs:complexContent>
                 <xs:extension base="hazelcast-bean">
-                    <xs:sequence>
+                    <xs:all>
                         <xs:element name="spring-aware" type="xs:string" minOccurs="0" maxOccurs="1"/>
                         <xs:element name="group" type="group" minOccurs="0" maxOccurs="1"/>
                         <xs:element name="properties" type="properties" minOccurs="0" maxOccurs="1"/>
@@ -1399,9 +1481,9 @@
                         <xs:element name="serialization" type="serialization" minOccurs="0" maxOccurs="1"/>
                         <xs:element name="proxy-factories" type="proxy-factories" minOccurs="0" maxOccurs="1"/>
                         <xs:element name="load-balancer" type="load-balancer" minOccurs="0" maxOccurs="1"/>
-                        <xs:element name="near-cache" type="near-cache-client" minOccurs="0" maxOccurs="unbounded"/>
-                        <xs:element name="query-caches" type="query-caches-client" minOccurs="0" maxOccurs="unbounded"/>
-                    </xs:sequence>
+                        <xs:element name="near-cache" type="near-cache-client" minOccurs="0" maxOccurs="1"/>
+                        <xs:element name="query-caches" type="query-caches-client" minOccurs="0" maxOccurs="1"/>
+                    </xs:all>
                     <xs:attribute name="executor-pool-size" type="xs:int" use="optional"/>
                     <xs:attribute name="credentials-ref" type="xs:string" use="optional"/>
                 </xs:extension>
@@ -1635,7 +1717,7 @@
             <xs:annotation>
                 <xs:documentation>
                     <![CDATA[The unique identifier for a bean.
-                    A bean id may not be used more than once within the same <beans> element.]]>
+                    A bean ID may not be used more than once within the same <beans> element.]]>
                 </xs:documentation>
             </xs:annotation>
         </xs:attribute>
@@ -1748,7 +1830,7 @@
         <xs:attribute name="multicast-port" type="xs:string" use="optional" default="54327"/>
         <xs:attribute name="multicast-timeout-seconds" type="xs:string" use="optional" default="2"/>
         <xs:attribute name="multicast-time-to-live" type="xs:string" use="optional" default="32"/>
-        <xs:attribute name="loopback-mode-enabled" type="xs:boolean" use="optional" default="false"/>
+        <xs:attribute name="loopback-mode-enabled" type="parameterized-boolean" use="optional" default="false"/>
     </xs:complexType>
 
     <xs:complexType name="aws">
@@ -2123,7 +2205,13 @@
                                     maxOccurs="unbounded"/>
                         <xs:element name="durable-executor-service-permission" type="instance-permission" minOccurs="0"
                                     maxOccurs="unbounded"/>
+                        <xs:element name="cardinality-estimator-permission" type="instance-permission" minOccurs="0"
+                                    maxOccurs="unbounded"/>
+                        <xs:element name="scheduled-executor-permission" type="instance-permission" minOccurs="0"
+                                    maxOccurs="unbounded"/>
                         <xs:element name="transaction-permission" type="base-permission" minOccurs="0" maxOccurs="1"/>
+                        <xs:element name="cache-permission" type="instance-permission" minOccurs="0"
+                                    maxOccurs="unbounded"/>
                     </xs:sequence>
                 </xs:complexType>
             </xs:element>
@@ -2419,6 +2507,7 @@
                         <xs:restriction base="xs:string"/>
                     </xs:simpleType>
                 </xs:attribute>
+                <xs:attribute name="local-update-policy" type="local-update-policy-enum" use="optional" default="INVALIDATE"/>
             </xs:extension>
         </xs:complexContent>
     </xs:complexType>
@@ -2603,6 +2692,13 @@
 
     <xs:simpleType name="in-memory-format">
         <xs:union memberTypes="in-memory-format-enum non-space-string"/>
+    </xs:simpleType>
+
+    <xs:simpleType name="local-update-policy-enum">
+        <xs:restriction base="xs:string">
+            <xs:enumeration value="INVALIDATE"/>
+            <xs:enumeration value="CACHE_ON_UPDATE"/>
+        </xs:restriction>
     </xs:simpleType>
 
     <xs:simpleType name="topic-overload-policy-enum">
@@ -2799,7 +2895,16 @@
             <xs:element name="base-dir" type="xs:string" minOccurs="0" maxOccurs="1" default="hot-restart">
                 <xs:annotation>
                     <xs:documentation>
-                        Base directory for all hot-restart data
+                        Base directory for all hot-restart data. Can be an absolute or relative path to the node startup
+                        directory.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="backup-dir" type="xs:string" minOccurs="0" maxOccurs="1">
+                <xs:annotation>
+                    <xs:documentation>
+                        Base directory for hot backups. Each new backup will be created in a separate directory inside this one.
+                        Can be an absolute or relative path to the node startup directory.
                     </xs:documentation>
                 </xs:annotation>
             </xs:element>
@@ -2828,9 +2933,31 @@
                 </xs:documentation>
             </xs:annotation>
         </xs:attribute>
+        <xs:attribute name="cluster-data-recovery-policy" default="FULL_RECOVERY_ONLY">
+            <xs:annotation>
+                <xs:documentation>
+                    Specifies the policy that will be respected during hot restart cluster start. Valid values are :
+                    FULL_RECOVERY_ONLY : Starts the cluster only when all expected nodes are present and correct.
+                    Otherwise, it fails.
+                    PARTIAL_RECOVERY_MOST_RECENT : Starts the cluster with the members which have most up-to-date
+                    partition table and successfully restored their data. All other members will leave the cluster and
+                    force-start themselves. If no member restores its data successfully, cluster start fails.
+                    PARTIAL_RECOVERY_MOST_COMPLETE : Starts the cluster with the largest group of members which have the
+                    same partition table version and successfully restored their data. All other members will leave the
+                    cluster and force-start themselves. If no member restores its data successfully, cluster start fails.
+                </xs:documentation>
+            </xs:annotation>
+            <xs:simpleType>
+                <xs:restriction base="non-space-string">
+                    <xs:enumeration value="FULL_RECOVERY_ONLY"/>
+                    <xs:enumeration value="PARTIAL_RECOVERY_MOST_RECENT"/>
+                    <xs:enumeration value="PARTIAL_RECOVERY_MOST_COMPLETE"/>
+                </xs:restriction>
+            </xs:simpleType>
+        </xs:attribute>
     </xs:complexType>
     <xs:complexType name="hot-restart">
-        <xs:attribute name="fsync" type="xs:boolean" default="false">
+        <xs:attribute name="fsync" type="parameterized-boolean" default="false">
             <xs:annotation>
                 <xs:documentation>
                     True if disk write should be followed by an fsync() system call,
@@ -2838,7 +2965,7 @@
                 </xs:documentation>
             </xs:annotation>
         </xs:attribute>
-        <xs:attribute name="enabled" type="xs:boolean" default="false">
+        <xs:attribute name="enabled" type="parameterized-boolean" default="false">
             <xs:annotation>
                 <xs:documentation>
                     True if hot-restart is enabled, false otherwise

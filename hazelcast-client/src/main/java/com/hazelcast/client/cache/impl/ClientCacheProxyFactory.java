@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,16 +18,20 @@ package com.hazelcast.client.cache.impl;
 
 import com.hazelcast.cache.CacheNotExistsException;
 import com.hazelcast.cache.HazelcastCacheManager;
-import com.hazelcast.client.impl.HazelcastClientInstanceImpl;
+import com.hazelcast.client.impl.clientside.HazelcastClientInstanceImpl;
+import com.hazelcast.client.spi.ClientContext;
 import com.hazelcast.client.spi.ClientProxy;
-import com.hazelcast.client.spi.ClientProxyFactory;
+import com.hazelcast.client.spi.impl.ClientProxyFactoryWithContext;
 import com.hazelcast.config.CacheConfig;
+import com.hazelcast.config.NearCacheConfig;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-public class ClientCacheProxyFactory implements ClientProxyFactory {
+public class ClientCacheProxyFactory extends ClientProxyFactoryWithContext {
 
     private final HazelcastClientInstanceImpl client;
     private final ConcurrentMap<String, CacheConfig> configs = new ConcurrentHashMap<String, CacheConfig>();
@@ -37,12 +41,22 @@ public class ClientCacheProxyFactory implements ClientProxyFactory {
     }
 
     @Override
-    public ClientProxy create(String id) {
+    public ClientProxy create(String id, ClientContext context) {
         CacheConfig cacheConfig = findCacheConfig(id);
         if (cacheConfig == null) {
             throw new CacheNotExistsException("Cache " + id + " is already destroyed or not created yet");
         }
-        return new ClientCacheProxy(cacheConfig);
+        NearCacheConfig nearCacheConfig = client.getClientConfig().getNearCacheConfig(cacheConfig.getName());
+        if (nearCacheConfig != null) {
+            return new NearCachedClientCacheProxy(cacheConfig, context);
+        }
+        return new ClientCacheProxy(cacheConfig, context);
+    }
+
+    public void recreateCachesOnCluster() {
+        for (CacheConfig cacheConfig : configs.values()) {
+            ClientCacheHelper.createCacheConfig(client, cacheConfig, true);
+        }
     }
 
     @SuppressFBWarnings("RV_RETURN_VALUE_OF_PUTIFABSENT_IGNORED")
@@ -52,6 +66,14 @@ public class ClientCacheProxyFactory implements ClientProxyFactory {
 
     void removeCacheConfig(String cacheName) {
         configs.remove(cacheName);
+    }
+
+    CacheConfig getCacheConfig(String cacheName) {
+        return configs.get(cacheName);
+    }
+
+    Set<Map.Entry<String, CacheConfig>> configs() {
+        return configs.entrySet();
     }
 
     @SuppressFBWarnings("RV_RETURN_VALUE_OF_PUTIFABSENT_IGNORED")

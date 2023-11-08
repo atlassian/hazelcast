@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,6 @@ import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IAtomicReference;
 import com.hazelcast.core.IFunction;
 import com.hazelcast.test.HazelcastTestSupport;
-import com.hazelcast.util.EmptyStatement;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -53,7 +52,7 @@ public abstract class AtomicReferenceAbstractTest extends HazelcastTestSupport {
         }
     }
 
-    protected IAtomicReference newInstance() {
+    protected <K> IAtomicReference<K> newInstance() {
         HazelcastInstance local = instances[0];
         HazelcastInstance target = instances[instances.length - 1];
         String name = generateKeyOwnedBy(target);
@@ -84,6 +83,7 @@ public abstract class AtomicReferenceAbstractTest extends HazelcastTestSupport {
     }
 
     @Test
+    @SuppressWarnings("deprecation")
     public void setAndGet() {
         assertNull(ref.setAndGet(null));
         assertNull(ref.get());
@@ -106,7 +106,7 @@ public abstract class AtomicReferenceAbstractTest extends HazelcastTestSupport {
         ref.set("foo");
         assertEquals("foo", ref.get());
 
-        ref.setAndGet("bar");
+        ref.set("bar");
         assertEquals("bar", ref.get());
 
         ref.set(null);
@@ -168,13 +168,13 @@ public abstract class AtomicReferenceAbstractTest extends HazelcastTestSupport {
     @Test
     public void apply() {
         assertEquals("null", ref.apply(new AppendFunction("")));
-        assertEquals(null, ref.get());
+        assertNull(ref.get());
 
         ref.set("foo");
         assertEquals("foobar", ref.apply(new AppendFunction("bar")));
         assertEquals("foo", ref.get());
 
-        assertEquals(null, ref.apply(new NullFunction()));
+        assertNull(ref.apply(new NullFunction()));
         assertEquals("foo", ref.get());
     }
 
@@ -186,7 +186,7 @@ public abstract class AtomicReferenceAbstractTest extends HazelcastTestSupport {
             ref.apply(new FailingFunction());
             fail();
         } catch (HazelcastException expected) {
-            EmptyStatement.ignore(expected);
+            ignore(expected);
         }
 
         assertEquals("foo", ref.get());
@@ -205,7 +205,7 @@ public abstract class AtomicReferenceAbstractTest extends HazelcastTestSupport {
             ref.alter(new FailingFunction());
             fail();
         } catch (HazelcastException expected) {
-            EmptyStatement.ignore(expected);
+            ignore(expected);
         }
 
         assertEquals("foo", ref.get());
@@ -214,14 +214,14 @@ public abstract class AtomicReferenceAbstractTest extends HazelcastTestSupport {
     @Test
     public void alter() {
         ref.alter(new NullFunction());
-        assertEquals(null, ref.get());
+        assertNull(ref.get());
 
         ref.set("foo");
         ref.alter(new AppendFunction("bar"));
         assertEquals("foobar", ref.get());
 
         ref.alter(new NullFunction());
-        assertEquals(null, ref.get());
+        assertNull(ref.get());
     }
 
     @Test(expected = IllegalArgumentException.class)
@@ -237,7 +237,7 @@ public abstract class AtomicReferenceAbstractTest extends HazelcastTestSupport {
             ref.alterAndGet(new FailingFunction());
             fail();
         } catch (HazelcastException expected) {
-            EmptyStatement.ignore(expected);
+            ignore(expected);
         }
 
         assertEquals("foo", ref.get());
@@ -246,14 +246,14 @@ public abstract class AtomicReferenceAbstractTest extends HazelcastTestSupport {
     @Test
     public void alterAndGet() {
         assertNull(ref.alterAndGet(new NullFunction()));
-        assertEquals(null, ref.get());
+        assertNull(ref.get());
 
         ref.set("foo");
         assertEquals("foobar", ref.alterAndGet(new AppendFunction("bar")));
         assertEquals("foobar", ref.get());
 
-        assertEquals(null, ref.alterAndGet(new NullFunction()));
-        assertEquals(null, ref.get());
+        assertNull(ref.alterAndGet(new NullFunction()));
+        assertNull(ref.get());
     }
 
     @Test(expected = IllegalArgumentException.class)
@@ -269,7 +269,7 @@ public abstract class AtomicReferenceAbstractTest extends HazelcastTestSupport {
             ref.getAndAlter(new FailingFunction());
             fail();
         } catch (HazelcastException expected) {
-            EmptyStatement.ignore(expected);
+            ignore(expected);
         }
 
         assertEquals("foo", ref.get());
@@ -278,17 +278,18 @@ public abstract class AtomicReferenceAbstractTest extends HazelcastTestSupport {
     @Test
     public void getAndAlter() {
         assertNull(ref.getAndAlter(new NullFunction()));
-        assertEquals(null, ref.get());
+        assertNull(ref.get());
 
         ref.set("foo");
         assertEquals("foo", ref.getAndAlter(new AppendFunction("bar")));
         assertEquals("foobar", ref.get());
 
         assertEquals("foobar", ref.getAndAlter(new NullFunction()));
-        assertEquals(null, ref.get());
+        assertNull(ref.get());
     }
 
     private static class AppendFunction implements IFunction<String, String> {
+
         private String add;
 
         private AppendFunction(String add) {
@@ -308,7 +309,7 @@ public abstract class AtomicReferenceAbstractTest extends HazelcastTestSupport {
         }
     }
 
-    private static class FailingFunction implements IFunction<String, String> {
+    protected static class FailingFunction implements IFunction<String, String> {
         @Override
         public String apply(String input) {
             throw new HazelcastException();

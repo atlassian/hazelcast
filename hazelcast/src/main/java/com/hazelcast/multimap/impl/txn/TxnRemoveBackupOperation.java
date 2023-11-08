@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,19 +20,20 @@ import com.hazelcast.multimap.impl.MultiMapContainer;
 import com.hazelcast.multimap.impl.MultiMapDataSerializerHook;
 import com.hazelcast.multimap.impl.MultiMapRecord;
 import com.hazelcast.multimap.impl.MultiMapValue;
-import com.hazelcast.multimap.impl.operations.MultiMapKeyBasedOperation;
+import com.hazelcast.multimap.impl.operations.AbstractKeyBasedMultiMapOperation;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.spi.BackupOperation;
 
 import java.io.IOException;
 import java.util.Collection;
 import java.util.Iterator;
 
-public class TxnRemoveBackupOperation extends MultiMapKeyBasedOperation {
+public class TxnRemoveBackupOperation extends AbstractKeyBasedMultiMapOperation implements BackupOperation {
 
-    long recordId;
-    Data value;
+    private long recordId;
+    private Data value;
 
     public TxnRemoveBackupOperation() {
     }
@@ -45,23 +46,23 @@ public class TxnRemoveBackupOperation extends MultiMapKeyBasedOperation {
 
     @Override
     public void run() throws Exception {
-        MultiMapContainer container = getOrCreateContainer();
+        MultiMapContainer container = getOrCreateContainerWithoutAccess();
         MultiMapValue multiMapValue = container.getMultiMapValueOrNull(dataKey);
-        response = true;
         if (multiMapValue == null || !multiMapValue.containsRecordId(recordId)) {
             response = false;
             return;
         }
+        response = true;
         Collection<MultiMapRecord> coll = multiMapValue.getCollection(false);
-        Iterator<MultiMapRecord> iter = coll.iterator();
-        while (iter.hasNext()) {
-            if (iter.next().getRecordId() == recordId) {
-                iter.remove();
+        Iterator<MultiMapRecord> iterator = coll.iterator();
+        while (iterator.hasNext()) {
+            if (iterator.next().getRecordId() == recordId) {
+                iterator.remove();
                 break;
             }
         }
         if (coll.isEmpty()) {
-            delete();
+            container.delete(dataKey);
         }
     }
 

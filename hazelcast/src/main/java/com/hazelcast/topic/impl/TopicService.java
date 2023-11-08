@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,7 +48,8 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import static com.hazelcast.util.ConcurrencyUtil.getOrPutSynchronized;
 
-public class TopicService implements ManagedService, RemoteService, EventPublishingService, StatisticsAwareService {
+public class TopicService implements ManagedService, RemoteService, EventPublishingService,
+        StatisticsAwareService<LocalTopicStats> {
 
     public static final String SERVICE_NAME = "hz:impl:topicService";
 
@@ -126,7 +127,9 @@ public class TopicService implements ManagedService, RemoteService, EventPublish
         ClusterService clusterService = nodeEngine.getClusterService();
         MemberImpl member = clusterService.getMember(topicEvent.publisherAddress);
         if (member == null) {
-            member = new MemberImpl(topicEvent.publisherAddress, nodeEngine.getVersion(), false);
+            member = new MemberImpl.Builder(topicEvent.publisherAddress)
+                    .version(nodeEngine.getVersion())
+                    .build();
         }
         Message message = new DataAwareMessage(topicEvent.name, topicEvent.data, topicEvent.publishTime, member
                 , nodeEngine.getSerializationService());
@@ -139,10 +142,22 @@ public class TopicService implements ManagedService, RemoteService, EventPublish
         return getOrPutSynchronized(statsMap, name, statsMap, localTopicStatsConstructorFunction);
     }
 
+    /**
+     * Increments the number of published messages on the ITopic
+     * with the name {@code topicName}.
+     *
+     * @param topicName the name of the {@link ITopic}
+     */
     public void incrementPublishes(String topicName) {
         getLocalTopicStats(topicName).incrementPublishes();
     }
 
+    /**
+     * Increments the number of received messages on the ITopic
+     * with the name {@code topicName}.
+     *
+     * @param topicName the name of the {@link ITopic}
+     */
     public void incrementReceivedMessages(String topicName) {
         getLocalTopicStats(topicName).incrementReceives();
     }

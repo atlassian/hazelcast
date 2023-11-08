@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import com.hazelcast.nio.serialization.PortableReader;
 import com.hazelcast.nio.serialization.PortableWriter;
 import com.hazelcast.ringbuffer.ReadResultSet;
 import com.hazelcast.spi.serialization.SerializationService;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -34,8 +35,11 @@ import static com.hazelcast.ringbuffer.impl.client.RingbufferPortableHook.F_ID;
 import static com.hazelcast.ringbuffer.impl.client.RingbufferPortableHook.READ_RESULT_SET;
 import static java.util.Collections.unmodifiableList;
 
+// This class is not used in serialized form since at least 3.9, however is still
+// maintained as Portable for compatibility
 public class PortableReadResultSet<E> implements Portable, ReadResultSet<E> {
-
+    private transient long nextSeq;
+    private transient long[] seqs;
     private List<Data> items;
     private int readCount;
     private SerializationService serializationService;
@@ -43,9 +47,12 @@ public class PortableReadResultSet<E> implements Portable, ReadResultSet<E> {
     public PortableReadResultSet() {
     }
 
-    public PortableReadResultSet(int readCount, List<Data> items) {
+    @SuppressFBWarnings("EI_EXPOSE_REP2")
+    public PortableReadResultSet(int readCount, List<Data> items, long[] seqs, long nextSeq) {
         this.readCount = readCount;
         this.items = items;
+        this.seqs = seqs;
+        this.nextSeq = nextSeq;
     }
 
     public List<Data> getDataItems() {
@@ -74,6 +81,21 @@ public class PortableReadResultSet<E> implements Portable, ReadResultSet<E> {
     public E get(int index) {
         Data data = items.get(index);
         return serializationService.toObject(data);
+    }
+
+    @Override
+    public long getSequence(int index) {
+        return seqs[index];
+    }
+
+    @Override
+    public int size() {
+        return items.size();
+    }
+
+    @Override
+    public long getNextSequenceToReadFrom() {
+        return nextSeq;
     }
 
     @Override

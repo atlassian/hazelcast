@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -86,6 +86,12 @@ public abstract class TopicProxySupport extends AbstractDistributedObject<TopicS
         return topicService.getLocalTopicStats(name);
     }
 
+    /**
+     * Publishes the message and increases the local statistics
+     * for the number of published messages.
+     *
+     * @param message the message to be published
+     */
     public void publishInternal(Object message) {
         topicStats.incrementPublishes();
         topicService.publishMessage(name, message, multithreaded);

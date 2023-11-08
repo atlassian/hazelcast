@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,8 +30,8 @@ public class PartitionReplicationEvent extends EventObject {
     /**
      * Creates a PartitionReplicationEvent
      *
-     * @param partitionId the partition id.
-     * @param replicaIndex the replica index.
+     * @param partitionId  the partition ID
+     * @param replicaIndex the replica index
      */
     public PartitionReplicationEvent(int partitionId, int replicaIndex) {
         super(partitionId);
@@ -40,9 +40,9 @@ public class PartitionReplicationEvent extends EventObject {
     }
 
     /**
-     * Gets the id of the partition.
+     * Gets the ID of the partition.
      *
-     * @return the id of the partition
+     * @return the ID of the partition
      */
     public int getPartitionId() {
         return partitionId;

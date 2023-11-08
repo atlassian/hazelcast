@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,55 +20,49 @@ import com.hazelcast.cardinality.impl.CardinalityEstimatorDataSerializerHook;
 import com.hazelcast.cardinality.impl.hyperloglog.HyperLogLog;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.impl.Versioned;
 
 import java.io.IOException;
 
 import static com.hazelcast.cardinality.impl.hyperloglog.impl.HyperLogLogEncoding.SPARSE;
 
-public class HyperLogLogImpl implements HyperLogLog {
+public class HyperLogLogImpl
+        implements HyperLogLog, Versioned {
 
     private static final int LOWER_P_BOUND = 4;
     private static final int UPPER_P_BOUND = 16;
-    private static final int UPPER_P_PRIME_BOUND = 25;
 
     // [1] shows good cardinality estimation
     private static final int DEFAULT_P = 14;
-    private static final int DEFAULT_P_PRIME = 25;
 
     private int m;
-    private Long cachedEstimate;
     private HyperLogLogEncoder encoder;
+    private Long cachedEstimate;
 
     public HyperLogLogImpl() {
-        this(DEFAULT_P, DEFAULT_P_PRIME);
+        this(DEFAULT_P);
     }
 
-    public HyperLogLogImpl(final int p, final int pPrime) {
+    public HyperLogLogImpl(final int p) {
         if (p < LOWER_P_BOUND || p > UPPER_P_BOUND) {
             throw new IllegalArgumentException("Precision (p) outside valid range [4..16].");
         }
 
-        if (pPrime < p || pPrime > UPPER_P_PRIME_BOUND) {
-            throw new IllegalArgumentException("Prime precision (p') outside "
-                    + "valid range [" + p + ".." + UPPER_P_PRIME_BOUND + "].");
-        }
-
         this.m = 1 << p;
-        this.encoder = new SparseHyperLogLogEncoder(p, pPrime);
+        this.encoder = new SparseHyperLogLogEncoder(p);
     }
 
     @Override
     public long estimate() {
         if (cachedEstimate == null) {
-            convertToDenseIfNeeded();
             cachedEstimate = encoder.estimate();
         }
-
         return cachedEstimate;
     }
 
     @Override
     public void add(long hash) {
+        convertToDenseIfNeeded();
         boolean changed = encoder.add(hash);
         if (changed) {
             cachedEstimate = null;
@@ -80,6 +74,16 @@ public class HyperLogLogImpl implements HyperLogLog {
         for (long hash : hashes) {
             add(hash);
         }
+    }
+
+    @Override
+    public void merge(HyperLogLog other) {
+        if (!(other instanceof HyperLogLogImpl)) {
+            throw new IllegalStateException("Can't merge " + other + " into " + this);
+        }
+
+        encoder = encoder.merge(((HyperLogLogImpl) other).encoder);
+        cachedEstimate = null;
     }
 
     @Override
@@ -95,16 +99,17 @@ public class HyperLogLogImpl implements HyperLogLog {
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
         out.writeObject(encoder);
+        out.writeInt(m);
     }
 
     @Override
     public void readData(ObjectDataInput in) throws IOException {
         encoder = in.readObject();
+        m = in.readInt();
     }
 
     private void convertToDenseIfNeeded() {
-        boolean shouldConvertToDense = encoder.getEncodingType() == SPARSE
-                && encoder.getMemoryFootprint() >= m;
+        boolean shouldConvertToDense = SPARSE.equals(encoder.getEncodingType()) && encoder.getMemoryFootprint() >= m;
         if (shouldConvertToDense) {
             encoder = ((SparseHyperLogLogEncoder) encoder).asDense();
         }

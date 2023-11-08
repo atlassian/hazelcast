@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,8 +27,16 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 public final class ClientProperty {
 
     /**
+     * Client disallows doing invocations on client disconnected state. When this property is set to true, even client
+     * is not connected to all cluster, it allows invocations that can go thorough available ones.
+     */
+    public static final HazelcastProperty ALLOW_INVOCATIONS_WHEN_DISCONNECTED
+            = new HazelcastProperty("hazelcast.client.allow.invocations.when.disconnected", false);
+
+
+    /**
      * Client shuffles the given member list to prevent all clients to connect to the same node when
-     * this property is set to false. When it is set to true, the client tries to connect to the nodes
+     * this property is set to true. When it is set to false, the client tries to connect to the nodes
      * in the given order.
      */
     public static final HazelcastProperty SHUFFLE_MEMBER_LIST
@@ -61,10 +69,23 @@ public final class ClientProperty {
             = new HazelcastProperty("hazelcast.client.event.queue.capacity", 1000000);
 
     /**
-     * Time to give up on invocation when a member in the member list is not reachable.
+     * When an invocation gets an exception because :
+     * - Member throws an exception.
+     * - Connection between the client and member is closed.
+     * - Client's heartbeat requests are timed out.
+     * Time passed since invocation started is compared with this property.
+     * If the time is already passed, then the exception is delegated to the user. If not, the invocation is retried.
+     * Note that, if invocation gets no exception and it is a long running one, then it will not get any exception,
+     * no matter how small this timeout is set.
      */
     public static final HazelcastProperty INVOCATION_TIMEOUT_SECONDS
             = new HazelcastProperty("hazelcast.client.invocation.timeout.seconds", 120, SECONDS);
+
+    /**
+     * Pause time between each retry cycle of an invocation in milliseconds.
+     */
+    public static final HazelcastProperty INVOCATION_RETRY_PAUSE_MILLIS
+            = new HazelcastProperty("hazelcast.client.invocation.retry.pause.millis", 1000, MILLISECONDS);
 
     /**
      * The maximum number of concurrent invocations allowed.
@@ -77,6 +98,20 @@ public final class ClientProperty {
      */
     public static final HazelcastProperty MAX_CONCURRENT_INVOCATIONS
             = new HazelcastProperty("hazelcast.client.max.concurrent.invocations", Integer.MAX_VALUE);
+
+    /**
+     * Control the maximum timeout in millis to wait for an invocation space to be available.
+     * <p/>
+     * If an invocation can't be made because there are too many pending invocations, then an exponential backoff is done
+     * to give the system time to deal with the backlog of invocations. This property controls how long an invocation is
+     * allowed to wait before getting a {@link com.hazelcast.core.HazelcastOverloadException}.
+     * <p/>
+     * <p>
+     * When set to -1 then <code>HazelcastOverloadException</code> is thrown immediately without any waiting.
+     * </p>
+     */
+    public static final HazelcastProperty BACKPRESSURE_BACKOFF_TIMEOUT_MILLIS
+            = new HazelcastProperty("hazelcast.client.invocation.backoff.timeout.millis", -1, MILLISECONDS);
 
     /**
      * <p>Enables the Discovery SPI lookup over the old native implementations. This property is temporary and will
@@ -121,10 +156,10 @@ public final class ClientProperty {
             = new HazelcastProperty("hazelcast.client.io.output.thread.count", -1);
 
     /**
-     * The interval in seconds between {@link com.hazelcast.internal.networking.nonblocking.iobalancer.IOBalancer IOBalancer}
+     * The interval in seconds between {@link com.hazelcast.internal.networking.nio.iobalancer.IOBalancer IOBalancer}
      * executions. The shorter intervals will catch I/O Imbalance faster, but they will cause higher overhead.
      * <p/>
-     * Please see the documentation of {@link com.hazelcast.internal.networking.nonblocking.iobalancer.IOBalancer IOBalancer}
+     * Please see the documentation of {@link com.hazelcast.internal.networking.nio.iobalancer.IOBalancer IOBalancer}
      * for a detailed explanation of the problem.
      * <p/>
      * The default is 20 seconds. A value smaller than 1 disables the balancer.
@@ -132,6 +167,40 @@ public final class ClientProperty {
     public static final HazelcastProperty IO_BALANCER_INTERVAL_SECONDS
             = new HazelcastProperty("hazelcast.client.io.balancer.interval.seconds", 20, SECONDS);
 
+    /**
+     * The number of response threads.
+     *
+     * By default there are 2 response threads; this gives stable and good performance.
+     *
+     * If set to 0, the response threads are bypassed and the response handling is done
+     * on the IO threads. Under certain conditions this can give a higher throughput, but
+     * setting to 0 should be regarded an experimental feature.
+     *
+     * If set to 0, the IO_OUTPUT_THREAD_COUNT is really going to matter because the
+     * inbound thread will have more work to do. By default when TLS isn't enable,
+     * there is just 1 inbound thread.
+     */
+    public static final HazelcastProperty RESPONSE_THREAD_COUNT
+            = new HazelcastProperty("hazelcast.client.response.thread.count", 2);
+
+    /**
+     * Enabled dynamic switching between processing responses on the io threads
+     * and offloading the response threads.
+     *
+     * Under certain conditions (single threaded clients) processing on the io
+     * thread can increase performance because useless handover to the response
+     * thread is removed. Also the response thread isn't created until it is needed
+     * and especially for ephemeral clients reducing threads can lead to
+     * increased performance and reduced memory usage.
+     */
+    public static final HazelcastProperty RESPONSE_THREAD_DYNAMIC
+            = new HazelcastProperty("hazelcast.client.response.thread.dynamic", false);
+
+    /**
+     * Token to use when discovering cluster via hazelcast.cloud
+     */
+    public static final HazelcastProperty HAZELCAST_CLOUD_DISCOVERY_TOKEN =
+            new HazelcastProperty("hazelcast.client.cloud.discovery.token");
 
     private ClientProperty() {
     }

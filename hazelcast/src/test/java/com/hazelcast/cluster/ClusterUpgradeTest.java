@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
+import com.hazelcast.test.annotation.SerializationSamplesExcluded;
 import com.hazelcast.version.MemberVersion;
 import org.junit.After;
 import org.junit.Before;
@@ -33,13 +34,14 @@ import org.junit.experimental.categories.Category;
 import org.junit.rules.ExpectedException;
 import org.junit.runner.RunWith;
 
+import static com.hazelcast.instance.BuildInfoProvider.HAZELCAST_INTERNAL_OVERRIDE_VERSION;
 import static com.hazelcast.test.TestClusterUpgradeUtils.upgradeClusterMembers;
 
 /**
  * Create a cluster, then change cluster version. This test uses artificial version numbers, to avoid relying on current version.
  */
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelTest.class, SerializationSamplesExcluded.class})
 public class ClusterUpgradeTest extends HazelcastTestSupport {
 
     static final MemberVersion VERSION_2_0_5 = MemberVersion.of(2, 0, 5);
@@ -59,9 +61,9 @@ public class ClusterUpgradeTest extends HazelcastTestSupport {
 
     @Before
     public void setup() {
-        System.setProperty("hazelcast.version", VERSION_2_1_0.toString());
+        System.setProperty(HAZELCAST_INTERNAL_OVERRIDE_VERSION, VERSION_2_1_0.toString());
         clusterMembers = new HazelcastInstance[CLUSTER_MEMBERS_COUNT];
-        for (int i=0; i < CLUSTER_MEMBERS_COUNT; i++) {
+        for (int i = 0; i < CLUSTER_MEMBERS_COUNT; i++) {
             clusterMembers[i] = factory.newHazelcastInstance(getConfig());
         }
         clusterService = (ClusterService) clusterMembers[0].getCluster();
@@ -81,7 +83,7 @@ public class ClusterUpgradeTest extends HazelcastTestSupport {
 
     @Test
     public void test_addNodeOfLesserThanClusterVersion_notAllowed() {
-        System.setProperty("hazelcast.version", VERSION_2_0_5.toString());
+        System.setProperty(HAZELCAST_INTERNAL_OVERRIDE_VERSION, VERSION_2_0_5.toString());
         expectedException.expect(IllegalStateException.class);
         factory.newHazelcastInstance(getConfig());
     }
@@ -89,7 +91,7 @@ public class ClusterUpgradeTest extends HazelcastTestSupport {
     @Test
     public void test_changeClusterVersion_disallowedForMinorVersions() {
         expectedException.expect(VersionMismatchException.class);
-        clusterService.changeClusterVersion(VERSION_2_0_5.asClusterVersion());
+        clusterService.changeClusterVersion(VERSION_2_0_5.asVersion());
     }
 
     void upgradeCluster(MemberVersion version) {
@@ -100,6 +102,6 @@ public class ClusterUpgradeTest extends HazelcastTestSupport {
 
     @After
     public void tearDown() {
-        System.clearProperty("hazelcast.version");
+        System.clearProperty(HAZELCAST_INTERNAL_OVERRIDE_VERSION);
     }
 }

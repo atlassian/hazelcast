@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,12 @@
 
 package com.hazelcast.projection;
 
+import com.hazelcast.projection.impl.IdentityProjection;
 import com.hazelcast.projection.impl.MultiAttributeProjection;
 import com.hazelcast.projection.impl.SingleAttributeProjection;
 
-import java.util.Map;
-
 /**
- * A utility class to create basic {@link com.hazelcast.projection.Projection} instances. <br/>
+ * A utility class to create basic {@link com.hazelcast.projection.Projection} instances.
  *
  * @since 3.8
  */
@@ -32,25 +31,33 @@ public final class Projections {
     }
 
     /**
-     * Returns a projection that extracts the value of the given attributePath
+     * Returns a projection that does no transformation.
+     * <p>
+     * If you use the returned projection in a 3.9 cluster it may cause a serialization exception.
      *
-     * @param attributePath single attribute path
-     * @param <O>           Output type
-     * @return a projection that extracts the value of the given attributePath
+     * @since 3.10
      */
-    public static <K, V, O> Projection<Map.Entry<K, V>, O> singleAttribute(String attributePath) {
-        return new SingleAttributeProjection<K, V, O>(attributePath);
+    public static <T> Projection<T, T> identity() {
+        return (IdentityProjection<T>) IdentityProjection.INSTANCE;
     }
 
     /**
-     * Returns a projection that extracts the value of the given attributePaths.
-     * The attribute values will be returned as an Object[] array from each projection call.
+     * Returns a projection that extracts the value of the given {@code attributePath}.
      *
-     * @param attributePath 1 to N attribute Paths
-     * @return a projection that extracts the value of the given attributePaths.
+     * @param attributePath single attribute path, path must not be null or empty
+     * @param <O>           Output type
      */
-    public static <K, V> Projection<Map.Entry<K, V>, Object[]> multiAttribute(String... attributePath) {
-        return new MultiAttributeProjection<K, V>(attributePath);
+    public static <I, O> Projection<I, O> singleAttribute(String attributePath) {
+        return new SingleAttributeProjection<I, O>(attributePath);
     }
 
+    /**
+     * Returns a projection that extracts the value of the given {@code attributePaths}.
+     * The attribute values will be returned as an {@code Object[]} array from each projection call.
+     *
+     * @param attributePaths attribute paths, paths must not be null or empty
+     */
+    public static <I> Projection<I, Object[]> multiAttribute(String... attributePaths) {
+        return new MultiAttributeProjection<I>(attributePaths);
+    }
 }

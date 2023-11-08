@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.spi.impl.operationservice.impl;
 
 import com.hazelcast.config.Config;
@@ -28,6 +44,7 @@ import static com.hazelcast.spi.properties.GroupProperty.BACKPRESSURE_ENABLED;
 import static com.hazelcast.spi.properties.GroupProperty.BACKPRESSURE_MAX_CONCURRENT_INVOCATIONS_PER_PARTITION;
 import static com.hazelcast.spi.properties.GroupProperty.BACKPRESSURE_SYNCWINDOW;
 import static com.hazelcast.spi.properties.GroupProperty.OPERATION_BACKUP_TIMEOUT_MILLIS;
+import static com.hazelcast.spi.properties.GroupProperty.PARTITION_COUNT;
 import static java.util.concurrent.TimeUnit.MINUTES;
 import static org.junit.Assert.assertEquals;
 
@@ -61,7 +78,9 @@ public class BackpressureRegulatorStressTest extends HazelcastTestSupport {
                 .setProperty(OPERATION_BACKUP_TIMEOUT_MILLIS.getName(), "60000")
                 .setProperty(BACKPRESSURE_ENABLED.getName(), "true")
                 .setProperty(BACKPRESSURE_SYNCWINDOW.getName(), "10")
-                .setProperty(BACKPRESSURE_MAX_CONCURRENT_INVOCATIONS_PER_PARTITION.getName(), "2");
+                .setProperty(BACKPRESSURE_MAX_CONCURRENT_INVOCATIONS_PER_PARTITION.getName(), "2")
+                .setProperty(PARTITION_COUNT.getName(), "10");
+
         HazelcastInstance[] cluster = createHazelcastInstanceFactory(2).newInstances(config);
         local = cluster[0];
         remote = cluster[1];
@@ -188,7 +207,7 @@ public class BackpressureRegulatorStressTest extends HazelcastTestSupport {
 //        System.out.println("Backpressure count: " + count);
     }
 
-    private final static AtomicLong THREAD_ID_GENERATOR = new AtomicLong();
+    private static final AtomicLong THREAD_ID_GENERATOR = new AtomicLong();
 
     private class StressThread extends TestThread {
 

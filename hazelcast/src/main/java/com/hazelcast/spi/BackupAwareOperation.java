@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,7 +52,5 @@ public interface BackupAwareOperation extends PartitionAwareOperation {
      *
      * @return the created {@link com.hazelcast.spi.BackupOperation} responsible for making the backup.
      */
-
-    //todo: should this not return a BackupOperation?
     Operation getBackupOperation();
 }

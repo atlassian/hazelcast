@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.hazelcast.client.listeners;
 
+import com.hazelcast.collection.impl.queue.QueueService;
 import com.hazelcast.core.IQueue;
 import com.hazelcast.core.ItemEvent;
 import com.hazelcast.core.ItemListener;
@@ -25,8 +26,6 @@ import com.hazelcast.test.annotation.QuickTest;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import java.util.concurrent.atomic.AtomicInteger;
-
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
 public class QueueItemListenerOnReconnectTest extends AbstractListenersOnReconnectTest {
@@ -34,13 +33,18 @@ public class QueueItemListenerOnReconnectTest extends AbstractListenersOnReconne
     private IQueue<String> iQueue;
 
     @Override
-    protected String addListener(final AtomicInteger eventCount) {
+    String getServiceName() {
+        return QueueService.SERVICE_NAME;
+    }
+
+    @Override
+    protected String addListener() {
         iQueue = client.getQueue(randomString());
 
         ItemListener<String> listener = new ItemListener<String>() {
             @Override
-            public void itemAdded(ItemEvent item) {
-                eventCount.incrementAndGet();
+            public void itemAdded(ItemEvent<String> item) {
+                onEvent(item.getItem());
             }
 
             @Override
@@ -52,8 +56,8 @@ public class QueueItemListenerOnReconnectTest extends AbstractListenersOnReconne
     }
 
     @Override
-    public void produceEvent() {
-        iQueue.add(randomString());
+    public void produceEvent(String event) {
+        iQueue.add(event);
     }
 
     @Override

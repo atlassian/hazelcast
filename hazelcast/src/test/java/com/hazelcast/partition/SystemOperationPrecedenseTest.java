@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.partition;
 
 import com.hazelcast.core.HazelcastInstance;
@@ -81,9 +97,9 @@ public class SystemOperationPrecedenseTest extends HazelcastTestSupport {
 
         private final CountDownLatch latch;
 
-        public UrgentPartitionAwareOperation(CountDownLatch completedLatch, int partitionId) {
-            setPartitionId(partitionId);
+        UrgentPartitionAwareOperation(CountDownLatch completedLatch, int partitionId) {
             this.latch = completedLatch;
+            setPartitionId(partitionId);
         }
 
         @Override
@@ -94,7 +110,7 @@ public class SystemOperationPrecedenseTest extends HazelcastTestSupport {
 
     public static class NormalPartitionAwareOperation extends Operation implements PartitionAwareOperation {
 
-        public NormalPartitionAwareOperation(int partitionId) {
+        NormalPartitionAwareOperation(int partitionId) {
             setPartitionId(partitionId);
         }
 
@@ -108,7 +124,7 @@ public class SystemOperationPrecedenseTest extends HazelcastTestSupport {
 
         private final CountDownLatch latch;
 
-        public UrgentPartitionUnawareOperation(CountDownLatch completedLatch) {
+        UrgentPartitionUnawareOperation(CountDownLatch completedLatch) {
             this.latch = completedLatch;
         }
 

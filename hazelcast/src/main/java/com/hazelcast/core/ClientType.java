@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,14 +17,46 @@
 package com.hazelcast.core;
 
 /**
- * Type of a client.
+ * Type of a Hazelcast client.
  */
 public enum ClientType {
+    /**
+     * Hazelcast Java client.
+     */
     JAVA,
+
+    /**
+     * Hazelcast .NET client.
+     */
     CSHARP,
+
+    /**
+     * Hazelcast C++ client.
+     */
     CPP,
+
+    /**
+     * Hazelcast Python client.
+     */
     PYTHON,
+
+    /**
+     * Hazelcast Ruby client.
+     */
     RUBY,
+
+    /**
+     * Hazelcast NodeJS client.
+     */
     NODEJS,
+
+    /**
+     * Hazelcast Go client.
+     */
+    GO,
+
+    /**
+     * Other Hazelcast client.
+     */
     OTHER
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,9 @@ import java.util.Properties;
 
 /**
  * Factory for MapLoader or MapStore instances, specifiable in MapStoreConfig.
+ *
+ * @param <K> type of the MapStore key
+ * @param <V> type of the MapStore value
  */
 public interface MapStoreFactory<K, V> {
 

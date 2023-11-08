@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,23 @@
 
 package com.hazelcast.map.impl.iterator;
 
+import com.hazelcast.core.IMap;
 import com.hazelcast.map.impl.operation.MapOperation;
 import com.hazelcast.map.impl.operation.MapOperationProvider;
 import com.hazelcast.map.impl.proxy.MapProxyImpl;
 import com.hazelcast.spi.InternalCompletableFuture;
-import com.hazelcast.spi.OperationService;
+import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.serialization.SerializationService;
 
 import java.util.List;
 
+/**
+ * Iterator for iterating map entries in the {@code partitionId}. The values are not fetched one-by-one but rather in batches.
+ * <b>NOTE</b>
+ * Iterating the map should be done only when the {@link IMap} is not being
+ * mutated and the cluster is stable (there are no migrations or membership changes).
+ * In other cases, the iterator may not return some entries or may return an entry twice.
+ */
 public class MapPartitionIterator<K, V> extends AbstractMapPartitionIterator<K, V> {
 
     private final MapProxyImpl<K, V> mapProxy;
@@ -36,25 +44,21 @@ public class MapPartitionIterator<K, V> extends AbstractMapPartitionIterator<K, 
     }
 
     protected List fetch() {
-        String name = mapProxy.getName();
-        String serviceName = mapProxy.getServiceName();
-        MapOperationProvider operationProvider = mapProxy.getOperationProvider();
-        OperationService operationService = mapProxy.getOperationService();
-        if (prefetchValues) {
-            MapOperation operation = operationProvider.createFetchEntriesOperation(name, lastTableIndex, fetchSize);
-            InternalCompletableFuture<MapEntriesWithCursor> future = operationService
-                    .invokeOnPartition(serviceName, operation, partitionId);
-            MapEntriesWithCursor mapEntriesWithCursor = future.join();
-            setLastTableIndex(mapEntriesWithCursor.getEntries(), mapEntriesWithCursor.getNextTableIndexToReadFrom());
-            return mapEntriesWithCursor.getEntries();
-        } else {
-            MapOperation operation = operationProvider.createFetchKeysOperation(name, lastTableIndex, fetchSize);
-            InternalCompletableFuture<MapKeysWithCursor> future = operationService
-                    .invokeOnPartition(serviceName, operation, partitionId);
-            MapKeysWithCursor mapKeysWithCursor = future.join();
-            setLastTableIndex(mapKeysWithCursor.getKeys(), mapKeysWithCursor.getNextTableIndexToReadFrom());
-            return mapKeysWithCursor.getKeys();
-        }
+        final String name = mapProxy.getName();
+        final MapOperationProvider operationProvider = mapProxy.getOperationProvider();
+        final MapOperation operation = prefetchValues
+                    ? operationProvider.createFetchEntriesOperation(name, lastTableIndex, fetchSize)
+                    : operationProvider.createFetchKeysOperation(name, lastTableIndex, fetchSize);
+
+        final AbstractCursor cursor = invoke(operation);
+        setLastTableIndex(cursor.getBatch(), cursor.getNextTableIndexToReadFrom());
+        return cursor.getBatch();
+    }
+
+    private <T extends AbstractCursor> T invoke(Operation operation) {
+        final InternalCompletableFuture<T> future =
+                mapProxy.getOperationService().invokeOnPartition(mapProxy.getServiceName(), operation, partitionId);
+        return future.join();
     }
 
     @Override

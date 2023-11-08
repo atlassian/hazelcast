@@ -1,8 +1,30 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.config;
 
+import com.hazelcast.config.RingbufferStoreConfig.RingbufferStoreConfigReadOnly;
+import com.hazelcast.spi.merge.DiscardMergePolicy;
+import com.hazelcast.spi.merge.PassThroughMergePolicy;
+import com.hazelcast.spi.merge.PutIfAbsentMergePolicy;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
+import nl.jqno.equalsverifier.EqualsVerifier;
+import nl.jqno.equalsverifier.Warning;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -11,9 +33,9 @@ import static com.hazelcast.config.RingbufferConfig.DEFAULT_ASYNC_BACKUP_COUNT;
 import static com.hazelcast.config.RingbufferConfig.DEFAULT_CAPACITY;
 import static com.hazelcast.config.RingbufferConfig.DEFAULT_SYNC_BACKUP_COUNT;
 import static com.hazelcast.internal.partition.InternalPartition.MAX_BACKUP_COUNT;
+import static com.hazelcast.test.HazelcastTestSupport.assumeDifferentHashCodes;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.fail;
@@ -31,6 +53,7 @@ public class RingbufferConfigTest {
         assertEquals(DEFAULT_SYNC_BACKUP_COUNT, config.getBackupCount());
         assertEquals(DEFAULT_ASYNC_BACKUP_COUNT, config.getAsyncBackupCount());
         assertEquals(DEFAULT_CAPACITY, config.getCapacity());
+        assertNotNull(config.getMergePolicyConfig());
     }
 
     @Test
@@ -209,32 +232,23 @@ public class RingbufferConfigTest {
         assertEquals(ringbufferStoreConfig, config.getRingbufferStoreConfig());
     }
 
-    // ==================== toString ================================
-
-    @Test
-    public void test_toString() {
-        RingbufferConfig config = new RingbufferConfig(NAME);
-        config.setRingbufferStoreConfig(new RingbufferStoreConfig());
-
-        String s = config.toString();
-
-        assertEquals("RingbufferConfig{name='someRingbuffer', capacity=10000, backupCount=1,"
-                + " asyncBackupCount=0, timeToLiveSeconds=0, inMemoryFormat=BINARY,"
-                + " ringbufferStoreConfig=RingbufferStoreConfig{enabled=true, className='null', properties={}}}", s);
-    }
-
     // =================== getAsReadOnly ============================
 
     @Test
     public void getAsReadOnly() {
         RingbufferStoreConfig ringbufferStoreConfig = new RingbufferStoreConfig();
 
+        MergePolicyConfig mergePolicyConfig = new MergePolicyConfig()
+                .setPolicy(PassThroughMergePolicy.class.getName())
+                .setBatchSize(2342);
+
         RingbufferConfig original = new RingbufferConfig(NAME)
                 .setBackupCount(2)
                 .setAsyncBackupCount(1)
                 .setCapacity(10)
                 .setTimeToLiveSeconds(400)
-                .setRingbufferStoreConfig(ringbufferStoreConfig);
+                .setRingbufferStoreConfig(ringbufferStoreConfig)
+                .setMergePolicyConfig(mergePolicyConfig);
 
         RingbufferConfig readonly = original.getAsReadOnly();
         assertNotNull(readonly);
@@ -245,7 +259,10 @@ public class RingbufferConfigTest {
         assertEquals(original.getCapacity(), readonly.getCapacity());
         assertEquals(original.getTimeToLiveSeconds(), readonly.getTimeToLiveSeconds());
         assertEquals(original.getInMemoryFormat(), readonly.getInMemoryFormat());
-        assertNotEquals(original.getRingbufferStoreConfig(), readonly.getRingbufferStoreConfig());
+        assertEquals(original.getRingbufferStoreConfig(), readonly.getRingbufferStoreConfig());
+        assertFalse("The read-only RingbufferStoreConfig should not be identity-equal to the original RingbufferStoreConfig",
+                original.getRingbufferStoreConfig() == readonly.getRingbufferStoreConfig());
+        assertEquals(original.getMergePolicyConfig(), readonly.getMergePolicyConfig());
 
         try {
             readonly.setCapacity(10);
@@ -289,10 +306,31 @@ public class RingbufferConfigTest {
         } catch (UnsupportedOperationException expected) {
         }
 
+        try {
+            readonly.setMergePolicyConfig(new MergePolicyConfig());
+            fail();
+        } catch (UnsupportedOperationException expected) {
+        }
+
         original.setRingbufferStoreConfig(null);
         readonly = original.getAsReadOnly();
 
         assertNotNull(readonly.getRingbufferStoreConfig());
         assertFalse(readonly.getRingbufferStoreConfig().isEnabled());
+    }
+
+    @Test
+    public void testEqualsAndHashCode() {
+        assumeDifferentHashCodes();
+        EqualsVerifier.forClass(RingbufferConfig.class)
+                .allFieldsShouldBeUsed()
+                .suppress(Warning.NULL_FIELDS, Warning.NONFINAL_FIELDS)
+                .withPrefabValues(RingbufferStoreConfigReadOnly.class,
+                        new RingbufferStoreConfigReadOnly(new RingbufferStoreConfig().setClassName("red")),
+                        new RingbufferStoreConfigReadOnly(new RingbufferStoreConfig().setClassName("black")))
+                .withPrefabValues(MergePolicyConfig.class,
+                        new MergePolicyConfig(PutIfAbsentMergePolicy.class.getName(), 100),
+                        new MergePolicyConfig(DiscardMergePolicy.class.getName(), 200))
+                .verify();
     }
 }

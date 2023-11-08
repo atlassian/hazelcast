@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,18 +20,19 @@ import com.hazelcast.multimap.impl.MultiMapContainer;
 import com.hazelcast.multimap.impl.MultiMapDataSerializerHook;
 import com.hazelcast.multimap.impl.MultiMapRecord;
 import com.hazelcast.multimap.impl.MultiMapValue;
-import com.hazelcast.multimap.impl.operations.MultiMapKeyBasedOperation;
+import com.hazelcast.multimap.impl.operations.AbstractKeyBasedMultiMapOperation;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.spi.BackupOperation;
 
 import java.io.IOException;
 import java.util.Collection;
 
-public class TxnPutBackupOperation extends MultiMapKeyBasedOperation {
+public class TxnPutBackupOperation extends AbstractKeyBasedMultiMapOperation implements BackupOperation {
 
-    long recordId;
-    Data value;
+    private long recordId;
+    private Data value;
 
     public TxnPutBackupOperation() {
     }
@@ -44,7 +45,7 @@ public class TxnPutBackupOperation extends MultiMapKeyBasedOperation {
 
     @Override
     public void run() throws Exception {
-        MultiMapContainer container = getOrCreateContainer();
+        MultiMapContainer container = getOrCreateContainerWithoutAccess();
         MultiMapValue multiMapValue = container.getOrCreateMultiMapValue(dataKey);
         response = true;
         if (multiMapValue.containsRecordId(recordId)) {

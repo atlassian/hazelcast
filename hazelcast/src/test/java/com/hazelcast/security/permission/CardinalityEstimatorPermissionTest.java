@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ package com.hazelcast.security.permission;
 
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.annotation.QuickTest;
-import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
@@ -26,32 +25,11 @@ import java.security.Permission;
 
 @RunWith(HazelcastSerialClassRunner.class)
 @Category(QuickTest.class)
-public class CardinalityEstimatorPermissionTest extends AbstractPermissionTest {
-
-    @Override
-    protected String[] getActions() {
-        return new String[]{
-                "create",
-                "read",
-                "modify",
-                "destroy"
-        };
-    }
+public class CardinalityEstimatorPermissionTest extends AbstractGenericPermissionTest {
 
     @Override
     protected Permission createPermission(String name, String... actions) {
         return new CardinalityEstimatorPermission(name, actions);
     }
 
-    @Test
-    @Override
-    public void willReturnFalseForNoPermOnListen() {
-        // listen is not supported
-    }
-
-    @Test
-    @Override
-    public void willReturnFalseForNoPermOnPut() {
-        // put is not supported
-    }
 }

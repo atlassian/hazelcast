@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,7 +37,7 @@ public class TryRemoveOperation extends BaseRemoveOperation {
 
     @Override
     public void run() {
-        dataOldValue = mapServiceContext.toData(recordStore.remove(dataKey));
+        dataOldValue = mapServiceContext.toData(recordStore.remove(dataKey, getCallerProvenance()));
         successful = dataOldValue != null;
     }
 

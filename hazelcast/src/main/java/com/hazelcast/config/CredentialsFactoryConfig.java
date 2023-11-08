@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,6 +38,13 @@ public class CredentialsFactoryConfig {
         this.className = className;
     }
 
+    public CredentialsFactoryConfig(CredentialsFactoryConfig credentialsFactoryConfig) {
+        className = credentialsFactoryConfig.className;
+        implementation = credentialsFactoryConfig.implementation;
+        properties = new Properties();
+        properties.putAll(credentialsFactoryConfig.properties);
+    }
+
     public String getClassName() {
         return className;
     }
@@ -72,5 +79,40 @@ public class CredentialsFactoryConfig {
                 + ", implementation=" + implementation
                 + ", properties=" + properties
                 + '}';
+    }
+
+    @SuppressWarnings({"checkstyle:npathcomplexity"})
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+
+        CredentialsFactoryConfig that = (CredentialsFactoryConfig) o;
+
+        if (className != null
+                ? !className.equals(that.className)
+                : that.className != null) {
+            return false;
+        }
+        if (implementation != null
+                ? !implementation.equals(that.implementation)
+                : that.implementation != null) {
+            return false;
+        }
+        return properties != null
+                ? properties.equals(that.properties)
+                : that.properties == null;
+    }
+
+    @Override
+    public int hashCode() {
+        int result = className != null ? className.hashCode() : 0;
+        result = 31 * result + (implementation != null ? implementation.hashCode() : 0);
+        result = 31 * result + (properties != null ? properties.hashCode() : 0);
+        return result;
     }
 }

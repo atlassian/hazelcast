@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,6 @@ import java.io.Serializable;
 import java.util.Collection;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastSerialClassRunner.class)
 @Category(QuickTest.class)
@@ -50,7 +49,7 @@ public class PredicateBuilderTest extends HazelcastTestSupport {
 
         Collection<Value> result = hazelcastLookupMap.values(predicate);
         assertEquals(1, result.size());
-        assertTrue(result.contains(new Value("value1")));
+        assertContains(result, new Value("value1"));
     }
 
     @Test
@@ -67,7 +66,7 @@ public class PredicateBuilderTest extends HazelcastTestSupport {
 
         Collection<Integer> result = hazelcastLookupMap.values(predicate);
         assertEquals(1, result.size());
-        assertTrue(result.contains(1));
+        assertContains(result, 1);
     }
 
     @Test
@@ -84,7 +83,7 @@ public class PredicateBuilderTest extends HazelcastTestSupport {
 
         Collection<Integer> result = hazelcastLookupMap.values(predicate);
         assertEquals(1, result.size());
-        assertTrue(result.contains(1));
+        assertContains(result, 1);
     }
 
     @Test
@@ -102,18 +101,18 @@ public class PredicateBuilderTest extends HazelcastTestSupport {
 
         Collection<Id> result = hazelcastLookupMap.values(predicate);
         assertEquals(1, result.size());
-        assertTrue(result.contains(new Id("10")));
+        assertContains(result, new Id("10"));
     }
 
-    private static class Id implements Serializable {
+    private static final class Id implements Serializable {
 
         private String id;
 
-        public Id(String id) {
+        private Id(String id) {
             this.id = id;
         }
 
-        public String getId() {
+        private String getId() {
             return id;
         }
 
@@ -130,7 +129,6 @@ public class PredicateBuilderTest extends HazelcastTestSupport {
             if (id != null ? !id.equals(id1.id) : id1.id != null) {
                 return false;
             }
-
             return true;
         }
 
@@ -140,7 +138,7 @@ public class PredicateBuilderTest extends HazelcastTestSupport {
         }
     }
 
-    private static class Value implements Serializable {
+    private static final class Value implements Serializable {
 
         private String name;
 
@@ -148,7 +146,7 @@ public class PredicateBuilderTest extends HazelcastTestSupport {
             this.name = name;
         }
 
-        public String getName() {
+        private String getName() {
             return name;
         }
 
@@ -162,11 +160,9 @@ public class PredicateBuilderTest extends HazelcastTestSupport {
             }
 
             Value value = (Value) o;
-
             if (name != null ? !name.equals(value.name) : value.name != null) {
                 return false;
             }
-
             return true;
         }
 

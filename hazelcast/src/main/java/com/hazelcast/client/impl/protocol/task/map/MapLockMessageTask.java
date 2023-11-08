@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,6 @@ import com.hazelcast.map.impl.MapService;
 import com.hazelcast.nio.Connection;
 import com.hazelcast.security.permission.ActionConstants;
 import com.hazelcast.security.permission.MapPermission;
-import com.hazelcast.spi.DefaultObjectNamespace;
 import com.hazelcast.spi.ObjectNamespace;
 import com.hazelcast.spi.Operation;
 
@@ -72,7 +71,7 @@ public class MapLockMessageTask
     }
 
     private ObjectNamespace getNamespace() {
-        return new DefaultObjectNamespace(MapService.SERVICE_NAME, parameters.name);
+        return MapService.getObjectNamespace(parameters.name);
     }
 
     @Override

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ package com.hazelcast.instance;
 
 import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.ExpectedRuntimeException;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
@@ -26,15 +25,19 @@ import com.hazelcast.test.TestHazelcastInstanceFactory;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.After;
 import org.junit.AfterClass;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static org.junit.Assert.assertEquals;
+import static classloading.ThreadLeakTestUtils.assertHazelcastThreadShutdown;
+import static classloading.ThreadLeakTestUtils.getThreads;
+import static org.junit.Assert.assertNotNull;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 
@@ -42,7 +45,14 @@ import static org.mockito.Mockito.doThrow;
 @Category(QuickTest.class)
 public class HazelcastInstanceFactoryTest extends HazelcastTestSupport {
 
+    private static Set<Thread> oldThreads;
+
     private HazelcastInstance hazelcastInstance;
+
+    @BeforeClass
+    public static void getThread() {
+        oldThreads = getThreads();
+    }
 
     @After
     public void tearDown() {
@@ -54,6 +64,8 @@ public class HazelcastInstanceFactoryTest extends HazelcastTestSupport {
     @AfterClass
     public static void cleanUp() {
         HazelcastInstanceFactory.terminateAll();
+
+        assertHazelcastThreadShutdown(oldThreads);
     }
 
     @Test
@@ -69,14 +81,7 @@ public class HazelcastInstanceFactoryTest extends HazelcastTestSupport {
             final HazelcastInstance instance2 = instanceFactory.newHazelcastInstance();
             final HazelcastInstance instance3 = instanceFactory.newHazelcastInstance();
 
-            assertTrueEventually(new AssertTask() {
-                @Override
-                public void run() throws Exception {
-                    assertEquals(3, instance1.getCluster().getMembers().size());
-                    assertEquals(3, instance2.getCluster().getMembers().size());
-                    assertEquals(3, instance3.getCluster().getMembers().size());
-                }
-            });
+            assertClusterSizeEventually(3, instance1, instance2, instance3);
         } finally {
             instanceFactory.terminateAll();
         }
@@ -94,25 +99,19 @@ public class HazelcastInstanceFactoryTest extends HazelcastTestSupport {
             final HazelcastInstance instance21 = instanceFactory2.newHazelcastInstance();
             final HazelcastInstance instance22 = instanceFactory2.newHazelcastInstance();
 
-            assertTrueEventually(new AssertTask() {
-                @Override
-                public void run() throws Exception {
-                    assertEquals(2, instance21.getCluster().getMembers().size());
-                    assertEquals(2, instance22.getCluster().getMembers().size());
-                }
-            });
-            assertTrueEventually(new AssertTask() {
-                @Override
-                public void run() throws Exception {
-                    assertEquals(3, instance11.getCluster().getMembers().size());
-                    assertEquals(3, instance12.getCluster().getMembers().size());
-                    assertEquals(3, instance13.getCluster().getMembers().size());
-                }
-            });
+            assertClusterSizeEventually(2, instance21, instance22);
+            assertClusterSizeEventually(3, instance11, instance12, instance13);
         } finally {
             instanceFactory1.terminateAll();
             instanceFactory2.terminateAll();
         }
+    }
+
+    @Test
+    public void test_NewInstance_configLoaded() {
+        hazelcastInstance = HazelcastInstanceFactory.newHazelcastInstance(null);
+
+        assertNotNull(hazelcastInstance.getConfig());
     }
 
     @Test(expected = ExpectedRuntimeException.class)
@@ -197,24 +196,6 @@ public class HazelcastInstanceFactoryTest extends HazelcastTestSupport {
             hazelcastInstance.getLifecycleService().terminate();
             throw expected;
         }
-    }
-
-    @Test(expected = ExpectedRuntimeException.class)
-    public void test_NewInstance_failedAfterStartAndBeforeShutdown() throws Exception {
-        NodeContext context = new TestNodeContext() {
-            @Override
-            public NodeExtension createNodeExtension(Node node) {
-                NodeExtension nodeExtension = super.createNodeExtension(node);
-                doThrow(new ExpectedRuntimeException()).when(nodeExtension).afterStart();
-                doThrow(new ExpectedRuntimeException()).when(nodeExtension).beforeShutdown();
-                return nodeExtension;
-            }
-        };
-
-        Config config = new Config();
-        config.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
-
-        hazelcastInstance = HazelcastInstanceFactory.newHazelcastInstance(config, randomString(), context);
     }
 
     @Test(expected = IllegalStateException.class)

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,14 +26,15 @@ public class Slf4jFactory extends LoggerFactorySupport {
 
     @Override
     protected ILogger createLogger(String name) {
-        final Logger l = LoggerFactory.getLogger(name);
-        return new Slf4jLogger(l);
+        Logger logger = LoggerFactory.getLogger(name);
+        return new Slf4jLogger(logger);
     }
 
     static class Slf4jLogger extends AbstractLogger {
+
         private final Logger logger;
 
-        public Slf4jLogger(Logger logger) {
+        Slf4jLogger(Logger logger) {
             this.logger = logger;
         }
 

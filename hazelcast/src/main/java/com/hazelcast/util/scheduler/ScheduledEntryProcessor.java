@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ public interface ScheduledEntryProcessor<K, V> {
      * Imagine you are implementing this for dirty records: if mapStore.storeAll
      * throws an exception, you might want to reschedule the failed records.
      *
-     * @param scheduler the EntryTskScheduler
+     * @param scheduler the EntryTaskScheduler
      * @param entries the entries (key and value) to process
      */
     void process(EntryTaskScheduler<K, V> scheduler, Collection<ScheduledEntry<K, V>> entries);

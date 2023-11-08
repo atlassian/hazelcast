@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import com.hazelcast.config.RingbufferConfig;
 import com.hazelcast.core.ICompletableFuture;
 import com.hazelcast.core.IFunction;
 import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.quorum.QuorumType;
 import com.hazelcast.ringbuffer.OverflowPolicy;
 import com.hazelcast.ringbuffer.ReadResultSet;
 import com.hazelcast.ringbuffer.Ringbuffer;
@@ -56,7 +57,7 @@ import static java.lang.String.format;
  */
 public class RingbufferProxy<E> extends AbstractDistributedObject<RingbufferService> implements Ringbuffer<E> {
 
-     /**
+    /**
      * The maximum number of items that can be retrieved in 1 go using the {@link #readManyAsync(long, int, int, IFunction)}
      * method.
      */
@@ -69,8 +70,12 @@ public class RingbufferProxy<E> extends AbstractDistributedObject<RingbufferServ
     public RingbufferProxy(NodeEngine nodeEngine, RingbufferService service, String name, RingbufferConfig config) {
         super(nodeEngine, service);
         this.name = name;
-        this.partitionId = nodeEngine.getPartitionService().getPartitionId(getNameAsPartitionAwareData());
+        this.partitionId = service.getRingbufferPartitionId(name);
         this.config = config;
+    }
+
+    public int getPartitionId() {
+        return partitionId;
     }
 
     @Override
@@ -85,6 +90,7 @@ public class RingbufferProxy<E> extends AbstractDistributedObject<RingbufferServ
 
     @Override
     public long capacity() {
+        getService().ensureQuorumPresent(name, QuorumType.READ);
         return config.getCapacity();
     }
 
@@ -117,6 +123,7 @@ public class RingbufferProxy<E> extends AbstractDistributedObject<RingbufferServ
         // we don't need to make a remote call if ttl is not set since in this case the remaining
         // capacity will always be equal to the capacity.
         if (config.getTimeToLiveSeconds() == 0) {
+            getService().ensureQuorumPresent(name, QuorumType.READ);
             return config.getCapacity();
         }
 
@@ -192,10 +199,10 @@ public class RingbufferProxy<E> extends AbstractDistributedObject<RingbufferServ
         checkSequence(startSequence);
         checkNotNegative(minCount, "minCount can't be smaller than 0");
         checkTrue(maxCount >= minCount, "maxCount should be equal or larger than minCount");
-        checkTrue(minCount <= config.getCapacity(), "the minCount should be smaller than or equal to the capacity");
+        checkTrue(maxCount <= config.getCapacity(), "the maxCount should be smaller than or equal to the capacity");
         checkTrue(maxCount <= MAX_BATCH_SIZE, "maxCount can't be larger than " + MAX_BATCH_SIZE);
 
-        Operation op = new ReadManyOperation(name, startSequence, minCount, maxCount, filter)
+        Operation op = new ReadManyOperation<E>(name, startSequence, minCount, maxCount, filter)
                 .setPartitionId(partitionId);
         OperationService operationService = getOperationService();
         return operationService.createInvocationBuilder(null, op, partitionId)

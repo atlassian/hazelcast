@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,9 +25,9 @@ import com.hazelcast.client.spi.ClientProxy;
 import com.hazelcast.client.spi.ClientTransactionManagerService;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.transaction.HazelcastXAResource;
 import com.hazelcast.transaction.TransactionContext;
+import com.hazelcast.transaction.TransactionException;
 import com.hazelcast.transaction.TransactionOptions;
 import com.hazelcast.transaction.impl.xa.SerializableXID;
 import com.hazelcast.transaction.impl.xa.XAResourceImpl;
@@ -56,8 +56,8 @@ public class XAResourceProxy extends ClientProxy implements HazelcastXAResource 
             = new ConcurrentHashMap<Xid, List<TransactionContext>>();
     private final AtomicInteger timeoutInSeconds = new AtomicInteger(DEFAULT_TIMEOUT_SECONDS);
 
-    public XAResourceProxy(String serviceName, String objectName) {
-        super(serviceName, objectName);
+    public XAResourceProxy(String serviceName, String objectName, ClientContext context) {
+        super(serviceName, objectName, context);
     }
 
     @Override
@@ -88,13 +88,15 @@ public class XAResourceProxy extends ClientProxy implements HazelcastXAResource 
                 }
                 break;
             default:
-                throw new XAException("Unknown flag!!! " + flags);
+                throw new XAException("Unknown flag!" + flags);
         }
     }
 
     private TransactionContext createTransactionContext(Xid xid) {
-        ClientContext clientContext = getContext();
-        ClientTransactionManagerService transactionManager = clientContext.getTransactionManager();
+        if (getContext().getConnectionManager().getOwnerConnection() == null) {
+            throw new TransactionException("Owner connection needs to be present to begin a transaction");
+        }
+        ClientTransactionManagerService transactionManager = getContext().getTransactionManager();
         TransactionContext context = transactionManager.newXATransactionContext(xid, timeoutInSeconds.get());
         getTransaction(context).begin();
         return context;
@@ -159,10 +161,9 @@ public class XAResourceProxy extends ClientProxy implements HazelcastXAResource 
     }
 
     private void finalizeTransactionRemotely(Xid xid, boolean isCommit) {
-        SerializableXID serializableXID =
-                new SerializableXID(xid.getFormatId(), xid.getGlobalTransactionId(), xid.getBranchQualifier());
-        SerializationService serializationService = getContext().getSerializationService();
-        Data xidData = serializationService.toData(serializableXID);
+        SerializableXID serializableXID = new SerializableXID(xid.getFormatId(), xid.getGlobalTransactionId(),
+                xid.getBranchQualifier());
+        Data xidData = toData(serializableXID);
         ClientMessage request = XATransactionFinalizeCodec.encodeRequest(serializableXID, isCommit);
         invoke(request, xidData);
     }
@@ -177,10 +178,9 @@ public class XAResourceProxy extends ClientProxy implements HazelcastXAResource 
     }
 
     private void clearRemoteTransactions(Xid xid) {
-        SerializableXID serializableXID =
-                new SerializableXID(xid.getFormatId(), xid.getGlobalTransactionId(), xid.getBranchQualifier());
-        SerializationService serializationService = getContext().getSerializationService();
-        Data xidData = serializationService.toData(serializableXID);
+        SerializableXID serializableXID = new SerializableXID(xid.getFormatId(), xid.getGlobalTransactionId(),
+                xid.getBranchQualifier());
+        Data xidData = toData(serializableXID);
         ClientMessage request = XATransactionClearRemoteCodec.encodeRequest(serializableXID);
         invoke(request, xidData);
     }
@@ -206,10 +206,9 @@ public class XAResourceProxy extends ClientProxy implements HazelcastXAResource 
         ClientMessage response = invoke(request);
         Collection<Data> list = XATransactionCollectTransactionsCodec.decodeResponse(response).response;
         SerializableXID[] xidArray = new SerializableXID[list.size()];
-        SerializationService serializationService = getContext().getSerializationService();
         int index = 0;
         for (Data xidData : list) {
-            xidArray[index++] = serializationService.toObject(xidData);
+            xidArray[index++] = toObject(xidData);
         }
         return xidArray;
     }
@@ -240,8 +239,7 @@ public class XAResourceProxy extends ClientProxy implements HazelcastXAResource 
     }
 
     private String getGroupName() {
-        ClientContext context = getContext();
-        ClientTransactionManagerService transactionManager = context.getTransactionManager();
+        ClientTransactionManagerService transactionManager = getContext().getTransactionManager();
         return transactionManager.getGroupName();
     }
 

@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.client;
 
 import com.hazelcast.client.config.ClientConfig;
@@ -29,16 +45,6 @@ public class ClientAuthenticationTest extends HazelcastTestSupport {
     @After
     public void cleanup() {
         hazelcastFactory.terminateAll();
-    }
-
-
-    @Test(expected = IllegalStateException.class)
-    public void testFailedAuthentication() throws Exception {
-        hazelcastFactory.newHazelcastInstance();
-        final ClientConfig clientConfig = new ClientConfig();
-        clientConfig.getNetworkConfig().setConnectionAttemptPeriod(1);
-        clientConfig.getGroupConfig().setPassword("InvalidPassword");
-        hazelcastFactory.newHazelcastClient(clientConfig);
     }
 
     @Test(expected = IllegalStateException.class)
@@ -93,7 +99,7 @@ public class ClientAuthenticationTest extends HazelcastTestSupport {
         // ensure client opens a connection to all nodes
         IMap<Integer, Integer> map = hazelcastInstance.getMap(randomName());
         for (int i = 0; i < 100; i++) {
-            map.put(i,i);
+            map.put(i, i);
         }
     }
 

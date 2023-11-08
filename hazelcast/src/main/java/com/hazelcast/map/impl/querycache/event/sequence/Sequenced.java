@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,9 +29,9 @@ public interface Sequenced {
     long getSequence();
 
     /**
-     * Returns partition id which this sequence belongs to.
+     * Returns partition ID which this sequence belongs to.
      *
-     * @return partition id which this sequence belongs to.
+     * @return partition ID which this sequence belongs to.
      */
     int getPartitionId();
 

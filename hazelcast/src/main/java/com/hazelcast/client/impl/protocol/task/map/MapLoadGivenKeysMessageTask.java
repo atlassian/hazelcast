@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,7 +40,7 @@ public class MapLoadGivenKeysMessageTask
 
     @Override
     protected OperationFactory createOperationFactory() {
-        Data[] keys = parameters.keys.toArray(new Data[parameters.keys.size()]);
+        Data[] keys = parameters.keys.toArray(new Data[0]);
         MapOperationProvider operationProvider = getOperationProvider(parameters.name);
         return operationProvider.createLoadAllOperationFactory(parameters.name,
                 Arrays.asList(keys), parameters.replaceExistingValues);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,22 @@
 
 package com.hazelcast.internal.ascii;
 
-import com.hazelcast.nio.ascii.TextReadHandler;
-import com.hazelcast.nio.ascii.TextWriteHandler;
+import com.hazelcast.nio.ascii.TextDecoder;
+import com.hazelcast.nio.ascii.TextEncoder;
 
 public abstract class AbstractTextCommand implements TextCommand {
     protected final TextCommandConstants.TextCommandType type;
-    private TextReadHandler readHandler;
-    private TextWriteHandler writeHandler;
+    private TextDecoder decoder;
+    private TextEncoder encoder;
     private long requestId = -1;
 
     protected AbstractTextCommand(TextCommandConstants.TextCommandType type) {
         this.type = type;
+    }
+
+    @Override
+    public int getFrameLength() {
+        return 0;
     }
 
     @Override
@@ -35,13 +40,13 @@ public abstract class AbstractTextCommand implements TextCommand {
     }
 
     @Override
-    public TextReadHandler getReadHandler() {
-        return readHandler;
+    public TextDecoder getDecoder() {
+        return decoder;
     }
 
     @Override
-    public TextWriteHandler getWriteHandler() {
-        return writeHandler;
+    public TextEncoder getEncoder() {
+        return encoder;
     }
 
     @Override
@@ -50,10 +55,10 @@ public abstract class AbstractTextCommand implements TextCommand {
     }
 
     @Override
-    public void init(TextReadHandler textReadHandler, long requestId) {
-        this.readHandler = textReadHandler;
+    public void init(TextDecoder decoder, long requestId) {
+        this.decoder = decoder;
         this.requestId = requestId;
-        this.writeHandler = textReadHandler.getTextWriteHandler();
+        this.encoder = decoder.getEncoder();
     }
 
     @Override

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,8 @@ import java.io.ObjectOutputStream;
 import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.net.MulticastSocket;
+
+import static java.lang.Thread.currentThread;
 
 public class MulticastDiscoverySender implements Runnable {
 
@@ -67,15 +69,23 @@ public class MulticastDiscoverySender implements Runnable {
     public void run() {
         while (!stop) {
             try {
-                Thread.sleep(SLEEP_DURATION);
-            } catch (InterruptedException e) {
-                logger.finest("Thread sleeping interrupted. This may due to graceful shutdown.");
-            }
-            try {
                 send();
             } catch (IOException e) {
                 logger.finest(e.getMessage());
             }
+            sleepUnlessStopped();
+        }
+    }
+
+    private void sleepUnlessStopped() {
+        if (stop) {
+            return;
+        }
+        try {
+            Thread.sleep(SLEEP_DURATION);
+        } catch (InterruptedException e) {
+            currentThread().interrupt();
+            logger.finest("Thread sleeping interrupted. This may due to graceful shutdown.");
         }
     }
 

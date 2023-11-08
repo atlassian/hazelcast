@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.collection.impl.queue;
 
 import com.hazelcast.config.Config;
@@ -25,18 +41,20 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 
+import static com.hazelcast.nio.IOUtil.deleteQuietly;
 import static com.hazelcast.test.TestStringUtils.fileAsText;
-import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
 public class StoreLatencyPlugin_QueueIntegrationTest extends HazelcastTestSupport {
 
+    private static final String QUEUE_NAME = "someQueue";
+
     private HazelcastInstance hz;
-    private IQueue queue;
+    private IQueue<Integer> queue;
 
     @Before
-    public void setup() throws Exception {
+    public void setup() {
         Config config = new Config()
                 .setProperty("hazelcast.diagnostics.enabled", "true")
                 .setProperty("hazelcast.diagnostics.storeLatency.period.seconds", "1");
@@ -48,82 +66,81 @@ public class StoreLatencyPlugin_QueueIntegrationTest extends HazelcastTestSuppor
     }
 
     @After
-    public void after(){
+    public void after() {
         File file = getNodeEngineImpl(hz).getDiagnostics().currentFile();
-        file.delete();
+        deleteQuietly(file);
     }
-
 
     @Test
     public void test() throws Exception {
-        for (int k = 0; k < 100; k++) {
-            queue.put(k);
+        for (int i = 0; i < 100; i++) {
+            queue.put(i);
         }
 
         assertTrueEventually(new AssertTask() {
             @Override
-            public void run() throws Exception {
+            public void run() {
                 File file = getNodeEngineImpl(hz).getDiagnostics().currentFile();
                 String content = fileAsText(file);
-                assertTrue(content.contains("somequeue"));
+                assertContains(content, QUEUE_NAME);
             }
         });
     }
 
     private static QueueConfig addQueueConfig(Config config) {
-        QueueConfig queueConfig = config.getQueueConfig("somequeue");
-        QueueStoreConfig queueStoreConfig = new QueueStoreConfig();
-        queueConfig.setQueueStoreConfig(queueStoreConfig);
-        queueStoreConfig.setEnabled(true).setStoreImplementation(new QueueStore() {
-            private final Random random = new Random();
+        QueueStoreConfig queueStoreConfig = new QueueStoreConfig()
+                .setEnabled(true)
+                .setStoreImplementation(new QueueStore() {
+                    private final Random random = new Random();
 
-            @Override
-            public void store(Long key, Object value) {
-                randomSleep();
-            }
+                    @Override
+                    public void store(Long key, Object value) {
+                        randomSleep();
+                    }
 
-            @Override
-            public void delete(Long key) {
-                randomSleep();
-            }
+                    @Override
+                    public void delete(Long key) {
+                        randomSleep();
+                    }
 
-            @Override
-            public void storeAll(Map map) {
-                randomSleep();
-            }
+                    @Override
+                    public void storeAll(Map map) {
+                        randomSleep();
+                    }
 
-            @Override
-            public void deleteAll(Collection keys) {
-                randomSleep();
-            }
+                    @Override
+                    public void deleteAll(Collection keys) {
+                        randomSleep();
+                    }
 
-            @Override
-            public Map loadAll(Collection keys) {
-                randomSleep();
-                return new HashMap();
-            }
+                    @Override
+                    public Map loadAll(Collection keys) {
+                        randomSleep();
+                        return new HashMap();
+                    }
 
-            @Override
-            public Set<Long> loadAllKeys() {
-                return new HashSet<Long>();
-            }
+                    @Override
+                    public Set<Long> loadAllKeys() {
+                        return new HashSet<Long>();
+                    }
 
-            @Override
-            public Object load(Long key) {
-                randomSleep();
-                return key;
-            }
+                    @Override
+                    public Object load(Long key) {
+                        randomSleep();
+                        return key;
+                    }
 
-            private void randomSleep() {
-                long delay = random.nextInt(100);
-                try {
-                    Thread.sleep(delay);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            }
-        });
-        return queueConfig;
+                    private void randomSleep() {
+                        long delay = random.nextInt(100);
+                        try {
+                            Thread.sleep(delay);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                });
+
+        return config.getQueueConfig(QUEUE_NAME)
+                .setQueueStoreConfig(queueStoreConfig);
     }
 }
-

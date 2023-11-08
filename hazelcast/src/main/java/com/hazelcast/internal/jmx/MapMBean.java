@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,11 +32,12 @@ import java.util.Set;
  */
 @ManagedDescription("IMap")
 public class MapMBean extends HazelcastMBean<IMap> {
+
     private final LocalStatsDelegate<LocalMapStats> localMapStatsDelegate;
 
     protected MapMBean(IMap managedObject, ManagementService service) {
         super(managedObject, service);
-        objectName = service.createObjectName("IMap", managedObject.getName());
+        this.objectName = service.createObjectName("IMap", managedObject.getName());
         StatsSupplier<LocalMapStats> localMapStatsSupplier = new LocalMapStatsSupplier(managedObject);
         this.localMapStatsDelegate = new LocalStatsDelegate<LocalMapStats>(localMapStatsSupplier, updateIntervalSec);
     }

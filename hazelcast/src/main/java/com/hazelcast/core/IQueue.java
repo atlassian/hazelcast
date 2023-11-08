@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,18 +23,18 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Concurrent, blocking, distributed, observable queue.
+ * <p>
+ * The IQueue is not a partitioned data-structure. All the content of an
+ * IQueue is stored in a single machine (and in the backup).
+ * The IQueue will not scale by adding more members to the cluster.
  *
- * The IQueue is not a partitioned data-structure. All the content of the IQueue is stored in a single machine (and
- * in the backup). The IQueue will not scale by adding more members in the cluster.
- *
+ * @param <E> queue item type
  * @see BaseQueue
  * @see java.util.Queue
  * @see BlockingQueue
  * @see TransactionalQueue
- * @param <E>
  */
 public interface IQueue<E> extends BlockingQueue<E>, BaseQueue<E>, ICollection<E> {
-
     /*
      * Added poll(), poll(long timeout, TimeUnit unit) and take()
      * methods here to prevent wrong method return type issue when
@@ -47,10 +47,19 @@ public interface IQueue<E> extends BlockingQueue<E>, BaseQueue<E>, ICollection<E
      *
      */
 
+    /**
+     * {@inheritDoc}
+     */
     E poll();
 
+    /**
+     * {@inheritDoc}
+     */
     E poll(long timeout, TimeUnit unit) throws InterruptedException;
 
+    /**
+     * {@inheritDoc}
+     */
     E take() throws InterruptedException;
 
     /**

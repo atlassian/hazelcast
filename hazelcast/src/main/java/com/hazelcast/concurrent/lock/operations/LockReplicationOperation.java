@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,14 +23,17 @@ import com.hazelcast.concurrent.lock.LockStoreImpl;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+import com.hazelcast.nio.serialization.impl.Versioned;
+import com.hazelcast.spi.ObjectNamespace;
 import com.hazelcast.spi.Operation;
+import com.hazelcast.spi.ServiceNamespace;
 
 import java.io.IOException;
 import java.util.Collection;
 import java.util.LinkedList;
 
 public class LockReplicationOperation extends Operation
-        implements IdentifiedDataSerializable {
+        implements IdentifiedDataSerializable, Versioned {
 
     private final Collection<LockStoreImpl> locks = new LinkedList<LockStoreImpl>();
 
@@ -38,13 +41,23 @@ public class LockReplicationOperation extends Operation
     }
 
     public LockReplicationOperation(LockStoreContainer container, int partitionId, int replicaIndex) {
+        this(container, partitionId, replicaIndex, container.getAllNamespaces(replicaIndex));
+    }
+
+    public LockReplicationOperation(LockStoreContainer container, int partitionId, int replicaIndex,
+            Collection<ServiceNamespace> namespaces) {
+
         setPartitionId(partitionId).setReplicaIndex(replicaIndex);
 
-        Collection<LockStoreImpl> lockStores = container.getLockStores();
-        for (LockStoreImpl ls : lockStores) {
+        for (ServiceNamespace namespace : namespaces) {
+            LockStoreImpl ls = container.getLockStore((ObjectNamespace) namespace);
+            if (ls == null) {
+                continue;
+            }
             if (ls.getTotalBackupCount() < replicaIndex) {
                 continue;
             }
+
             locks.add(ls);
         }
     }

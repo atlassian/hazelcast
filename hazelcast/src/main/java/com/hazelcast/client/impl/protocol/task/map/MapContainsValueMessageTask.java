@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,8 @@ import com.hazelcast.spi.OperationFactory;
 import java.security.Permission;
 import java.util.Map;
 
+import static com.hazelcast.map.impl.LocalMapStatsUtil.incrementOtherOperationsCount;
+
 public class MapContainsValueMessageTask
         extends AbstractMapAllPartitionsMessageTask<MapContainsValueCodec.RequestParameters> {
 
@@ -51,6 +53,7 @@ public class MapContainsValueMessageTask
                 break;
             }
         }
+        incrementOtherOperationsCount((MapService) getService(MapService.SERVICE_NAME), parameters.name);
         return result;
     }
 

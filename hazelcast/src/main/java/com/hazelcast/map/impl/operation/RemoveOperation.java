@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,16 @@
 
 package com.hazelcast.map.impl.operation;
 
+import com.hazelcast.internal.cluster.Versions;
 import com.hazelcast.map.impl.MapDataSerializerHook;
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.nio.serialization.impl.Versioned;
 
-public class RemoveOperation extends BaseRemoveOperation {
+import java.io.IOException;
+
+public class RemoveOperation extends BaseRemoveOperation implements Versioned {
 
     protected boolean successful;
 
@@ -32,7 +38,7 @@ public class RemoveOperation extends BaseRemoveOperation {
 
     @Override
     public void run() {
-        dataOldValue = mapServiceContext.toData(recordStore.remove(dataKey));
+        dataOldValue = mapServiceContext.toData(recordStore.remove(dataKey, getCallerProvenance()));
         successful = dataOldValue != null;
     }
 
@@ -51,5 +57,25 @@ public class RemoveOperation extends BaseRemoveOperation {
     @Override
     public int getId() {
         return MapDataSerializerHook.REMOVE;
+    }
+
+    @Override
+    protected void writeInternal(ObjectDataOutput out) throws IOException {
+        super.writeInternal(out);
+
+        // RU_COMPAT_3_10
+        if (out.getVersion().isGreaterOrEqual(Versions.V3_11)) {
+            out.writeBoolean(disableWanReplicationEvent);
+        }
+    }
+
+    @Override
+    protected void readInternal(ObjectDataInput in) throws IOException {
+        super.readInternal(in);
+
+        // RU_COMPAT_3_10
+        if (in.getVersion().isGreaterOrEqual(Versions.V3_11)) {
+            disableWanReplicationEvent = in.readBoolean();
+        }
     }
 }

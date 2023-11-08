@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,19 +25,20 @@ import com.hazelcast.core.MemberAttributeEvent;
 import com.hazelcast.core.MemberSelector;
 import com.hazelcast.core.MembershipEvent;
 import com.hazelcast.core.MembershipListener;
+import com.hazelcast.hotrestart.HotRestartService;
+import com.hazelcast.instance.EndpointQualifier;
 import com.hazelcast.instance.HazelcastInstanceImpl;
 import com.hazelcast.instance.LifecycleServiceImpl;
 import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.instance.Node;
 import com.hazelcast.internal.cluster.ClusterService;
-import com.hazelcast.internal.cluster.MemberInfo;
-import com.hazelcast.internal.cluster.impl.operations.MemberInfoUpdateOperation;
-import com.hazelcast.internal.cluster.impl.operations.MemberRemoveOperation;
-import com.hazelcast.internal.cluster.impl.operations.ShutdownNodeOperation;
-import com.hazelcast.internal.cluster.impl.operations.TriggerMemberListPublishOperation;
+import com.hazelcast.internal.cluster.impl.operations.ExplicitSuspicionOp;
+import com.hazelcast.internal.cluster.impl.operations.OnJoinOp;
+import com.hazelcast.internal.cluster.impl.operations.PromoteLiteMemberOp;
+import com.hazelcast.internal.cluster.impl.operations.ShutdownNodeOp;
+import com.hazelcast.internal.cluster.impl.operations.TriggerExplicitSuspicionOp;
 import com.hazelcast.internal.metrics.MetricsRegistry;
 import com.hazelcast.internal.metrics.Probe;
-import com.hazelcast.internal.partition.impl.InternalPartitionServiceImpl;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.Connection;
@@ -46,108 +47,99 @@ import com.hazelcast.spi.EventPublishingService;
 import com.hazelcast.spi.EventRegistration;
 import com.hazelcast.spi.EventService;
 import com.hazelcast.spi.ExecutionService;
+import com.hazelcast.spi.InternalCompletableFuture;
 import com.hazelcast.spi.ManagedService;
 import com.hazelcast.spi.MemberAttributeServiceEvent;
 import com.hazelcast.spi.MembershipAwareService;
-import com.hazelcast.spi.MembershipServiceEvent;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.Operation;
+import com.hazelcast.spi.OperationService;
 import com.hazelcast.spi.TransactionalService;
+import com.hazelcast.spi.exception.RetryableHazelcastException;
 import com.hazelcast.spi.impl.NodeEngineImpl;
+import com.hazelcast.spi.impl.executionservice.InternalExecutionService;
 import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.transaction.TransactionOptions;
 import com.hazelcast.transaction.TransactionalObject;
 import com.hazelcast.transaction.impl.Transaction;
+import com.hazelcast.util.UuidUtil;
 import com.hazelcast.util.executor.ExecutorType;
-import com.hazelcast.version.ClusterVersion;
+import com.hazelcast.version.Version;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedHashSet;
-import java.util.LinkedList;
-import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.locks.Lock;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 
 import static com.hazelcast.cluster.memberselector.MemberSelectors.NON_LOCAL_MEMBER_SELECTOR;
+import static com.hazelcast.instance.EndpointQualifier.MEMBER;
+import static com.hazelcast.instance.MemberImpl.NA_MEMBER_LIST_JOIN_VERSION;
+import static com.hazelcast.spi.ExecutionService.SYSTEM_EXECUTOR;
+import static com.hazelcast.util.Preconditions.checkFalse;
 import static com.hazelcast.util.Preconditions.checkNotNull;
+import static com.hazelcast.util.Preconditions.checkTrue;
 import static java.lang.String.format;
-import static java.util.Collections.unmodifiableSet;
+import static java.util.Collections.singleton;
 
 @SuppressWarnings({"checkstyle:methodcount", "checkstyle:classdataabstractioncoupling", "checkstyle:classfanoutcomplexity"})
 public class ClusterServiceImpl implements ClusterService, ConnectionListener, ManagedService,
         EventPublishingService<MembershipEvent, MembershipListener>, TransactionalService {
 
     public static final String SERVICE_NAME = "hz:core:clusterService";
+    public static final String SPLIT_BRAIN_HANDLER_EXECUTOR_NAME = "hz:cluster:splitbrain";
 
-    static final String EXECUTOR_NAME = "hz:cluster";
+    static final String CLUSTER_EXECUTOR_NAME = "hz:cluster";
+    static final String MEMBERSHIP_EVENT_EXECUTOR_NAME = "hz:cluster:event";
+    static final String VERSION_AUTO_UPGRADE_EXECUTOR_NAME = "hz:cluster:version:auto:upgrade";
 
     private static final int DEFAULT_MERGE_RUN_DELAY_MILLIS = 100;
-    private static final int CLUSTER_EXECUTOR_QUEUE_CAPACITY = 1000;
     private static final long CLUSTER_SHUTDOWN_SLEEP_DURATION_IN_MILLIS = 1000;
+    private static final boolean ASSERTION_ENABLED = ClusterServiceImpl.class.desiredAssertionStatus();
 
-    private static final String MEMBERSHIP_EVENT_EXECUTOR_NAME = "hz:cluster:event";
-
-    private final Address thisAddress;
-
-    private final Lock lock = new ReentrantLock();
-
-    private final AtomicReference<MemberMap> memberMapRef = new AtomicReference<MemberMap>(MemberMap.empty());
-
-    private final AtomicReference<MemberMap> membersRemovedInNotActiveStateRef
-            = new AtomicReference<MemberMap>(MemberMap.empty());
-
+    private final boolean useLegacyMemberListFormat;
     private final Node node;
-
-    private final NodeEngineImpl nodeEngine;
-
     private final ILogger logger;
-
+    private final NodeEngineImpl nodeEngine;
     private final ClusterClockImpl clusterClock;
-
-    private final ClusterStateManager clusterStateManager;
-
+    private final MembershipManager membershipManager;
     private final ClusterJoinManager clusterJoinManager;
-
+    private final ClusterStateManager clusterStateManager;
     private final ClusterHeartbeatManager clusterHeartbeatManager;
+    private final ReentrantLock lock = new ReentrantLock();
+    private final AtomicBoolean joined = new AtomicBoolean(false);
 
-    private String clusterId;
+    private volatile String clusterId;
+    private volatile Address masterAddress;
+    private volatile MemberImpl localMember;
 
-    public ClusterServiceImpl(Node node) {
-
+    public ClusterServiceImpl(Node node, MemberImpl localMember) {
         this.node = node;
+        this.localMember = localMember;
         nodeEngine = node.nodeEngine;
 
         logger = node.getLogger(ClusterService.class.getName());
         clusterClock = new ClusterClockImpl(logger);
 
-        thisAddress = node.getThisAddress();
+        useLegacyMemberListFormat = node.getProperties().getBoolean(GroupProperty.USE_LEGACY_MEMBER_LIST_FORMAT);
 
+        membershipManager = new MembershipManager(node, this, lock);
         clusterStateManager = new ClusterStateManager(node, lock);
         clusterJoinManager = new ClusterJoinManager(node, this, lock);
-        clusterHeartbeatManager = new ClusterHeartbeatManager(node, this);
+        clusterHeartbeatManager = new ClusterHeartbeatManager(node, this, lock);
 
-        registerThisMember();
-
-        node.connectionManager.addConnectionListener(this);
+        node.networkingService.getEndpointManager(MEMBER).addConnectionListener(this);
+        InternalExecutionService executionService = nodeEngine.getExecutionService();
+        executionService.register(CLUSTER_EXECUTOR_NAME, 2, Integer.MAX_VALUE, ExecutorType.CACHED);
+        executionService.register(SPLIT_BRAIN_HANDLER_EXECUTOR_NAME, 2, Integer.MAX_VALUE, ExecutorType.CACHED);
         //MEMBERSHIP_EVENT_EXECUTOR is a single threaded executor to ensure that events are executed in correct order.
-        nodeEngine.getExecutionService().register(MEMBERSHIP_EVENT_EXECUTOR_NAME, 1, Integer.MAX_VALUE, ExecutorType.CACHED);
+        executionService.register(MEMBERSHIP_EVENT_EXECUTOR_NAME, 1, Integer.MAX_VALUE, ExecutorType.CACHED);
+        executionService.register(VERSION_AUTO_UPGRADE_EXECUTOR_NAME, 1, Integer.MAX_VALUE, ExecutorType.CACHED);
         registerMetrics();
-    }
-
-    private void registerThisMember() {
-        MemberImpl thisMember = node.getLocalMember();
-        setMembers(thisMember);
-        sendMembershipEvents(Collections.<MemberImpl>emptySet(), Collections.singleton(thisMember));
     }
 
     private void registerMetrics() {
@@ -155,6 +147,581 @@ public class ClusterServiceImpl implements ClusterService, ConnectionListener, M
         metricsRegistry.scanAndRegister(clusterClock, "cluster.clock");
         metricsRegistry.scanAndRegister(clusterHeartbeatManager, "cluster.heartbeat");
         metricsRegistry.scanAndRegister(this, "cluster");
+    }
+
+    @Override
+    public void init(NodeEngine nodeEngine, Properties properties) {
+        long mergeFirstRunDelayMs = node.getProperties().getPositiveMillisOrDefault(GroupProperty.MERGE_FIRST_RUN_DELAY_SECONDS,
+                DEFAULT_MERGE_RUN_DELAY_MILLIS);
+        long mergeNextRunDelayMs = node.getProperties().getPositiveMillisOrDefault(GroupProperty.MERGE_NEXT_RUN_DELAY_SECONDS,
+                DEFAULT_MERGE_RUN_DELAY_MILLIS);
+
+        ExecutionService executionService = nodeEngine.getExecutionService();
+        executionService.scheduleWithRepetition(SPLIT_BRAIN_HANDLER_EXECUTOR_NAME, new SplitBrainHandler(node),
+                mergeFirstRunDelayMs, mergeNextRunDelayMs, TimeUnit.MILLISECONDS);
+
+        membershipManager.init();
+        clusterHeartbeatManager.init();
+    }
+
+    public void sendLocalMembershipEvent() {
+        membershipManager.sendMembershipEvents(Collections.<MemberImpl>emptySet(), singleton(getLocalMember()), false);
+    }
+
+    public void handleExplicitSuspicion(MembersViewMetadata expectedMembersViewMetadata, Address suspectedAddress) {
+        membershipManager.handleExplicitSuspicion(expectedMembersViewMetadata, suspectedAddress);
+    }
+
+    public void handleExplicitSuspicionTrigger(Address caller, int callerMemberListVersion,
+                                               MembersViewMetadata suspectedMembersViewMetadata) {
+        membershipManager.handleExplicitSuspicionTrigger(caller, callerMemberListVersion, suspectedMembersViewMetadata);
+    }
+
+    public void suspectMember(Member suspectedMember, String reason, boolean destroyConnection) {
+        membershipManager.suspectMember((MemberImpl) suspectedMember, reason, destroyConnection);
+    }
+
+    public void suspectAddressIfNotConnected(Address address) {
+        lock.lock();
+        try {
+            MemberImpl member = getMember(address);
+            if (member == null) {
+                if (logger.isFineEnabled()) {
+                    logger.fine("Cannot suspect " + address + ", since it's not a member.");
+                }
+
+                return;
+            }
+
+            Connection conn = node.getEndpointManager(MEMBER).getConnection(address);
+            if (conn != null && conn.isAlive()) {
+                if (logger.isFineEnabled()) {
+                    logger.fine("Cannot suspect " + member + ", since there's a live connection -> " + conn);
+                }
+
+                return;
+            }
+            suspectMember(member, "No connection", false);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    void sendExplicitSuspicion(MembersViewMetadata endpointMembersViewMetadata) {
+        Address endpoint = endpointMembersViewMetadata.getMemberAddress();
+        if (endpoint.equals(node.getThisAddress())) {
+            logger.warning("Cannot send explicit suspicion for " + endpointMembersViewMetadata + " to itself.");
+            return;
+        }
+
+        if (!isJoined()) {
+            if (logger.isFineEnabled()) {
+                logger.fine("Cannot send explicit suspicion, not joined yet!");
+            }
+
+            return;
+        }
+
+        Version clusterVersion = getClusterVersion();
+        assert !clusterVersion.isUnknown() : "Cluster version should not be unknown after join!";
+
+        Operation op = new ExplicitSuspicionOp(endpointMembersViewMetadata);
+        nodeEngine.getOperationService().send(op, endpoint);
+    }
+
+    void sendExplicitSuspicionTrigger(Address triggerTo, MembersViewMetadata endpointMembersViewMetadata) {
+        if (triggerTo.equals(node.getThisAddress())) {
+            logger.warning("Cannot send explicit suspicion trigger for " + endpointMembersViewMetadata + " to itself.");
+            return;
+        }
+
+        int memberListVersion = membershipManager.getMemberListVersion();
+        Operation op = new TriggerExplicitSuspicionOp(memberListVersion, endpointMembersViewMetadata);
+        OperationService operationService = nodeEngine.getOperationService();
+        operationService.send(op, triggerTo);
+    }
+
+    public MembersView handleMastershipClaim(Address candidateAddress, String candidateUuid) {
+        checkNotNull(candidateAddress);
+        checkNotNull(candidateUuid);
+        checkFalse(getThisAddress().equals(candidateAddress), "cannot accept my own mastership claim!");
+
+        lock.lock();
+        try {
+            checkTrue(isJoined(), candidateAddress + " claims mastership but this node is not joined!");
+            checkFalse(isMaster(),
+                    candidateAddress + " claims mastership but this node is master!");
+
+            MemberImpl masterCandidate = membershipManager.getMember(candidateAddress, candidateUuid);
+            checkTrue(masterCandidate != null,
+                    candidateAddress + " claims mastership but it is not a member!");
+
+            MemberMap memberMap = membershipManager.getMemberMap();
+            if (!shouldAcceptMastership(memberMap, masterCandidate)) {
+                String message = "Cannot accept mastership claim of " + candidateAddress
+                        + " at the moment. There are more suitable master candidates in the member list.";
+                logger.fine(message);
+                throw new RetryableHazelcastException(message);
+            }
+
+            if (!membershipManager.clearMemberSuspicion(candidateAddress, "Mastership claim")) {
+                throw new IllegalStateException("Cannot accept mastership claim of " + candidateAddress + ". "
+                        + getMasterAddress() + " is already master.");
+            }
+
+            setMasterAddress(masterCandidate.getAddress());
+
+            MembersView response = memberMap.toTailMembersView(masterCandidate, true);
+
+            logger.warning("Mastership of " + candidateAddress + " is accepted. Response: " + response);
+
+            return response;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    // called under cluster service lock
+    // mastership is accepted when all members before the candidate is suspected
+    private boolean shouldAcceptMastership(MemberMap memberMap, MemberImpl candidate) {
+        assert lock.isHeldByCurrentThread() : "Called without holding cluster service lock!";
+        for (MemberImpl member : memberMap.headMemberSet(candidate, false)) {
+            if (!membershipManager.isMemberSuspected(member.getAddress())) {
+                if (logger.isFineEnabled()) {
+                    logger.fine("Should not accept mastership claim of " + candidate + ", because " + member
+                            + " is not suspected at the moment and is before than " + candidate + " in the member list.");
+                }
+
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public void merge(Address newTargetAddress) {
+        node.getJoiner().setTargetAddress(newTargetAddress);
+        LifecycleServiceImpl lifecycleService = node.hazelcastInstance.getLifecycleService();
+        lifecycleService.runUnderLifecycleLock(new ClusterMergeTask(node));
+    }
+
+    @Override
+    public void reset() {
+        lock.lock();
+        try {
+            resetJoinState();
+            resetLocalMemberUuid();
+            resetClusterId();
+            clearInternalState();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private void resetLocalMemberUuid() {
+        assert lock.isHeldByCurrentThread() : "Called without holding cluster service lock!";
+        assert !isJoined() : "Cannot reset local member UUID when joined.";
+
+        Address memberAddress = node.getThisAddress();
+        Map<EndpointQualifier, Address> addressMap = localMember.getAddressMap();
+        String newUuid = UuidUtil.createMemberUuid(memberAddress);
+
+        logger.warning("Resetting local member UUID. Previous: " + localMember.getUuid() + ", new: " + newUuid);
+
+        MemberImpl memberWithNewUuid = new MemberImpl.Builder(addressMap)
+                .version(localMember.getVersion())
+                .localMember(true)
+                .uuid(newUuid)
+                .attributes(localMember.getAttributes())
+                .liteMember(localMember.isLiteMember())
+                .memberListJoinVersion(localMember.getMemberListJoinVersion())
+                .instance(node.hazelcastInstance)
+                .build();
+
+        localMember = memberWithNewUuid;
+
+        node.loggingService.setThisMember(localMember);
+    }
+
+    public void resetJoinState() {
+        lock.lock();
+        try {
+            setMasterAddress(null);
+            setJoined(false);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @SuppressWarnings("checkstyle:parameternumber")
+    public boolean finalizeJoin(MembersView membersView, Address callerAddress, String callerUuid, String targetUuid,
+                                String clusterId, ClusterState clusterState, Version clusterVersion, long clusterStartTime,
+                                long masterTime, OnJoinOp preJoinOp) {
+        lock.lock();
+        try {
+            if (!checkValidMaster(callerAddress)) {
+                if (logger.isFineEnabled()) {
+                    logger.fine("Not finalizing join because caller: " + callerAddress + " is not known master: "
+                            + getMasterAddress());
+                }
+                MembersViewMetadata membersViewMetadata = new MembersViewMetadata(callerAddress, callerUuid,
+                        callerAddress, membersView.getVersion());
+                sendExplicitSuspicion(membersViewMetadata);
+                return false;
+            }
+
+            if (isJoined()) {
+                if (logger.isFineEnabled()) {
+                    logger.fine("Node is already joined... No need to finalize join...");
+                }
+
+                return false;
+            }
+
+            checkMemberUpdateContainsLocalMember(membersView, targetUuid);
+
+            try {
+                initialClusterState(clusterState, clusterVersion);
+            } catch (VersionMismatchException e) {
+                // node should shutdown since it cannot handle the cluster version
+                // it is safe to do so here because no operations have been executed yet
+                logger.severe(format("This member will shutdown because it cannot join the cluster: %s", e.getMessage()));
+                node.shutdown(true);
+                return false;
+            }
+            setClusterId(clusterId);
+            ClusterClockImpl clusterClock = getClusterClock();
+            clusterClock.setClusterStartTime(clusterStartTime);
+            clusterClock.setMasterTime(masterTime);
+
+            // run pre-join op before member list update, so operations other than join ops will be refused by operation service
+            if (preJoinOp != null) {
+                nodeEngine.getOperationService().run(preJoinOp);
+            }
+
+            membershipManager.updateMembers(membersView);
+            clusterHeartbeatManager.heartbeat();
+            setJoined(true);
+
+            return true;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public boolean updateMembers(MembersView membersView, Address callerAddress, String callerUuid, String targetUuid) {
+        lock.lock();
+        try {
+            if (!isJoined()) {
+                logger.warning("Not updating members received from caller: " + callerAddress + " because node is not joined! ");
+                return false;
+            }
+
+            if (!checkValidMaster(callerAddress)) {
+                logger.warning("Not updating members because caller: " + callerAddress + " is not known master: "
+                        + getMasterAddress());
+                MembersViewMetadata callerMembersViewMetadata = new MembersViewMetadata(callerAddress, callerUuid,
+                        callerAddress, membersView.getVersion());
+                if (!clusterJoinManager.isMastershipClaimInProgress()) {
+                    sendExplicitSuspicion(callerMembersViewMetadata);
+                }
+                return false;
+            }
+
+            checkMemberUpdateContainsLocalMember(membersView, targetUuid);
+
+            if (!shouldProcessMemberUpdate(membersView)) {
+                return false;
+            }
+
+            membershipManager.updateMembers(membersView);
+            return true;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private void checkMemberUpdateContainsLocalMember(MembersView membersView, String targetUuid) {
+        String thisUuid = getThisUuid();
+        if (!thisUuid.equals(targetUuid)) {
+            String msg = "Not applying member update because target uuid: " + targetUuid + " is different! -> " + membersView
+                    + ", local member: " + localMember;
+            throw new IllegalArgumentException(msg);
+        }
+
+        Member localMember = getLocalMember();
+        if (!membersView.containsMember(localMember.getAddress(), localMember.getUuid())) {
+            String msg = "Not applying member update because member list doesn't contain us! -> " + membersView
+                    + ", local member: " + localMember;
+            throw new IllegalArgumentException(msg);
+        }
+    }
+
+    private boolean checkValidMaster(Address callerAddress) {
+        return (callerAddress != null && callerAddress.equals(getMasterAddress()));
+    }
+
+    private boolean shouldProcessMemberUpdate(MembersView membersView) {
+        int memberListVersion = membershipManager.getMemberListVersion();
+        if (memberListVersion > membersView.getVersion()) {
+            if (logger.isFineEnabled()) {
+                logger.fine("Received an older member update, ignoring... Current version: "
+                        + memberListVersion + ", Received version: " + membersView.getVersion());
+            }
+
+            return false;
+        }
+
+        if (memberListVersion == membersView.getVersion()) {
+            if (ASSERTION_ENABLED) {
+                MemberMap memberMap = membershipManager.getMemberMap();
+                Collection<Address> currentAddresses = memberMap.getAddresses();
+                Collection<Address> newAddresses = membersView.getAddresses();
+
+                assert currentAddresses.size() == newAddresses.size()
+                        && newAddresses.containsAll(currentAddresses)
+                        : "Member view versions are same but new member view doesn't match the current!"
+                        + " Current: " + memberMap.toMembersView() + ", New: " + membersView;
+            }
+
+            if (logger.isFineEnabled()) {
+                logger.fine("Received a periodic member update, ignoring... Version: " + memberListVersion);
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
+    public void updateMemberAttribute(String uuid, MemberAttributeOperationType operationType, String key, Object value) {
+        lock.lock();
+        try {
+            MemberImpl member = membershipManager.getMember(uuid);
+            if (!member.equals(getLocalMember())) {
+                member.updateAttribute(operationType, key, value);
+            }
+            sendMemberAttributeEvent(member, operationType, key, value);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Override
+    public void connectionAdded(Connection connection) {
+    }
+
+    @Override
+    public void connectionRemoved(Connection connection) {
+        if (logger.isFineEnabled()) {
+            logger.fine("Removed connection to " + connection.getEndPoint());
+        }
+        if (!isJoined()) {
+            Address masterAddress = getMasterAddress();
+            if (masterAddress != null && masterAddress.equals(connection.getEndPoint())) {
+                setMasterAddressToJoin(null);
+            }
+        }
+    }
+
+    public NodeEngineImpl getNodeEngine() {
+        return nodeEngine;
+    }
+
+    /**
+     * Returns whether member with given identity (either {@code UUID} or {@code Address}
+     * depending on Hot Restart is enabled or not) is a known missing member or not.
+     *
+     * @param address Address of the missing member
+     * @param uuid    Uuid of the missing member
+     * @return true if it's a known missing member, false otherwise
+     */
+    public boolean isMissingMember(Address address, String uuid) {
+        return membershipManager.isMissingMember(address, uuid);
+    }
+
+    public Collection<Member> getActiveAndMissingMembers() {
+        return membershipManager.getActiveAndMissingMembers();
+    }
+
+    public void notifyForRemovedMember(MemberImpl member) {
+        lock.lock();
+        try {
+            membershipManager.onMemberRemove(member);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void shrinkMissingMembers(Collection<String> memberUuidsToRemove) {
+        membershipManager.shrinkMissingMembers(memberUuidsToRemove);
+    }
+
+    private void sendMemberAttributeEvent(MemberImpl member, MemberAttributeOperationType operationType, String key,
+                                          Object value) {
+        final MemberAttributeServiceEvent event
+                = new MemberAttributeServiceEvent(this, member, operationType, key, value);
+        MemberAttributeEvent attributeEvent = new MemberAttributeEvent(this, member, operationType, key, value);
+        Collection<MembershipAwareService> membershipAwareServices = nodeEngine.getServices(MembershipAwareService.class);
+        if (membershipAwareServices != null && !membershipAwareServices.isEmpty()) {
+            for (final MembershipAwareService service : membershipAwareServices) {
+                // service events should not block each other
+                nodeEngine.getExecutionService().execute(SYSTEM_EXECUTOR, new Runnable() {
+                    public void run() {
+                        service.memberAttributeChanged(event);
+                    }
+                });
+            }
+        }
+        EventService eventService = nodeEngine.getEventService();
+        Collection<EventRegistration> registrations = eventService.getRegistrations(SERVICE_NAME, SERVICE_NAME);
+        for (EventRegistration reg : registrations) {
+            eventService.publishEvent(SERVICE_NAME, reg, attributeEvent, reg.getId().hashCode());
+        }
+    }
+
+    @Override
+    public MemberImpl getMember(Address address) {
+        if (address == null) {
+            return null;
+        }
+        return membershipManager.getMember(address);
+    }
+
+    @Override
+    public MemberImpl getMember(String uuid) {
+        if (uuid == null) {
+            return null;
+        }
+        return membershipManager.getMember(uuid);
+    }
+
+    @Override
+    public MemberImpl getMember(Address address, String uuid) {
+        if (address == null || uuid == null) {
+            return null;
+        }
+        return membershipManager.getMember(address, uuid);
+    }
+
+    @Override
+    public Collection<MemberImpl> getMemberImpls() {
+        return membershipManager.getMembers();
+    }
+
+    public Collection<Address> getMemberAddresses() {
+        return membershipManager.getMemberMap().getAddresses();
+    }
+
+    @SuppressWarnings("unchecked")
+    @Override
+    public Set<Member> getMembers() {
+        return membershipManager.getMemberSet();
+    }
+
+    @Override
+    public Collection<Member> getMembers(MemberSelector selector) {
+        return (Collection) new MemberSelectingCollection(membershipManager.getMembers(), selector);
+    }
+
+    @Override
+    public void shutdown(boolean terminate) {
+        clearInternalState();
+    }
+
+    private void clearInternalState() {
+        lock.lock();
+        try {
+            membershipManager.reset();
+            clusterHeartbeatManager.reset();
+            clusterStateManager.reset();
+            clusterJoinManager.reset();
+            resetJoinState();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public boolean setMasterAddressToJoin(final Address master) {
+        lock.lock();
+        try {
+            if (isJoined()) {
+                Address currentMasterAddress = getMasterAddress();
+                if (!currentMasterAddress.equals(master)) {
+                    logger.warning("Cannot set master address to " + master
+                            + " because node is already joined! Current master: " + currentMasterAddress);
+                } else if (logger.isFineEnabled()) {
+                    logger.fine("Master address is already set to " + master);
+                }
+                return false;
+            }
+
+            setMasterAddress(master);
+            return true;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    // should be called under lock
+    void setMasterAddress(Address master) {
+        assert lock.isHeldByCurrentThread() : "Called without holding cluster service lock!";
+        if (logger.isFineEnabled()) {
+            logger.fine("Setting master address to " + master);
+        }
+        masterAddress = master;
+    }
+
+    @Override
+    public Address getMasterAddress() {
+        return masterAddress;
+    }
+
+    @Override
+    public boolean isMaster() {
+        return node.getThisAddress().equals(masterAddress);
+    }
+
+    @Override
+    public Address getThisAddress() {
+        return node.getThisAddress();
+    }
+
+    @Override
+    public MemberImpl getLocalMember() {
+        return localMember;
+    }
+
+    public String getThisUuid() {
+        return localMember.getUuid();
+    }
+
+    // should be called under lock
+    void setJoined(boolean val) {
+        assert lock.isHeldByCurrentThread() : "Called without holding cluster service lock!";
+        joined.set(val);
+    }
+
+    @Override
+    public boolean isJoined() {
+        return joined.get();
+    }
+
+    @Probe
+    @Override
+    public int getSize() {
+        return membershipManager.getMemberMap().size();
+    }
+
+    @Override
+    public int getSize(MemberSelector selector) {
+        int size = 0;
+        for (MemberImpl member : membershipManager.getMembers()) {
+            if (selector.select(member)) {
+                size++;
+            }
+        }
+
+        return size;
     }
 
     @Override
@@ -172,648 +739,17 @@ public class ClusterServiceImpl implements ClusterService, ConnectionListener, M
         return clusterId;
     }
 
-    public void setClusterId(String clusterId) {
-        if (this.clusterId == null) {
-            this.clusterId = clusterId;
-        }
+    // called under cluster service lock
+    void setClusterId(String newClusterId) {
+        assert lock.isHeldByCurrentThread() : "Called without holding cluster service lock!";
+        assert clusterId == null : "Cluster ID should be null: " + clusterId;
+        clusterId = newClusterId;
     }
 
-    @Override
-    public void init(NodeEngine nodeEngine, Properties properties) {
-        long mergeFirstRunDelayMs = node.getProperties().getMillis(GroupProperty.MERGE_FIRST_RUN_DELAY_SECONDS);
-        mergeFirstRunDelayMs = (mergeFirstRunDelayMs > 0 ? mergeFirstRunDelayMs : DEFAULT_MERGE_RUN_DELAY_MILLIS);
-
-        ExecutionService executionService = nodeEngine.getExecutionService();
-        executionService.register(EXECUTOR_NAME, 2, CLUSTER_EXECUTOR_QUEUE_CAPACITY, ExecutorType.CACHED);
-
-        long mergeNextRunDelayMs = node.getProperties().getMillis(GroupProperty.MERGE_NEXT_RUN_DELAY_SECONDS);
-        mergeNextRunDelayMs = (mergeNextRunDelayMs > 0 ? mergeNextRunDelayMs : DEFAULT_MERGE_RUN_DELAY_MILLIS);
-        executionService.scheduleWithRepetition(EXECUTOR_NAME, new SplitBrainHandler(node), mergeFirstRunDelayMs,
-                mergeNextRunDelayMs, TimeUnit.MILLISECONDS);
-
-        clusterHeartbeatManager.init();
-    }
-
-    public void sendMemberListToMember(Address target) {
-        if (!isMaster()) {
-            return;
-        }
-        if (thisAddress.equals(target)) {
-            return;
-        }
-        MemberImpl member = getMember(target);
-        String memberUuid = member != null ? member.getUuid() : null;
-        Collection<MemberImpl> members = getMemberImpls();
-        MemberInfoUpdateOperation op = new MemberInfoUpdateOperation(memberUuid, createMemberInfoList(members),
-                                                                     clusterClock.getClusterTime(), null, false);
-        nodeEngine.getOperationService().send(op, target);
-    }
-
-    public void removeAddress(Address deadAddress, String uuid, String reason) {
-        lock.lock();
-        try {
-            MemberImpl member = getMember(deadAddress);
-            if (member == null || !uuid.equals(member.getUuid())) {
-                if (logger.isFineEnabled()) {
-                    logger.fine("Cannot remove " + deadAddress + ", either member is not present "
-                            + "or uuid is not matching. Uuid: " + uuid + ", member: " + member);
-                }
-                return;
-            }
-            doRemoveAddress(deadAddress, reason, true);
-        } finally {
-            lock.unlock();
-        }
-    }
-
-    public void removeAddress(Address deadAddress, String reason) {
-        doRemoveAddress(deadAddress, reason, true);
-    }
-
-    void doRemoveAddress(Address deadAddress, String reason, boolean destroyConnection) {
-        if (!ensureMemberIsRemovable(deadAddress)) {
-            return;
-        }
-
-        lock.lock();
-        try {
-            if (deadAddress.equals(node.getMasterAddress())) {
-                assignNewMaster();
-            }
-            if (node.isMaster()) {
-                clusterJoinManager.removeJoin(deadAddress);
-            }
-            Connection conn = node.connectionManager.getConnection(deadAddress);
-            if (destroyConnection && conn != null) {
-                conn.close(reason, null);
-            }
-            MemberImpl deadMember = getMember(deadAddress);
-            if (deadMember != null) {
-                removeMember(deadMember);
-                logger.info(membersString());
-            }
-        } finally {
-            lock.unlock();
-        }
-    }
-
-    private boolean ensureMemberIsRemovable(Address deadAddress) {
-        if (!node.joined()) {
-            return false;
-        }
-        if (deadAddress.equals(thisAddress)) {
-            return false;
-        }
-        return true;
-    }
-
-    private void assignNewMaster() {
-        Address oldMasterAddress = node.getMasterAddress();
-        if (node.joined()) {
-            Collection<Member> members = getMembers();
-            Member newMaster = null;
-            int size = members.size();
-            if (size > 1) {
-                Iterator<Member> iterator = members.iterator();
-                Member member = iterator.next();
-                if (member.getAddress().equals(oldMasterAddress)) {
-                    newMaster = iterator.next();
-                } else {
-                    logger.severe(format("Old master %s is dead, but the first of member list is a different member %s!",
-                            oldMasterAddress, member));
-                    newMaster = member;
-                }
-            } else {
-                logger.warning(format("Old master %s is dead and this node is not master, "
-                        + "but member list contains only %d members: %s", oldMasterAddress, size, members));
-            }
-            logger.info(format("Old master %s left the cluster, assigning new master %s", oldMasterAddress, newMaster));
-            if (newMaster != null) {
-                node.setMasterAddress(newMaster.getAddress());
-            } else {
-                node.setMasterAddress(null);
-            }
-        } else {
-            node.setMasterAddress(null);
-        }
-
-        if (logger.isFineEnabled()) {
-            logger.fine(format("Old master: %s, new master: %s ", oldMasterAddress, node.getMasterAddress()));
-        }
-
-        if (node.isMaster()) {
-            clusterHeartbeatManager.resetMemberMasterConfirmations();
-        } else {
-            clusterHeartbeatManager.sendMasterConfirmation();
-        }
-    }
-
-    public void merge(Address newTargetAddress) {
-        node.getJoiner().setTargetAddress(newTargetAddress);
-        LifecycleServiceImpl lifecycleService = node.hazelcastInstance.getLifecycleService();
-        lifecycleService.runUnderLifecycleLock(new ClusterMergeTask(node));
-    }
-
-    @Override
-    public void reset() {
-        lock.lock();
-        try {
-            memberMapRef.set(MemberMap.singleton(node.getLocalMember()));
-            clusterHeartbeatManager.reset();
-            clusterStateManager.reset();
-            clusterJoinManager.reset();
-            membersRemovedInNotActiveStateRef.set(MemberMap.empty());
-        } finally {
-            lock.unlock();
-        }
-    }
-
-    static List<MemberInfo> createMemberInfoList(Collection<MemberImpl> members) {
-        List<MemberInfo> memberInfos = new LinkedList<MemberInfo>();
-        for (MemberImpl member : members) {
-            memberInfos.add(new MemberInfo(member));
-        }
-        return memberInfos;
-    }
-
-    static Set<MemberInfo> createMemberInfoSet(Collection<MemberImpl> members) {
-        Set<MemberInfo> memberInfos = new HashSet<MemberInfo>();
-        for (MemberImpl member : members) {
-            memberInfos.add(new MemberInfo(member));
-        }
-        return memberInfos;
-    }
-
-    public void updateMembers(Collection<MemberInfo> members) {
-        lock.lock();
-        try {
-            MemberMap currentMemberMap = memberMapRef.get();
-
-            if (!shouldProcessMemberUpdate(currentMemberMap, members)) {
-                return;
-            }
-
-            String scopeId = thisAddress.getScopeId();
-            Collection<MemberImpl> newMembers = new LinkedList<MemberImpl>();
-            MemberImpl[] updatedMembers = new MemberImpl[members.size()];
-            int memberIndex = 0;
-            for (MemberInfo memberInfo : members) {
-                Address address = memberInfo.getAddress();
-                MemberImpl member = currentMemberMap.getMember(address);
-                if (member == null) {
-                    member = createMember(memberInfo, scopeId);
-                    newMembers.add(member);
-                    long now = clusterClock.getClusterTime();
-                    clusterHeartbeatManager.onHeartbeat(member, now);
-                    clusterHeartbeatManager.acceptMasterConfirmation(member, now);
-
-                    repairPartitionTableIfReturningMember(member);
-
-                }
-                updatedMembers[memberIndex++] = member;
-            }
-
-            setMembers(updatedMembers);
-            sendMembershipEvents(currentMemberMap.getMembers(), newMembers);
-
-            MemberMap membersRemovedInNotActiveState = membersRemovedInNotActiveStateRef.get();
-            membersRemovedInNotActiveStateRef.set(MemberMap.cloneExcluding(membersRemovedInNotActiveState, updatedMembers));
-
-            node.setJoined();
-            clusterHeartbeatManager.heartbeat();
-            logger.info(membersString());
-        } finally {
-            lock.unlock();
-        }
-    }
-
-    private void repairPartitionTableIfReturningMember(MemberImpl member) {
-        if (!isMaster()) {
-            return;
-        }
-
-        if (getClusterState() == ClusterState.ACTIVE) {
-            return;
-        }
-
-        if (!node.getNodeExtension().isStartCompleted()) {
-            return;
-        }
-
-        Address address = member.getAddress();
-        MemberImpl memberRemovedWhileClusterIsNotActive = getMemberRemovedWhileClusterIsNotActive(member.getUuid());
-        if (memberRemovedWhileClusterIsNotActive != null) {
-            Address oldAddress = memberRemovedWhileClusterIsNotActive.getAddress();
-            if (!oldAddress.equals(address)) {
-                assert !isMemberRemovedWhileClusterIsNotActive(address);
-
-                logger.warning(member + " is returning with a new address. Old one was: " + oldAddress
-                        + ". Will update partition table with the new address.");
-                InternalPartitionServiceImpl partitionService = node.partitionService;
-                partitionService.replaceAddress(oldAddress, address);
-            }
-        }
-    }
-
-    private boolean shouldProcessMemberUpdate(MemberMap currentMembers,
-                                              Collection<MemberInfo> newMemberInfos) {
-        int currentMembersSize = currentMembers.size();
-        int newMembersSize = newMemberInfos.size();
-
-        if (currentMembersSize > newMembersSize) {
-            logger.warning("Received an older member update, no need to process...");
-            nodeEngine.getOperationService().send(new TriggerMemberListPublishOperation(), getMasterAddress());
-            return false;
-        }
-
-        // member-update process only accepts new member updates
-        if (currentMembersSize == newMembersSize) {
-            Set<MemberInfo> currentMemberInfos = createMemberInfoSet(currentMembers.getMembers());
-            if (currentMemberInfos.containsAll(newMemberInfos)) {
-                logger.fine("Received a periodic member update, no need to process...");
-            } else {
-                logger.warning("Received an inconsistent member update "
-                        + "which contains new members and removes some of the current members! "
-                        + "Ignoring and requesting a new member update...");
-                nodeEngine.getOperationService().send(new TriggerMemberListPublishOperation(), getMasterAddress());
-            }
-            return false;
-        }
-
-        Set<MemberInfo> currentMemberInfos = createMemberInfoSet(currentMembers.getMembers());
-        currentMemberInfos.removeAll(newMemberInfos);
-        if (currentMemberInfos.isEmpty()) {
-            return true;
-        } else {
-            logger.warning("Received an inconsistent member update."
-                    + " It has more members but also removes some of the current members!"
-                    + " Ignoring and requesting a new member update...");
-            nodeEngine.getOperationService().send(new TriggerMemberListPublishOperation(), getMasterAddress());
-            return false;
-        }
-    }
-
-    private void sendMembershipEvents(Collection<MemberImpl> currentMembers, Collection<MemberImpl> newMembers) {
-        Set<Member> eventMembers = new LinkedHashSet<Member>(currentMembers);
-        if (!newMembers.isEmpty()) {
-            if (newMembers.size() == 1) {
-                MemberImpl newMember = newMembers.iterator().next();
-                // sync call
-                node.getPartitionService().memberAdded(newMember);
-
-                // async events
-                eventMembers.add(newMember);
-                sendMembershipEventNotifications(newMember, unmodifiableSet(eventMembers), true);
-            } else {
-                for (MemberImpl newMember : newMembers) {
-                    // sync call
-                    node.getPartitionService().memberAdded(newMember);
-
-                    // async events
-                    eventMembers.add(newMember);
-                    sendMembershipEventNotifications(newMember, unmodifiableSet(new LinkedHashSet<Member>(eventMembers)), true);
-                }
-            }
-        }
-    }
-
-    public void updateMemberAttribute(String uuid, MemberAttributeOperationType operationType, String key, Object value) {
-        lock.lock();
-        try {
-            MemberMap memberMap = memberMapRef.get();
-            for (MemberImpl member : memberMap.getMembers()) {
-                if (member.getUuid().equals(uuid)) {
-                    if (!member.equals(getLocalMember())) {
-                        member.updateAttribute(operationType, key, value);
-                    }
-                    sendMemberAttributeEvent(member, operationType, key, value);
-                    break;
-                }
-            }
-        } finally {
-            lock.unlock();
-        }
-    }
-
-    @Override
-    public void connectionAdded(Connection connection) {
-    }
-
-    @Override
-    public void connectionRemoved(Connection connection) {
-        if (logger.isFineEnabled()) {
-            logger.fine("Removed connection " + connection.getEndPoint());
-        }
-        if (!node.joined()) {
-            Address masterAddress = node.getMasterAddress();
-            if (masterAddress != null && masterAddress.equals(connection.getEndPoint())) {
-                node.setMasterAddress(null);
-            }
-        }
-    }
-
-    public NodeEngineImpl getNodeEngine() {
-        return nodeEngine;
-    }
-
-    private void setMembers(MemberImpl... members) {
-        if (members == null || members.length == 0) {
-            return;
-        }
-        if (logger.isFineEnabled()) {
-            logger.fine("Updating members " + Arrays.toString(members));
-        }
-        lock.lock();
-        try {
-            memberMapRef.set(MemberMap.createNew(members));
-        } finally {
-            lock.unlock();
-        }
-    }
-
-    private void removeMember(MemberImpl deadMember) {
-        logger.info("Removing " + deadMember);
-        lock.lock();
-        try {
-            MemberMap currentMembers = memberMapRef.get();
-            final Address deadAddress = deadMember.getAddress();
-
-            if (currentMembers.contains(deadAddress)) {
-                clusterHeartbeatManager.removeMember(deadMember);
-                MemberMap newMembers = MemberMap.cloneExcluding(currentMembers, deadMember);
-                memberMapRef.set(newMembers);
-
-                if (node.isMaster()) {
-                    if (logger.isFineEnabled()) {
-                        logger.fine(deadMember + " is dead, sending remove to all other members...");
-                    }
-                    sendMemberRemoveOperation(deadMember);
-                }
-
-                final ClusterState clusterState = clusterStateManager.getState();
-                if (clusterState != ClusterState.ACTIVE) {
-                    if (logger.isFineEnabled()) {
-                        logger.fine(deadMember + " is dead, added to members left while cluster is " + clusterState + " state");
-                    }
-
-                    if (!node.getNodeExtension().isMemberExcluded(deadAddress, deadMember.getUuid())) {
-                        MemberMap membersRemovedInNotActiveState = membersRemovedInNotActiveStateRef.get();
-                        membersRemovedInNotActiveStateRef
-                                .set(MemberMap.cloneAdding(membersRemovedInNotActiveState, deadMember));
-                    }
-
-                    InternalPartitionServiceImpl partitionService = node.partitionService;
-                    partitionService.cancelReplicaSyncRequestsTo(deadAddress);
-                } else {
-                    onMemberRemove(deadMember, newMembers);
-                }
-
-                // async events
-                sendMembershipEventNotifications(deadMember,
-                        unmodifiableSet(new LinkedHashSet<Member>(newMembers.getMembers())), false);
-            }
-        } finally {
-            lock.unlock();
-        }
-    }
-
-    private void onMemberRemove(MemberImpl deadMember, MemberMap newMembers) {
-        // sync call
-        node.getPartitionService().memberRemoved(deadMember);
-        // sync call
-        nodeEngine.onMemberLeft(deadMember);
-    }
-
-    public boolean isMemberRemovedWhileClusterIsNotActive(Address target) {
-        MemberMap membersRemovedInNotActiveState = membersRemovedInNotActiveStateRef.get();
-        return membersRemovedInNotActiveState.contains(target);
-    }
-
-    boolean isMemberRemovedWhileClusterIsNotActive(String uuid) {
-        MemberMap membersRemovedInNotActiveState = membersRemovedInNotActiveStateRef.get();
-        return membersRemovedInNotActiveState.contains(uuid);
-    }
-
-    MemberImpl getMemberRemovedWhileClusterIsNotActive(String uuid) {
-        MemberMap membersRemovedInNotActiveState = membersRemovedInNotActiveStateRef.get();
-        return membersRemovedInNotActiveState.getMember(uuid);
-    }
-
-    public Collection<Member> getCurrentMembersAndMembersRemovedWhileClusterIsNotActive() {
-        lock.lock();
-        try {
-            MemberMap membersRemovedInNotActiveState = membersRemovedInNotActiveStateRef.get();
-            if (membersRemovedInNotActiveState.size() == 0) {
-                return getMembers();
-            }
-
-            Collection<MemberImpl> removedMembers = membersRemovedInNotActiveState.getMembers();
-            Collection<MemberImpl> members = memberMapRef.get().getMembers();
-
-            Collection<Member> allMembers = new ArrayList<Member>(members.size() + removedMembers.size());
-            allMembers.addAll(members);
-            allMembers.addAll(removedMembers);
-
-            return allMembers;
-        } finally {
-            lock.unlock();
-        }
-    }
-
-    void removeMembersDeadWhileClusterIsNotActive() {
-        lock.lock();
-        try {
-            MemberMap memberMap = memberMapRef.get();
-            MemberMap membersRemovedInNotActiveState = membersRemovedInNotActiveStateRef.get();
-            Collection<MemberImpl> members = membersRemovedInNotActiveState.getMembers();
-            membersRemovedInNotActiveStateRef.set(MemberMap.empty());
-            for (MemberImpl member : members) {
-                onMemberRemove(member, memberMap);
-            }
-
-        } finally {
-            lock.unlock();
-        }
-    }
-
-    public void notifyForRemovedMember(MemberImpl member) {
-        lock.lock();
-        try {
-            MemberMap memberMap = memberMapRef.get();
-            onMemberRemove(member, memberMap);
-        } finally {
-            lock.unlock();
-        }
-    }
-
-    public void shrinkMembersRemovedWhileClusterIsNotActiveState(Collection<String> memberUuidsToRemove) {
-        lock.lock();
-        try {
-            Set<MemberImpl> membersRemovedInNotActiveState
-                    = new LinkedHashSet<MemberImpl>(membersRemovedInNotActiveStateRef.get().getMembers());
-
-            Iterator<MemberImpl> it = membersRemovedInNotActiveState.iterator();
-            while (it.hasNext()) {
-                MemberImpl member = it.next();
-                if (memberUuidsToRemove.contains(member.getUuid())) {
-                    logger.fine("Removing " + member + " from members removed while in cluster not active state");
-                    it.remove();
-                }
-            }
-            membersRemovedInNotActiveStateRef.set(MemberMap.createNew(membersRemovedInNotActiveState.toArray(new MemberImpl[0])));
-        } finally {
-            lock.unlock();
-        }
-    }
-
-    private void sendMemberRemoveOperation(Member deadMember) {
-        for (Member member : getMembers()) {
-            Address address = member.getAddress();
-            if (!thisAddress.equals(address) && !address.equals(deadMember.getAddress())) {
-                MemberRemoveOperation op = new MemberRemoveOperation(deadMember.getAddress(), deadMember.getUuid());
-                nodeEngine.getOperationService().send(op, address);
-            }
-        }
-    }
-
-    public void sendShutdownMessage() {
-        sendMemberRemoveOperation(getLocalMember());
-    }
-
-    private void sendMembershipEventNotifications(MemberImpl member, Set<Member> members, final boolean added) {
-        int eventType = added ? MembershipEvent.MEMBER_ADDED : MembershipEvent.MEMBER_REMOVED;
-        MembershipEvent membershipEvent = new MembershipEvent(this, member, eventType, members);
-        Collection<MembershipAwareService> membershipAwareServices = nodeEngine.getServices(MembershipAwareService.class);
-        if (membershipAwareServices != null && !membershipAwareServices.isEmpty()) {
-            final MembershipServiceEvent event = new MembershipServiceEvent(membershipEvent);
-            for (final MembershipAwareService service : membershipAwareServices) {
-                nodeEngine.getExecutionService().execute(MEMBERSHIP_EVENT_EXECUTOR_NAME, new Runnable() {
-                    public void run() {
-                        if (added) {
-                            service.memberAdded(event);
-                        } else {
-                            service.memberRemoved(event);
-                        }
-                    }
-                });
-            }
-        }
-        EventService eventService = nodeEngine.getEventService();
-        Collection<EventRegistration> registrations = eventService.getRegistrations(SERVICE_NAME, SERVICE_NAME);
-        for (EventRegistration reg : registrations) {
-            eventService.publishEvent(SERVICE_NAME, reg, membershipEvent, reg.getId().hashCode());
-        }
-    }
-
-    private void sendMemberAttributeEvent(MemberImpl member, MemberAttributeOperationType operationType, String key,
-                                          Object value) {
-        final MemberAttributeServiceEvent event
-                = new MemberAttributeServiceEvent(this, member, operationType, key, value);
-        MemberAttributeEvent attributeEvent = new MemberAttributeEvent(this, member, operationType, key, value);
-        Collection<MembershipAwareService> membershipAwareServices = nodeEngine.getServices(MembershipAwareService.class);
-        if (membershipAwareServices != null && !membershipAwareServices.isEmpty()) {
-            for (final MembershipAwareService service : membershipAwareServices) {
-                // service events should not block each other
-                nodeEngine.getExecutionService().execute(ExecutionService.SYSTEM_EXECUTOR, new Runnable() {
-                    public void run() {
-                        service.memberAttributeChanged(event);
-                    }
-                });
-            }
-        }
-        EventService eventService = nodeEngine.getEventService();
-        Collection<EventRegistration> registrations = eventService.getRegistrations(SERVICE_NAME, SERVICE_NAME);
-        for (EventRegistration reg : registrations) {
-            eventService.publishEvent(SERVICE_NAME, reg, attributeEvent, reg.getId().hashCode());
-        }
-    }
-
-    private MemberImpl createMember(MemberInfo memberInfo, String ipV6ScopeId) {
-        Address address = memberInfo.getAddress();
-        address.setScopeId(ipV6ScopeId);
-        return new MemberImpl(address, memberInfo.getVersion(), thisAddress.equals(address), memberInfo.getUuid(),
-                (HazelcastInstanceImpl) nodeEngine.getHazelcastInstance(), memberInfo.getAttributes(), memberInfo.isLiteMember());
-    }
-
-    @Override
-    public MemberImpl getMember(Address address) {
-        if (address == null) {
-            return null;
-        }
-        MemberMap memberMap = memberMapRef.get();
-        return memberMap.getMember(address);
-    }
-
-    @Override
-    public MemberImpl getMember(String uuid) {
-        if (uuid == null) {
-            return null;
-        }
-
-        MemberMap memberMap = memberMapRef.get();
-        return memberMap.getMember(uuid);
-    }
-
-    @Override
-    public Collection<MemberImpl> getMemberImpls() {
-        return memberMapRef.get().getMembers();
-    }
-
-    public Collection<Address> getMemberAddresses() {
-        return memberMapRef.get().getAddresses();
-    }
-
-    @SuppressWarnings("unchecked")
-    @Override
-    public Set<Member> getMembers() {
-        return (Set) memberMapRef.get().getMembers();
-    }
-
-    @Override
-    public Collection<Member> getMembers(MemberSelector selector) {
-        return (Collection) new MemberSelectingCollection(memberMapRef.get().getMembers(), selector);
-    }
-
-    @Override
-    public void shutdown(boolean terminate) {
-        reset();
-    }
-
-    @Override
-    public Address getMasterAddress() {
-        return node.getMasterAddress();
-    }
-
-    @Override
-    public boolean isMaster() {
-        return node.isMaster();
-    }
-
-    @Override
-    public Address getThisAddress() {
-        return thisAddress;
-    }
-
-    public Member getLocalMember() {
-        return node.getLocalMember();
-    }
-
-    @Probe(name = "size")
-    @Override
-    public int getSize() {
-        return getMembers().size();
-    }
-
-    @Override
-    public int getSize(MemberSelector selector) {
-        int size = 0;
-        for (MemberImpl member : memberMapRef.get().getMembers()) {
-            if (selector.select(member)) {
-                size++;
-            }
-        }
-
-        return size;
+    // called under cluster service lock
+    private void resetClusterId() {
+        assert lock.isHeldByCurrentThread() : "Called without holding cluster service lock!";
+        clusterId = null;
     }
 
     public String addMembershipListener(MembershipListener listener) {
@@ -862,18 +798,24 @@ public class ClusterServiceImpl implements ClusterService, ConnectionListener, M
         }
     }
 
-    public String membersString() {
+    private String legacyMemberListString() {
         StringBuilder sb = new StringBuilder("\n\nMembers [");
         Collection<MemberImpl> members = getMemberImpls();
-        sb.append(members != null ? members.size() : 0);
+        sb.append(members.size());
         sb.append("] {");
-        if (members != null) {
-            for (Member member : members) {
-                sb.append("\n\t").append(member);
-            }
+        for (Member member : members) {
+            sb.append("\n\t").append(member);
         }
         sb.append("\n}\n");
         return sb.toString();
+    }
+
+    public String getMemberListString() {
+        return useLegacyMemberListFormat ? legacyMemberListString() : membershipManager.memberListString();
+    }
+
+    void printMemberList() {
+        logger.info(getMemberListString());
     }
 
     @Override
@@ -888,7 +830,6 @@ public class ClusterServiceImpl implements ClusterService, ConnectionListener, M
 
     @Override
     public void rollbackTransaction(String transactionId) {
-        logger.info("Rolling back cluster state. Transaction: " + transactionId);
         clusterStateManager.rollbackClusterState(transactionId);
     }
 
@@ -899,8 +840,8 @@ public class ClusterServiceImpl implements ClusterService, ConnectionListener, M
 
     private void changeClusterState(ClusterState newState, boolean isTransient) {
         int partitionStateVersion = node.getPartitionService().getPartitionStateVersion();
-        clusterStateManager.changeClusterState(ClusterStateChange.from(newState), getMembers(), partitionStateVersion,
-                isTransient);
+        clusterStateManager.changeClusterState(ClusterStateChange.from(newState), membershipManager.getMemberMap(),
+                partitionStateVersion, isTransient);
     }
 
     @Override
@@ -910,35 +851,53 @@ public class ClusterServiceImpl implements ClusterService, ConnectionListener, M
 
     private void changeClusterState(ClusterState newState, TransactionOptions options, boolean isTransient) {
         int partitionStateVersion = node.getPartitionService().getPartitionStateVersion();
-        clusterStateManager.changeClusterState(ClusterStateChange.from(newState), getMembers(), options, partitionStateVersion,
-                isTransient);
+        clusterStateManager.changeClusterState(ClusterStateChange.from(newState), membershipManager.getMemberMap(),
+                options, partitionStateVersion, isTransient);
     }
 
     @Override
-    public ClusterVersion getClusterVersion() {
+    public Version getClusterVersion() {
         return clusterStateManager.getClusterVersion();
     }
 
     @Override
-    public void changeClusterVersion(ClusterVersion version) {
-        int partitionStateVersion = node.getPartitionService().getPartitionStateVersion();
-        clusterStateManager.changeClusterState(ClusterStateChange.from(version), getMembers(), partitionStateVersion, false);
+    public HotRestartService getHotRestartService() {
+        return node.getNodeExtension().getHotRestartService();
     }
 
     @Override
-    public void changeClusterVersion(ClusterVersion version, TransactionOptions options) {
-        int partitionStateVersion = node.getPartitionService().getPartitionStateVersion();
-        clusterStateManager.changeClusterState(ClusterStateChange.from(version), getMembers(), options, partitionStateVersion,
-                false);
+    public void changeClusterVersion(Version version) {
+        MemberMap memberMap = membershipManager.getMemberMap();
+        changeClusterVersion(version, memberMap);
     }
 
-    void addMembersRemovedInNotActiveState(Collection<MemberImpl> members) {
+    public void changeClusterVersion(Version version, MemberMap memberMap) {
+        int partitionStateVersion = node.getPartitionService().getPartitionStateVersion();
+        clusterStateManager.changeClusterState(ClusterStateChange.from(version), memberMap, partitionStateVersion, false);
+    }
+
+    @Override
+    public void changeClusterVersion(Version version, TransactionOptions options) {
+        int partitionStateVersion = node.getPartitionService().getPartitionStateVersion();
+        clusterStateManager.changeClusterState(ClusterStateChange.from(version), membershipManager.getMemberMap(),
+                options, partitionStateVersion, false);
+    }
+
+    @Override
+    public int getMemberListJoinVersion() {
         lock.lock();
         try {
-            members.remove(node.getLocalMember());
-            MemberMap membersRemovedInNotActiveState = membersRemovedInNotActiveStateRef.get();
-            membersRemovedInNotActiveStateRef.set(MemberMap.cloneAdding(membersRemovedInNotActiveState,
-                    members.toArray(new MemberImpl[0])));
+            if (!isJoined()) {
+                throw new IllegalStateException("Member list join version is not available when not joined");
+            }
+
+            int joinVersion = localMember.getMemberListJoinVersion();
+            if (joinVersion == NA_MEMBER_LIST_JOIN_VERSION) {
+                // This can happen when the cluster was just upgraded to 3.10, but this member did not yet learn
+                // its node ID by an async call from master.
+                throw new IllegalStateException("Member list join version is not yet available");
+            }
+            return joinVersion;
         } finally {
             lock.unlock();
         }
@@ -946,26 +905,42 @@ public class ClusterServiceImpl implements ClusterService, ConnectionListener, M
 
     @Override
     public void shutdown() {
-        changeClusterState(ClusterState.PASSIVE, true);
-        shutdownNodes();
+        shutdownCluster(null);
     }
 
     @Override
     public void shutdown(TransactionOptions options) {
-        changeClusterState(ClusterState.PASSIVE, options, true);
-        shutdownNodes();
+        shutdownCluster(options);
     }
 
-    private void shutdownNodes() {
-        final Operation op = new ShutdownNodeOperation();
+    private void shutdownCluster(TransactionOptions options) {
+        if (options == null) {
+            changeClusterState(ClusterState.PASSIVE, true);
+        } else {
+            changeClusterState(ClusterState.PASSIVE, options, true);
+        }
 
-        logger.info("Sending shutting down operations to all members...");
+        long timeoutNanos = node.getProperties().getNanos(GroupProperty.CLUSTER_SHUTDOWN_TIMEOUT_SECONDS);
+        long startNanos = System.nanoTime();
+        node.getNodeExtension().getInternalHotRestartService()
+                .waitPartitionReplicaSyncOnCluster(timeoutNanos, TimeUnit.NANOSECONDS);
+        timeoutNanos -= (System.nanoTime() - startNanos);
 
+        if (node.config.getCPSubsystemConfig().getCPMemberCount() == 0) {
+            shutdownNodesConcurrently(timeoutNanos);
+        } else {
+            shutdownNodesSerially(timeoutNanos);
+        }
+    }
+
+    private void shutdownNodesConcurrently(final long timeoutNanos) {
+        Operation op = new ShutdownNodeOp();
         Collection<Member> members = getMembers(NON_LOCAL_MEMBER_SELECTOR);
-        final long timeout = node.getProperties().getNanos(GroupProperty.CLUSTER_SHUTDOWN_TIMEOUT_SECONDS);
-        final long startTime = System.nanoTime();
+        long startTime = System.nanoTime();
 
-        while ((System.nanoTime() - startTime) < timeout && !members.isEmpty()) {
+        logger.info("Sending shut down operations to all members...");
+
+        while ((System.nanoTime() - startTime) < timeoutNanos && !members.isEmpty()) {
             for (Member member : members) {
                 nodeEngine.getOperationService().send(op, member.getAddress());
             }
@@ -981,17 +956,48 @@ public class ClusterServiceImpl implements ClusterService, ConnectionListener, M
             members = getMembers(NON_LOCAL_MEMBER_SELECTOR);
         }
 
-        logger.info("Number of other nodes remaining: " + getSize(NON_LOCAL_MEMBER_SELECTOR) + ". Shutting down itself.");
+        logger.info("Number of other members remaining: " + getSize(NON_LOCAL_MEMBER_SELECTOR) + ". Shutting down itself.");
 
-        final HazelcastInstanceImpl hazelcastInstance = node.hazelcastInstance;
+        HazelcastInstanceImpl hazelcastInstance = node.hazelcastInstance;
         hazelcastInstance.getLifecycleService().shutdown();
     }
 
-    public void initialClusterState(ClusterState clusterState, ClusterVersion version) {
-        if (node.joined()) {
+    private void shutdownNodesSerially(final long timeoutNanos) {
+        Operation op = new ShutdownNodeOp();
+        long startTime = System.nanoTime();
+        Collection<Member> members = getMembers(NON_LOCAL_MEMBER_SELECTOR);
+
+        logger.info("Sending shut down operations to other members one by one...");
+
+        while ((System.nanoTime() - startTime) < timeoutNanos && !members.isEmpty()) {
+            Member member = members.iterator().next();
+            nodeEngine.getOperationService().send(op, member.getAddress());
+            members = getMembers(NON_LOCAL_MEMBER_SELECTOR);
+
+            try {
+                Thread.sleep(CLUSTER_SHUTDOWN_SLEEP_DURATION_IN_MILLIS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                logger.warning("Shutdown sleep interrupted. ", e);
+                break;
+            }
+        }
+
+        logger.info("Number of other members remaining: " + getSize(NON_LOCAL_MEMBER_SELECTOR) + ". Shutting down itself.");
+
+        HazelcastInstanceImpl hazelcastInstance = node.hazelcastInstance;
+        hazelcastInstance.getLifecycleService().shutdown();
+    }
+
+    private void initialClusterState(ClusterState clusterState, Version version) {
+        if (isJoined()) {
             throw new IllegalStateException("Cannot set initial state after node joined! -> " + clusterState);
         }
         clusterStateManager.initialClusterState(clusterState, version);
+    }
+
+    public MembershipManager getMembershipManager() {
+        return membershipManager;
     }
 
     public ClusterStateManager getClusterStateManager() {
@@ -1007,9 +1013,76 @@ public class ClusterServiceImpl implements ClusterService, ConnectionListener, M
     }
 
     @Override
+    public void promoteLocalLiteMember() {
+        MemberImpl member = getLocalMember();
+        if (!member.isLiteMember()) {
+            throw new IllegalStateException(member + " is not a lite member!");
+        }
+
+        MemberImpl master = getMasterMember();
+        PromoteLiteMemberOp op = new PromoteLiteMemberOp();
+        op.setCallerUuid(member.getUuid());
+
+        InternalCompletableFuture<MembersView> future =
+                nodeEngine.getOperationService().invokeOnTarget(SERVICE_NAME, op, master.getAddress());
+        MembersView view = future.join();
+
+        lock.lock();
+        try {
+            if (!member.getAddress().equals(master.getAddress())) {
+                updateMembers(view, master.getAddress(), master.getUuid(), getThisUuid());
+            }
+
+            MemberImpl localMemberInMemberList = membershipManager.getMember(member.getAddress());
+            if (localMemberInMemberList.isLiteMember()) {
+                throw new IllegalStateException("Cannot promote to data member! Previous master was: " + master.getAddress()
+                        + ", Current master is: " + getMasterAddress());
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    MemberImpl promoteAndGetLocalMember() {
+        MemberImpl member = getLocalMember();
+        assert member.isLiteMember() : "Local member is not lite member!";
+        assert lock.isHeldByCurrentThread() : "Called without holding cluster service lock!";
+
+        localMember = new MemberImpl.Builder(member.getAddressMap())
+                .version(member.getVersion())
+                .localMember(true)
+                .uuid(member.getUuid())
+                .attributes(member.getAttributes())
+                .memberListJoinVersion(member.getMemberListJoinVersion())
+                .instance(node.hazelcastInstance)
+                .build();
+        node.loggingService.setThisMember(localMember);
+        return localMember;
+    }
+
+    @Override
+    public int getMemberListVersion() {
+        return membershipManager.getMemberListVersion();
+    }
+
+    private MemberImpl getMasterMember() {
+        MemberImpl master;
+        lock.lock();
+        try {
+            Address masterAddress = getMasterAddress();
+            if (masterAddress == null) {
+                throw new IllegalStateException("Master is not known yet!");
+            }
+
+            master = getMember(masterAddress);
+        } finally {
+            lock.unlock();
+        }
+        return master;
+    }
+
+    @Override
     public String toString() {
-        return "ClusterService"
-                + "{address=" + thisAddress
-                + '}';
+        return "ClusterService" + "{address=" + getThisAddress() + '}';
     }
 }

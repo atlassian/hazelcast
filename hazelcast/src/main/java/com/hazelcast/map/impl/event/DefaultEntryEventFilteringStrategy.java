@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package com.hazelcast.map.impl.event;
 
 import com.hazelcast.core.EntryEventType;
+import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.map.impl.EntryEventFilter;
 import com.hazelcast.map.impl.EventListenerFilter;
 import com.hazelcast.map.impl.MapPartitionLostEventFilter;
@@ -26,7 +27,6 @@ import com.hazelcast.nio.Address;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.EventFilter;
 import com.hazelcast.spi.impl.eventservice.impl.TrueEventFilter;
-import com.hazelcast.spi.serialization.SerializationService;
 
 import java.util.Collection;
 import java.util.Collections;
@@ -49,40 +49,46 @@ import static com.hazelcast.core.EntryEventType.REMOVED;
  */
 public class DefaultEntryEventFilteringStrategy extends AbstractFilteringStrategy {
 
-    public DefaultEntryEventFilteringStrategy(SerializationService serializationService, MapServiceContext mapServiceContext) {
+    public DefaultEntryEventFilteringStrategy(InternalSerializationService serializationService,
+                                              MapServiceContext mapServiceContext) {
         super(serializationService, mapServiceContext);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @throws IllegalArgumentException if the provided {@code filter} is not of a known type
+     */
     // This code has been moved from MapEventPublisherImpl.doFilter and
     // provides the default backwards compatible filtering strategy implementation.
     @SuppressWarnings("checkstyle:npathcomplexity")
     @Override
-    public int doFilter(EventFilter filter, Data dataKey, Object dataOldValue, Object dataValue, EntryEventType eventType,
+    public int doFilter(EventFilter filter, Data dataKey, Object oldValue, Object dataValue, EntryEventType eventType,
                         String mapNameOrNull) {
-            if (filter instanceof MapPartitionLostEventFilter) {
-                return FILTER_DOES_NOT_MATCH;
-            }
+        if (filter instanceof MapPartitionLostEventFilter) {
+            return FILTER_DOES_NOT_MATCH;
+        }
 
-            // the order of the following ifs is important!
-            // QueryEventFilter is instance of EntryEventFilter
-            if (filter instanceof EventListenerFilter) {
-                if (!filter.eval(eventType.getType())) {
-                    return FILTER_DOES_NOT_MATCH;
-                } else {
-                    filter = ((EventListenerFilter) filter).getEventFilter();
-                }
+        // the order of the following ifs is important!
+        // QueryEventFilter is instance of EntryEventFilter
+        if (filter instanceof EventListenerFilter) {
+            if (!filter.eval(eventType.getType())) {
+                return FILTER_DOES_NOT_MATCH;
+            } else {
+                filter = ((EventListenerFilter) filter).getEventFilter();
             }
-            if (filter instanceof TrueEventFilter) {
-                return eventType.getType();
-            }
-            if (filter instanceof QueryEventFilter) {
-                return processQueryEventFilter(filter, eventType, dataKey, dataOldValue, dataValue, mapNameOrNull)
-                        ? eventType.getType() : FILTER_DOES_NOT_MATCH;
-            }
-            if (filter instanceof EntryEventFilter) {
-                return processEntryEventFilter(filter, dataKey) ? eventType.getType() : FILTER_DOES_NOT_MATCH;
-            }
-            throw new IllegalArgumentException("Unknown EventFilter type = [" + filter.getClass().getCanonicalName() + "]");
+        }
+        if (filter instanceof TrueEventFilter) {
+            return eventType.getType();
+        }
+        if (filter instanceof QueryEventFilter) {
+            return processQueryEventFilter(filter, eventType, dataKey, oldValue, dataValue, mapNameOrNull)
+                    ? eventType.getType() : FILTER_DOES_NOT_MATCH;
+        }
+        if (filter instanceof EntryEventFilter) {
+            return processEntryEventFilter(filter, dataKey) ? eventType.getType() : FILTER_DOES_NOT_MATCH;
+        }
+        throw new IllegalArgumentException("Unknown EventFilter type = [" + filter.getClass().getCanonicalName() + "]");
     }
 
     @Override
@@ -95,11 +101,24 @@ public class DefaultEntryEventFilteringStrategy extends AbstractFilteringStrateg
         return "DefaultEntryEventFilteringStrategy";
     }
 
+    /**
+     * Evaluate if the filter matches the map event. In case of a remove, evict or expire event
+     * the old value will be used for evaluation, otherwise we use the new value.
+     * The filter must be of {@link QueryEventFilter} type.
+     *
+     * @param filter        a {@link QueryEventFilter} filter
+     * @param eventType     the event type
+     * @param dataKey       the entry key
+     * @param oldValue      the entry value before the event
+     * @param dataValue     the entry value after the event
+     * @param mapNameOrNull the map name. May be null if this is not a map event (e.g. cache event)
+     * @return {@code true} if the entry matches the query event filter
+     */
     private boolean processQueryEventFilter(EventFilter filter, EntryEventType eventType,
-                                            Data dataKey, Object dataOldValue, Object dataValue, String mapNameOrNull) {
+                                            Data dataKey, Object oldValue, Object dataValue, String mapNameOrNull) {
         Object testValue;
         if (eventType == REMOVED || eventType == EVICTED || eventType == EXPIRED) {
-            testValue = dataOldValue;
+            testValue = oldValue;
         } else {
             testValue = dataValue;
         }
@@ -107,13 +126,16 @@ public class DefaultEntryEventFilteringStrategy extends AbstractFilteringStrateg
         return evaluateQueryEventFilter(filter, dataKey, testValue, mapNameOrNull);
     }
 
+    /**
+     * Cache for 2 different {@link EntryEventData} objects - one for including values and one for excluding values.
+     */
     private class DefaultEntryEventDataCache implements EntryEventDataCache {
         EntryEventData eventDataIncludingValues;
         EntryEventData eventDataExcludingValues;
 
         @Override
         public EntryEventData getOrCreateEventData(String mapName, Address caller, Data dataKey, Object newValue, Object oldValue,
-                Object mergingValue, int eventType, boolean includingValues) {
+                                                   Object mergingValue, int eventType, boolean includingValues) {
 
             if (includingValues && eventDataIncludingValues != null) {
                 return eventDataIncludingValues;

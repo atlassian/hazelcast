@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,9 @@ package com.hazelcast.cache.impl;
 
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.ClassLoaderUtil;
+
+import java.security.AccessController;
+import java.security.PrivilegedAction;
 
 /**
  * Utility class to detect existence of JCache 1.0.0 in the classpath.
@@ -44,8 +47,8 @@ public final class JCacheDetector {
     private JCacheDetector() {
     }
 
-    public static boolean isJcacheAvailable(ClassLoader classLoader) {
-        return isJcacheAvailable(classLoader, null);
+    public static boolean isJCacheAvailable(ClassLoader classLoader) {
+        return isJCacheAvailable(classLoader, null);
     }
 
     /**
@@ -54,7 +57,19 @@ public final class JCacheDetector {
      *                    logs a warning against using this version.
      * @return {@code true} if JCache 1.0.0 is located in the classpath, otherwise {@code false}.
      */
-    public static boolean isJcacheAvailable(ClassLoader classLoader, ILogger logger) {
+    public static boolean isJCacheAvailable(ClassLoader classLoader, ILogger logger) {
+        ClassLoader backupClassLoader = AccessController.doPrivileged(new PrivilegedAction<ClassLoader>() {
+            @Override
+            public ClassLoader run() {
+                return JCacheDetector.class.getClassLoader();
+            }
+        });
+        // try the class loader that loaded Hazelcast/JCacheDetector class
+        // if the thread-context class loader is too narrowly defined and doesn't contain JCache
+        return isJCacheAvailableInternal(classLoader, logger) || isJCacheAvailableInternal(backupClassLoader, logger);
+    }
+
+    private static boolean isJCacheAvailableInternal(ClassLoader classLoader, ILogger logger) {
         if (!ClassLoaderUtil.isClassAvailable(classLoader, JCACHE_CACHING_CLASSNAME)) {
             // no cache-api jar in the classpath
             return false;

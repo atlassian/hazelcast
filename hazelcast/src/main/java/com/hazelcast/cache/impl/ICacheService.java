@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,55 +18,78 @@ package com.hazelcast.cache.impl;
 
 import com.hazelcast.cache.CacheStatistics;
 import com.hazelcast.cache.impl.event.CacheWanEventPublisher;
+import com.hazelcast.cache.impl.journal.CacheEventJournal;
 import com.hazelcast.config.CacheConfig;
-import com.hazelcast.config.CacheSimpleConfig;
 import com.hazelcast.config.InMemoryFormat;
+import com.hazelcast.internal.eviction.ExpirationManager;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.EventFilter;
 import com.hazelcast.spi.EventPublishingService;
+import com.hazelcast.spi.FragmentedMigrationAwareService;
 import com.hazelcast.spi.ManagedService;
-import com.hazelcast.spi.MigrationAwareService;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.RemoteService;
 
 import java.util.Collection;
 
+@SuppressWarnings({"checkstyle:methodcount"})
 public interface ICacheService
-        extends ManagedService,
-                RemoteService,
-                MigrationAwareService,
-                EventPublishingService<Object, CacheEventListener> {
+        extends ManagedService, RemoteService, FragmentedMigrationAwareService,
+        EventPublishingService<Object, CacheEventListener> {
 
     String CACHE_SUPPORT_NOT_AVAILABLE_ERROR_MESSAGE =
             "There is no valid JCache API library at classpath. "
-            + "Please be sure that there is a JCache API library in your classpath "
-            + "and it is newer than `0.x` and `1.0.0-PFD` versions!";
+                    + "Please be sure that there is a JCache API library in your classpath "
+                    + "and it is newer than `0.x` and `1.0.0-PFD` versions!";
 
     String SERVICE_NAME = "hz:impl:cacheService";
 
-    ICacheRecordStore getOrCreateRecordStore(String name, int partitionId);
+    /**
+     * Maximum retries for adding cache config cluster-wide on stable cluster
+     */
+    int MAX_ADD_CACHE_CONFIG_RETRIES = 100;
 
-    ICacheRecordStore getRecordStore(String name, int partitionId);
+    /**
+     * Gets or creates a cache record store with the prefixed {@code cacheNameWithPrefix}
+     * and partition ID.
+     *
+     * @param cacheNameWithPrefix the full name of the {@link com.hazelcast.cache.ICache}, including the manager scope prefix
+     * @param partitionId         the record store partition ID
+     * @return the cache partition record store
+     */
+    ICacheRecordStore getOrCreateRecordStore(String cacheNameWithPrefix, int partitionId);
+
+    /**
+     * Returns a cache record store with the prefixed {@code cacheNameWithPrefix} and partition ID
+     * or {@code null} if one doesn't exist.
+     *
+     * @param cacheNameWithPrefix the full name of the {@link com.hazelcast.cache.ICache}, including the manager scope prefix
+     * @param partitionId         the record store partition ID
+     * @return the cache partition record store or {@code null} if it doesn't exist
+     */
+    ICacheRecordStore getRecordStore(String cacheNameWithPrefix, int partitionId);
 
     CachePartitionSegment getSegment(int partitionId);
 
     CacheConfig putCacheConfigIfAbsent(CacheConfig config);
 
-    CacheConfig getCacheConfig(String name);
+    CacheConfig getCacheConfig(String cacheNameWithPrefix);
 
-    CacheSimpleConfig findCacheConfig(String simpleName);
+    CacheConfig findCacheConfig(String simpleName);
 
     Collection<CacheConfig> getCacheConfigs();
 
-    CacheConfig deleteCacheConfig(String name);
+    CacheConfig deleteCacheConfig(String cacheNameWithPrefix);
 
-    CacheStatisticsImpl createCacheStatIfAbsent(String name);
+    CachePartitionSegment[] getPartitionSegments();
 
-    CacheContext getOrCreateCacheContext(String name);
+    CacheStatisticsImpl createCacheStatIfAbsent(String cacheNameWithPrefix);
 
-    void deleteCache(String name, String callerUuid, boolean destroy);
+    CacheContext getOrCreateCacheContext(String cacheNameWithPrefix);
 
-    void deleteCacheStat(String name);
+    void deleteCache(String cacheNameWithPrefix, String callerUuid, boolean destroy);
+
+    void deleteCacheStat(String cacheNameWithPrefix);
 
     void setStatisticsEnabled(CacheConfig cacheConfig, String cacheNameWithPrefix, boolean enabled);
 
@@ -74,30 +97,60 @@ public interface ICacheService
 
     void publishEvent(CacheEventContext cacheEventContext);
 
-    void publishEvent(String cacheName, CacheEventSet eventSet, int orderKey);
+    void publishEvent(String cacheNameWithPrefix, CacheEventSet eventSet, int orderKey);
 
     NodeEngine getNodeEngine();
 
-    String registerListener(String name, CacheEventListener listener, boolean isLocal);
+    String registerListener(String cacheNameWithPrefix, CacheEventListener listener, boolean isLocal);
 
-    String registerListener(String name, CacheEventListener listener, EventFilter eventFilter, boolean isLocal);
+    String registerListener(String cacheNameWithPrefix, CacheEventListener listener, EventFilter eventFilter, boolean isLocal);
 
-    boolean deregisterListener(String name, String registrationId);
+    boolean deregisterListener(String cacheNameWithPrefix, String registrationId);
 
-    void deregisterAllListener(String name);
+    void deregisterAllListener(String cacheNameWithPrefix);
 
-    CacheStatistics getStatistics(String name);
+    CacheStatistics getStatistics(String cacheNameWithPrefix);
+
+    ExpirationManager getExpirationManager();
 
     /**
      * Creates cache operations according to the storage-type of the cache
      */
-    CacheOperationProvider getCacheOperationProvider(String nameWithPrefix, InMemoryFormat storageType);
+    CacheOperationProvider getCacheOperationProvider(String cacheNameWithPrefix, InMemoryFormat storageType);
 
-    String addInvalidationListener(String name, CacheEventListener listener, boolean localOnly);
+    String addInvalidationListener(String cacheNameWithPrefix, CacheEventListener listener, boolean localOnly);
 
-    void sendInvalidationEvent(String name, Data key, String sourceUuid);
+    void sendInvalidationEvent(String cacheNameWithPrefix, Data key, String sourceUuid);
 
-    boolean isWanReplicationEnabled(String cacheName);
+    /**
+     * Returns {@code true} if WAN replication is enabled for the cache named {@code cacheNameWithPrefix}.
+     *
+     * @param cacheNameWithPrefix the full name of the {@link com.hazelcast.cache.ICache}, including the manager scope prefix
+     */
+    boolean isWanReplicationEnabled(String cacheNameWithPrefix);
 
+    /**
+     * Returns the WAN event publisher responsible for publishing
+     * primary and backup WAN events for caches.
+     */
     CacheWanEventPublisher getCacheWanEventPublisher();
+
+    /**
+     * Returns an interface for interacting with the cache event journals.
+     */
+    CacheEventJournal getEventJournal();
+
+    /**
+     * Creates the given CacheConfig on all members of the cluster synchronously. When used with
+     * cluster version 3.10 or greater, the cluster-wide invocation ensures that all members of
+     * the cluster will receive the cache config even in the face of cluster membership changes.
+     *
+     * @param cacheConfig   the cache config to create on all members of the cluster
+     * @param <K>           key type parameter
+     * @param <V>           value type parameter
+     * @since 3.10
+     */
+    <K, V> void createCacheConfigOnAllMembers(PreJoinCacheConfig<K, V> cacheConfig);
+
+    <K, V> void setTenantControl(CacheConfig<K, V> cacheConfig);
 }

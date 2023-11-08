@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.hazelcast.config;
 
-import com.hazelcast.nio.serialization.impl.BinaryInterface;
+import com.hazelcast.nio.serialization.BinaryInterface;
 
 import javax.cache.configuration.CacheEntryListenerConfiguration;
 import javax.cache.configuration.Factory;
@@ -33,7 +33,7 @@ import java.util.Set;
  * @param <K> type of the key
  * @param <V> type of the value
  *
- * @deprecated this class will be removed in 3.8; it is meant for internal usage only.
+ * @deprecated this class will be removed in 4.0; it is meant for internal usage only.
  */
 @BinaryInterface
 public class CacheConfigReadOnly<K, V> extends CacheConfig<K, V> {
@@ -75,124 +75,128 @@ public class CacheConfigReadOnly<K, V> extends CacheConfig<K, V> {
     @Override
     public CacheConfig<K, V> addCacheEntryListenerConfiguration(
             CacheEntryListenerConfiguration<K, V> cacheEntryListenerConfiguration) {
-        throw new UnsupportedOperationException("This config is read-only cache: " + getName());
+        throw throwReadOnly();
     }
 
     @Override
     public CacheConfig<K, V> removeCacheEntryListenerConfiguration(
             CacheEntryListenerConfiguration<K, V> cacheEntryListenerConfiguration) {
-        throw new UnsupportedOperationException("This config is read-only cache: " + getName());
+        throw throwReadOnly();
     }
 
     @Override
     public CacheConfig<K, V> setName(final String name) {
-        throw new UnsupportedOperationException("This config is read-only cache: " + getName());
+        throw throwReadOnly();
     }
 
     @Override
     public CacheConfig<K, V> setManagerPrefix(final String managerPrefix) {
-        throw new UnsupportedOperationException("This config is read-only cache: " + getName());
+        throw throwReadOnly();
     }
 
     @Override
     public CacheConfig<K, V> setUriString(final String uriString) {
-        throw new UnsupportedOperationException("This config is read-only cache: " + getName());
+        throw throwReadOnly();
     }
 
     @Override
     public CacheConfig<K, V> setBackupCount(final int backupCount) {
-        throw new UnsupportedOperationException("This config is read-only cache: " + getName());
+        throw throwReadOnly();
     }
 
     @Override
     public CacheConfig<K, V> setAsyncBackupCount(final int asyncBackupCount) {
-        throw new UnsupportedOperationException("This config is read-only cache: " + getName());
+        throw throwReadOnly();
     }
 
     @Override
     public CacheConfig<K, V> setEvictionConfig(final EvictionConfig evictionConfig) {
-        throw new UnsupportedOperationException("This config is read-only cache: " + getName());
+        throw throwReadOnly();
     }
 
     @Override
     public CacheConfig<K, V> setInMemoryFormat(final InMemoryFormat inMemoryFormat) {
-        throw new UnsupportedOperationException("This config is read-only cache: " + getName());
+        throw throwReadOnly();
     }
 
     @Override
     public CacheConfig<K, V> setManagementEnabled(final boolean enabled) {
-        throw new UnsupportedOperationException("This config is read-only cache: " + getName());
+        throw throwReadOnly();
     }
 
     @Override
     public CacheConfiguration<K, V> setStatisticsEnabled(boolean enabled) {
-        throw new UnsupportedOperationException("This config is read-only cache: " + getName());
+        throw throwReadOnly();
     }
 
     @Override
     public CacheConfig<K, V> setTypes(final Class<K> keyType, final Class<V> valueType) {
-        throw new UnsupportedOperationException("This config is read-only cache: " + getName());
+        throw throwReadOnly();
     }
 
     @Override
     public CacheConfig<K, V> setStoreByValue(final boolean storeByValue) {
-        throw new UnsupportedOperationException("This config is read-only cache: " + getName());
+        throw throwReadOnly();
     }
 
     @Override
     public CacheConfig<K, V> setWanReplicationRef(final WanReplicationRef wanReplicationRef) {
-        throw new UnsupportedOperationException("This config is read-only cache: " + getName());
+        throw throwReadOnly();
     }
 
     @Override
     public CacheConfig<K, V> setQuorumName(String quorumName) {
-        throw new UnsupportedOperationException("This config is read-only cache: " + getName());
+        throw throwReadOnly();
     }
 
     @Override
     public CacheConfiguration<K, V> setHotRestartConfig(HotRestartConfig hotRestartConfig) {
-        throw new UnsupportedOperationException("This config is read-only cache: " + getName());
+        throw throwReadOnly();
     }
 
     @Override
     public CacheConfig<K, V> setPartitionLostListenerConfigs(
             List<CachePartitionLostListenerConfig> partitionLostListenerConfigs) {
-        throw new UnsupportedOperationException("This config is read-only cache: " + getName());
+        throw throwReadOnly();
     }
 
     @Override
     public void setMergePolicy(String mergePolicy) {
-        throw new UnsupportedOperationException("This config is read-only cache: " + getName());
+        throw throwReadOnly();
     }
 
     @Override
     public CacheConfiguration<K, V> setExpiryPolicyFactory(Factory<? extends ExpiryPolicy> expiryPolicyFactory) {
-        throw new UnsupportedOperationException("This config is read-only cache: " + getName());
+        throw throwReadOnly();
     }
 
     @Override
     public CacheConfiguration<K, V> setCacheLoaderFactory(Factory<? extends CacheLoader<K, V>> cacheLoaderFactory) {
-        throw new UnsupportedOperationException("This config is read-only cache: " + getName());
+        throw throwReadOnly();
     }
 
     @Override
     public CacheConfiguration<K, V> setCacheWriterFactory(
             Factory<? extends CacheWriter<? super K, ? super V>> cacheWriterFactory) {
-        throw new UnsupportedOperationException("This config is read-only cache: " + getName());
+        throw throwReadOnly();
     }
 
     @Override
     public CacheConfiguration<K, V> setWriteThrough(boolean isWriteThrough) {
-        throw new UnsupportedOperationException("This config is read-only cache: " + getName());
+        throw throwReadOnly();
     }
 
     @Override
     public CacheConfiguration<K, V> setReadThrough(boolean isReadThrough) {
-        throw new UnsupportedOperationException("This config is read-only cache: " + getName());
+        throw throwReadOnly();
     }
 
     @Override
     public void setDisablePerEntryInvalidationEvents(boolean disablePerEntryInvalidationEvents) {
-        throw new UnsupportedOperationException("This config is read-only cache: " + getName());
+        throw throwReadOnly();
+    }
+
+    private UnsupportedOperationException throwReadOnly() {
+        throw new UnsupportedOperationException("This config is read-only");
     }
 }

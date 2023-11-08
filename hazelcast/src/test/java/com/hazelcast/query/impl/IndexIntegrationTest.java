@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,6 +36,7 @@ import com.hazelcast.query.EntryObject;
 import com.hazelcast.query.Predicate;
 import com.hazelcast.query.PredicateBuilder;
 import com.hazelcast.query.Predicates;
+import com.hazelcast.query.SqlPredicate;
 import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
@@ -51,6 +52,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -100,8 +103,14 @@ public class IndexIntegrationTest extends HazelcastTestSupport {
         assertEquals(5L, (long) trade.amount);
         assertEquals(currency, trade.currency);
 
-        Index index = getIndexOfAttributeForMap(instance, name, attributeName);
-        Set<QueryableEntry> dollars = index.getRecords(currency);
+        List<Index> indexes = getIndexOfAttributeForMap(instance, name, attributeName);
+        Set<QueryableEntry> dollars = new HashSet<QueryableEntry>();
+        for (Index index : indexes) {
+            Set<QueryableEntry> result = index.getRecords(currency);
+            if (result != null) {
+                dollars.addAll(result);
+            }
+        }
         assertEquals(1, dollars.size());
     }
 
@@ -182,13 +191,45 @@ public class IndexIntegrationTest extends HazelcastTestSupport {
         assertThat(result, hasSize(1));
     }
 
-    private static Index getIndexOfAttributeForMap(HazelcastInstance instance, String mapName, String attribute) {
+    @Test
+    public void testEmptyAndNullCollectionIndexing() {
+        HazelcastInstance instance = createHazelcastInstance();
+        IMap<Integer, Body> map = instance.getMap(randomMapName());
+        map.addIndex("limbArray[any].fingerCount", false);
+        map.addIndex("limbCollection[any].fingerCount", true);
+
+        map.put(0, new Body("body0"));
+
+        map.put(1, new Body("body1", (Limb[]) null));
+
+        map.put(2, new Body("body2", (Limb) null));
+
+        Limb leftHand = new Limb("hand", new Nail("red"));
+        Limb rightHand = new Limb("hand");
+        Body body = new Body("body3", leftHand, rightHand);
+        map.put(3, body);
+
+        Predicate predicate = new SqlPredicate("limbArray[any].fingerCount = '1'");
+        Collection<Body> values = map.values(predicate);
+        assertThat(values, hasSize(1));
+
+        predicate = new SqlPredicate("limbCollection[any].fingerCount = '1'");
+        values = map.values(predicate);
+        assertThat(values, hasSize(1));
+    }
+
+    private static List<Index> getIndexOfAttributeForMap(HazelcastInstance instance, String mapName, String attribute) {
         Node node = getNode(instance);
         MapService service = node.nodeEngine.getService(MapService.SERVICE_NAME);
         MapServiceContext mapServiceContext = service.getMapServiceContext();
         MapContainer mapContainer = mapServiceContext.getMapContainer(mapName);
-        Indexes indexes = mapContainer.getIndexes();
-        return indexes.getIndex(attribute);
+
+        List<Index> result = new ArrayList<Index>();
+        for (int partitionId : mapServiceContext.getOwnedPartitions()) {
+            Indexes indexes = mapContainer.getIndexes(partitionId);
+            result.add(indexes.getIndex(attribute));
+        }
+        return result;
     }
 
     static class Body implements Serializable {
@@ -198,7 +239,7 @@ public class IndexIntegrationTest extends HazelcastTestSupport {
 
         Body(String name, Limb... limbs) {
             this.name = name;
-            this.limbCollection = Arrays.asList(limbs);
+            this.limbCollection = limbs == null ? null : Arrays.asList(limbs);
             this.limbArray = limbs;
         }
     }
@@ -217,7 +258,7 @@ public class IndexIntegrationTest extends HazelcastTestSupport {
         }
     }
 
-    static class Nail implements Serializable {
+    static final class Nail implements Serializable {
         String colour;
 
         private Nail(String colour) {

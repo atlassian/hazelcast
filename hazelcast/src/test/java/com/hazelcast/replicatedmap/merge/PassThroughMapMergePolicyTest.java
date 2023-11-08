@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,7 +40,7 @@ public class PassThroughMapMergePolicyTest {
 
     @Before
     public void given() {
-        policy = new PassThroughMergePolicy();
+        policy = PassThroughMergePolicy.INSTANCE;
     }
 
     @Test
@@ -54,9 +54,8 @@ public class PassThroughMapMergePolicyTest {
     @Test
     public void merge_mergingNull() {
         ReplicatedMapEntryView existing = entryWithGivenValue(EXISTING);
-        ReplicatedMapEntryView merging = null;
 
-        assertEquals(EXISTING, policy.merge("map", merging, existing));
+        assertEquals(EXISTING, policy.merge("map", null, existing));
     }
 
     private ReplicatedMapEntryView entryWithGivenValue(String value) {
@@ -67,7 +66,5 @@ public class PassThroughMapMergePolicyTest {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
-
     }
-
 }

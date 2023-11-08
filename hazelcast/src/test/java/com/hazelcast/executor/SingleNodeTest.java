@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.hazelcast.executor;
 
 import com.hazelcast.core.ExecutionCallback;
@@ -72,7 +73,8 @@ public class SingleNodeTest extends ExecutorServiceTestSupport {
     }
 
     @Test(expected = NullPointerException.class)
-    public void submitNullTask_expectFailure() throws Exception {
+    @SuppressWarnings("ConstantConditions")
+    public void submitNullTask_expectFailure() {
         executor.submit((Callable<?>) null);
     }
 
@@ -88,17 +90,17 @@ public class SingleNodeTest extends ExecutorServiceTestSupport {
         HazelcastInstanceAwareRunnable task = new HazelcastInstanceAwareRunnable();
         executor.execute(task, new MemberSelector() {
             @Override
-            public boolean select(final Member member) {
+            public boolean select(Member member) {
                 return false;
             }
         });
     }
 
     @Test
-    public void executionCallback_notifiedOnSuccess() throws Exception {
-        final Callable<String> task = new BasicTestCallable();
+    public void executionCallback_notifiedOnSuccess() {
         final CountDownLatch latch = new CountDownLatch(1);
-        final ExecutionCallback<String> executionCallback = new ExecutionCallback<String>() {
+        Callable<String> task = new BasicTestCallable();
+        ExecutionCallback<String> executionCallback = new ExecutionCallback<String>() {
             public void onResponse(String response) {
                 latch.countDown();
             }
@@ -111,10 +113,10 @@ public class SingleNodeTest extends ExecutorServiceTestSupport {
     }
 
     @Test
-    public void executionCallback_notifiedOnFailure() throws Exception {
-        final FailingTestTask task = new FailingTestTask();
+    public void executionCallback_notifiedOnFailure() {
         final CountDownLatch latch = new CountDownLatch(1);
-        final ExecutionCallback<String> executionCallback = new ExecutionCallback<String>() {
+        FailingTestTask task = new FailingTestTask();
+        ExecutionCallback<String> executionCallback = new ExecutionCallback<String>() {
             public void onResponse(String response) {
             }
 
@@ -134,7 +136,7 @@ public class SingleNodeTest extends ExecutorServiceTestSupport {
             future.get(1, TimeUnit.MILLISECONDS);
             fail("Should throw TimeoutException!");
         } catch (TimeoutException expected) {
-            consume(expected);
+            ignore(expected);
         }
         assertFalse(future.isDone());
         assertTrue(future.cancel(true));
@@ -146,11 +148,11 @@ public class SingleNodeTest extends ExecutorServiceTestSupport {
     @Test(expected = CancellationException.class)
     public void cancelWhileQueued() throws ExecutionException, InterruptedException {
         Callable task1 = new SleepingTask(100);
-        Future inProgFuture = executor.submit(task1);
+        Future inProgressFuture = executor.submit(task1);
 
         Callable task2 = new BasicTestCallable();
-        /* This future should not be an instance of CompletedFuture
-         * Because even if we get an exception, isDone is returning true */
+        // this future should not be an instance of CompletedFuture,
+        // because even if we get an exception, isDone is returning true
         Future queuedFuture = executor.submit(task2);
 
         try {
@@ -158,14 +160,11 @@ public class SingleNodeTest extends ExecutorServiceTestSupport {
             assertTrue(queuedFuture.cancel(true));
             assertTrue(queuedFuture.isCancelled());
             assertTrue(queuedFuture.isDone());
-        } catch (AssertionError e) {
-            throw e;
         } finally {
-            inProgFuture.cancel(true);
+            inProgressFuture.cancel(true);
         }
 
         queuedFuture.get();
-
     }
 
     @Test
@@ -179,12 +178,10 @@ public class SingleNodeTest extends ExecutorServiceTestSupport {
     @Test
     public void issue129() throws Exception {
         for (int i = 0; i < 1000; i++) {
-            Callable<String>
-                    task1 = new BasicTestCallable(),
-                    task2 = new BasicTestCallable();
-            Future<String>
-                    future1 = executor.submit(task1),
-                    future2 = executor.submit(task2);
+            Callable<String> task1 = new BasicTestCallable();
+            Callable<String> task2 = new BasicTestCallable();
+            Future<String> future1 = executor.submit(task1);
+            Future<String> future2 = executor.submit(task2);
             assertEquals(future2.get(), BasicTestCallable.RESULT);
             assertTrue(future2.isDone());
             assertEquals(future1.get(), BasicTestCallable.RESULT);
@@ -224,13 +221,13 @@ public class SingleNodeTest extends ExecutorServiceTestSupport {
 
     @Test
     public void invokeAll() throws Exception {
-        // Only one task
+        // only one task
         ArrayList<Callable<String>> tasks = new ArrayList<Callable<String>>();
         tasks.add(new BasicTestCallable());
         List<Future<String>> futures = executor.invokeAll(tasks);
         assertEquals(futures.size(), 1);
         assertEquals(futures.get(0).get(), BasicTestCallable.RESULT);
-        // More tasks
+        // more tasks
         tasks.clear();
         for (int i = 0; i < 1000; i++) {
             tasks.add(new BasicTestCallable());
@@ -244,12 +241,12 @@ public class SingleNodeTest extends ExecutorServiceTestSupport {
 
     @Test
     public void invokeAllTimeoutCancelled() throws Exception {
-        final List<? extends Callable<Boolean>> singleTask = Collections.singletonList(new SleepingTask(0));
+        List<? extends Callable<Boolean>> singleTask = Collections.singletonList(new SleepingTask(0));
         List<Future<Boolean>> futures = executor.invokeAll(singleTask, 5, TimeUnit.SECONDS);
         assertEquals(futures.size(), 1);
         assertEquals(futures.get(0).get(), Boolean.TRUE);
 
-        final List<Callable<Boolean>> tasks = new ArrayList<Callable<Boolean>>();
+        List<Callable<Boolean>> tasks = new ArrayList<Callable<Boolean>>();
         for (int i = 0; i < 1000; i++) {
             tasks.add(new SleepingTask(i < 2 ? 0 : 20));
         }
@@ -259,11 +256,11 @@ public class SingleNodeTest extends ExecutorServiceTestSupport {
             if (i < 2) {
                 assertEquals(futures.get(i).get(), Boolean.TRUE);
             } else {
-                //noinspection EmptyCatchBlock
                 try {
                     futures.get(i).get();
                     fail();
                 } catch (CancellationException expected) {
+                    ignore(expected);
                 }
             }
         }
@@ -271,13 +268,13 @@ public class SingleNodeTest extends ExecutorServiceTestSupport {
 
     @Test
     public void invokeAllTimeoutSuccess() throws Exception {
-        // Only one task
+        // only one task
         ArrayList<Callable<String>> tasks = new ArrayList<Callable<String>>();
         tasks.add(new BasicTestCallable());
         List<Future<String>> futures = executor.invokeAll(tasks, 5, TimeUnit.SECONDS);
         assertEquals(futures.size(), 1);
         assertEquals(futures.get(0).get(), BasicTestCallable.RESULT);
-        // More tasks
+        // more tasks
         tasks.clear();
         for (int i = 0; i < 1000; i++) {
             tasks.add(new BasicTestCallable());
@@ -293,8 +290,8 @@ public class SingleNodeTest extends ExecutorServiceTestSupport {
      * Shutdown-related method behaviour when the cluster is running
      */
     @Test
-    public void shutdownBehaviour() throws Exception {
-        // Fresh instance, is not shutting down
+    public void shutdownBehaviour() {
+        // fresh instance, is not shutting down
         assertFalse(executor.isShutdown());
         assertFalse(executor.isTerminated());
         executor.shutdown();
@@ -320,42 +317,41 @@ public class SingleNodeTest extends ExecutorServiceTestSupport {
      * Shutting down the cluster should act as the ExecutorService shutdown
      */
     @Test(expected = RejectedExecutionException.class)
-    public void clusterShutdown() throws Exception {
+    public void clusterShutdown() {
         shutdownNodeFactory();
-        Thread.sleep(2000);
+        sleepSeconds(2);
 
         assertNotNull(executor);
         assertTrue(executor.isShutdown());
         assertTrue(executor.isTerminated());
 
-        // New tasks must be rejected
+        // new tasks must be rejected
         Callable<String> task = new BasicTestCallable();
         executor.submit(task);
     }
 
     @Test
     public void executorServiceStats() throws InterruptedException, ExecutionException {
-        final int k = 10;
-        LatchRunnable.latch = new CountDownLatch(k);
-        final LatchRunnable r = new LatchRunnable();
-        for (int i = 0; i < k; i++) {
-            executor.execute(r);
+        final int iterations = 10;
+        LatchRunnable.latch = new CountDownLatch(iterations);
+        LatchRunnable runnable = new LatchRunnable();
+        for (int i = 0; i < iterations; i++) {
+            executor.execute(runnable);
         }
         assertOpenEventually(LatchRunnable.latch);
-        final Future<Boolean> f = executor.submit(new SleepingTask(10));
-        f.cancel(true);
+        Future<Boolean> future = executor.submit(new SleepingTask(10));
+        future.cancel(true);
         try {
-            f.get();
+            future.get();
         } catch (CancellationException ignored) {
         }
 
         assertTrueEventually(new AssertTask() {
             @Override
-            public void run()
-                    throws Exception {
-                final LocalExecutorStats stats = executor.getLocalExecutorStats();
-                assertEquals(k + 1, stats.getStartedTaskCount());
-                assertEquals(k, stats.getCompletedTaskCount());
+            public void run() {
+                LocalExecutorStats stats = executor.getLocalExecutorStats();
+                assertEquals(iterations + 1, stats.getStartedTaskCount());
+                assertEquals(iterations, stats.getCompletedTaskCount());
                 assertEquals(0, stats.getPendingTaskCount());
                 assertEquals(1, stats.getCancelledTaskCount());
             }
@@ -363,6 +359,7 @@ public class SingleNodeTest extends ExecutorServiceTestSupport {
     }
 
     static class LatchRunnable implements Runnable, Serializable {
+
         static CountDownLatch latch;
 
         @Override

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
  */
 
 package com.hazelcast.client.impl.protocol.util;
+
+import java.nio.ByteBuffer;
 
 /**
  * Interface for buffer to be used in client protocol.
@@ -151,6 +153,8 @@ public interface ClientProtocolBuffer {
      * @param length The length of the supplied buffer to copy.
      */
     void putBytes(int index, byte[] src, int offset, int length);
+
+    void putBytes(int index, ByteBuffer src, int length);
 
     /**
      * Encode a String as UTF-8 bytes to the buffer with a length prefix.

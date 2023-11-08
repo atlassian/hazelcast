@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,16 +24,14 @@ import com.hazelcast.core.EntryAdapter;
 import com.hazelcast.core.EntryEvent;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
-import com.hazelcast.instance.TestUtil;
 import com.hazelcast.map.impl.mapstore.MapStoreTest.TestMapStore;
 import com.hazelcast.map.impl.mapstore.MapStoreWriteBehindTest.FailAwareMapStore;
-import com.hazelcast.query.SampleObjects.Employee;
+import com.hazelcast.query.SampleTestObjects.Employee;
 import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
-import com.hazelcast.util.EmptyStatement;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -79,11 +77,11 @@ public class MapStoreWriteThroughTest extends AbstractMapStoreTest {
         testMapStore.assertAwait(1);
         assertEquals(1, testMapStore.getInitCount());
         assertEquals("default", testMapStore.getMapName());
-        assertEquals(TestUtil.getNode(instance), TestUtil.getNode(testMapStore.getHazelcastInstance()));
+        assertEquals(getNode(instance), getNode(testMapStore.getHazelcastInstance()));
     }
 
     @Test(timeout = 120000)
-    public void testOneMemberWriteThroughWithLRU() throws Exception {
+    public void testOneMemberWriteThroughWithLRU() {
         final int size = 10000;
         TestMapStore testMapStore = new TestMapStore(size * 2, 1, 1);
         testMapStore.setLoadAllKeys(false);
@@ -108,7 +106,7 @@ public class MapStoreWriteThroughTest extends AbstractMapStoreTest {
         }, false);
 
         for (int i = 0; i < size * 2; i++) {
-            // trigger eviction.
+            // trigger eviction
             if (i == (size * 2) - 1 || i == size) {
                 sleepMillis(1001);
             }
@@ -236,7 +234,7 @@ public class MapStoreWriteThroughTest extends AbstractMapStoreTest {
     }
 
     @Test(timeout = 120000)
-    public void testOneMemberWriteThroughFailingStore() throws Exception {
+    public void testOneMemberWriteThroughFailingStore() {
         FailAwareMapStore testMapStore = new FailAwareMapStore();
         testMapStore.setFail(true, true);
         Config config = newConfig(testMapStore, 0);
@@ -248,28 +246,28 @@ public class MapStoreWriteThroughTest extends AbstractMapStoreTest {
             map.get("1");
             fail("should have thrown exception");
         } catch (Exception e) {
-            EmptyStatement.ignore(e);
+            ignore(e);
         }
         assertEquals(1, testMapStore.loads.get());
         try {
             map.get("1");
             fail("should have thrown exception");
         } catch (Exception e) {
-            EmptyStatement.ignore(e);
+            ignore(e);
         }
         assertEquals(2, testMapStore.loads.get());
         try {
             map.put("1", "value");
             fail("should have thrown exception");
         } catch (Exception e) {
-            EmptyStatement.ignore(e);
+            ignore(e);
         }
         assertEquals(0, testMapStore.stores.get());
         assertEquals(0, map.size());
     }
 
     @Test(timeout = 120000)
-    public void testOneMemberWriteThroughFailingStore2() throws Exception {
+    public void testOneMemberWriteThroughFailingStore2() {
         FailAwareMapStore testMapStore = new FailAwareMapStore();
         testMapStore.setFail(true, false);
         Config config = newConfig(testMapStore, 0);
@@ -282,7 +280,7 @@ public class MapStoreWriteThroughTest extends AbstractMapStoreTest {
             map.put("1", "value");
             fail("should have thrown exception");
         } catch (Exception e) {
-            EmptyStatement.ignore(e);
+            ignore(e);
         }
         assertEquals(0, map.size());
     }

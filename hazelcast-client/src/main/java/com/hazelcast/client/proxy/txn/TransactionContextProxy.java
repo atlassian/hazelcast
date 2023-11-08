@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,13 +17,12 @@
 package com.hazelcast.client.proxy.txn;
 
 import com.hazelcast.client.connection.nio.ClientConnection;
-import com.hazelcast.client.impl.HazelcastClientInstanceImpl;
+import com.hazelcast.client.impl.clientside.HazelcastClientInstanceImpl;
 import com.hazelcast.client.spi.ClientTransactionContext;
 import com.hazelcast.client.spi.impl.ClientTransactionManagerServiceImpl;
 import com.hazelcast.collection.impl.list.ListService;
 import com.hazelcast.collection.impl.queue.QueueService;
 import com.hazelcast.collection.impl.set.SetService;
-import com.hazelcast.core.HazelcastException;
 import com.hazelcast.core.TransactionalList;
 import com.hazelcast.core.TransactionalMap;
 import com.hazelcast.core.TransactionalMultiMap;
@@ -45,7 +44,7 @@ import java.util.Map;
 /**
  * Provides a context to perform transactional operations: beginning/committing transactions, but also retrieving
  * transactional data-structures like the {@link com.hazelcast.core.TransactionalMap}.
- * <p/>
+ *
  * Provides client instance and client connection proxies that need to be accessed for sending invocations.
  */
 public class TransactionContextProxy implements ClientTransactionContext {
@@ -54,6 +53,7 @@ public class TransactionContextProxy implements ClientTransactionContext {
     final HazelcastClientInstanceImpl client;
     final TransactionProxy transaction;
     final ClientConnection connection;
+
     private final Map<TransactionalObjectKey, TransactionalObject> txnObjectMap =
             new HashMap<TransactionalObjectKey, TransactionalObject>(2);
 
@@ -63,7 +63,7 @@ public class TransactionContextProxy implements ClientTransactionContext {
         try {
             connection = transactionManager.connect();
         } catch (Exception e) {
-            throw new HazelcastException("Could not obtain Connection!!!", e);
+            throw new TransactionException("Could not obtain a connection!", e);
         }
         this.transaction = new TransactionProxy(client, options, connection);
     }

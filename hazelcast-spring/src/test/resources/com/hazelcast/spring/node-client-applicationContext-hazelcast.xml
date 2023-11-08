@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ~ Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+  ~ Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
   ~ you may not use this file except in compliance with the License.
@@ -20,9 +20,9 @@
        xmlns:p="http://www.springframework.org/schema/p"
        xmlns:hz="http://www.hazelcast.com/schema/spring"
        xsi:schemaLocation="http://www.springframework.org/schema/beans
-		http://www.springframework.org/schema/beans/spring-beans-2.5.xsd
-		http://www.hazelcast.com/schema/spring
-		http://www.hazelcast.com/schema/spring/hazelcast-spring.xsd">
+        http://www.springframework.org/schema/beans/spring-beans.xsd
+        http://www.hazelcast.com/schema/spring
+        http://www.hazelcast.com/schema/spring/hazelcast-spring-3.12.xsd">
 
     <bean class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer"
           p:systemPropertiesModeName="SYSTEM_PROPERTIES_MODE_OVERRIDE">
@@ -42,7 +42,7 @@
                 <hz:property name="hazelcast.merge.first.run.delay.seconds">5</hz:property>
                 <hz:property name="hazelcast.merge.next.run.delay.seconds">5</hz:property>
             </hz:properties>
-            <hz:network port="${cluster.port}" port-auto-increment="false">
+            <hz:network port="${cluster.port}" port-auto-increment="true">
                 <hz:join>
                     <hz:multicast enabled="false"
                                   multicast-group="224.2.2.3"
@@ -152,9 +152,22 @@
                        max-idle-seconds="70"
                        eviction-policy="LRU"
                        max-size="4000"
-                       invalidate-on-change="true"/>
+                       invalidate-on-change="true"
+                       serialize-keys="false"
+                       local-update-policy="CACHE_ON_UPDATE"/>
 
+        <hz:near-cache name="lfuNearCacheEviction" eviction-policy="LFU"/>
+        <hz:near-cache name="lruNearCacheEviction"
+                       eviction-policy="LRU"/>
+        <hz:near-cache name="noneNearCacheEviction"
+                       eviction-policy="NONE"/>
+        <hz:near-cache name="randomNearCacheEviction"
+                       eviction-policy="RANDOM"/>
 
+        <hz:near-cache name="preloader">
+            <hz:preloader enabled="true" directory="/tmp/preloader"
+                          store-initial-delay-seconds="23" store-interval-seconds="42"/>
+        </hz:near-cache>
     </hz:client>
 
     <hz:client id="client4"
@@ -235,6 +248,120 @@
         <hz:serialization></hz:serialization>
     </hz:client>
 
+    <hz:client id="client8"
+               credentials-ref="credentials">
+        <hz:network connection-attempt-limit="2">
+            <hz:member>127.0.0.1:5700</hz:member>
+            <hz:member>127.0.0.1:5701</hz:member>
+        </hz:network>
+        <hz:connection-strategy async-start="true" reconnect-mode="ASYNC"/>
+    </hz:client>
+
+    <hz:client id="client9-user-code-deployment-test" credentials-ref="credentials">
+        <hz:network connection-attempt-limit="0">
+            <hz:member>127.0.0.1:5700</hz:member>
+            <hz:member>127.0.0.1:5701</hz:member>
+        </hz:network>
+
+        <hz:user-code-deployment enabled="false">
+            <hz:jarPaths>
+                <hz:jarPath>/User/jar/path/test.jar</hz:jarPath>
+            </hz:jarPaths>
+            <hz:classNames>
+                <hz:className>SampleClassName1</hz:className>
+                <hz:className>SampleClassName2</hz:className>
+            </hz:classNames>
+        </hz:user-code-deployment>
+    </hz:client>
+
+    <hz:client id="client10-flakeIdGenerator" credentials-ref="credentials">
+        <hz:network connection-attempt-limit="0">
+            <hz:member>127.0.0.1:5700</hz:member>
+            <hz:member>127.0.0.1:5701</hz:member>
+        </hz:network>
+        <hz:flake-id-generator name="gen1" prefetchCount="3" prefetchValidityMillis="3000"/>
+    </hz:client>
+
+    <hz:client id="client11-icmp-ping" credentials-ref="credentials">
+        <hz:network connection-attempt-limit="0">
+            <hz:member>127.0.0.1:5700</hz:member>
+            <hz:member>127.0.0.1:5701</hz:member>
+            <hz:icmp-ping enabled="false">
+                <hz:timeout-milliseconds>2000</hz:timeout-milliseconds>
+                <hz:interval-milliseconds>3000</hz:interval-milliseconds>
+                <hz:ttl>50</hz:ttl>
+                <hz:max-attempts>5</hz:max-attempts>
+                <hz:echo-fail-fast-on-startup>false</hz:echo-fail-fast-on-startup>
+            </hz:icmp-ping>
+        </hz:network>
+    </hz:client>
+
+    <hz:client id="client12-hazelcast-cloud" credentials-ref="credentials">
+        <hz:network connection-attempt-limit="0">
+            <hz:member>127.0.0.1:5700</hz:member>
+            <hz:member>127.0.0.1:5701</hz:member>
+            <hz:hazelcast-cloud enabled="false">
+                <hz:discovery-token>EXAMPLE_TOKEN</hz:discovery-token>
+            </hz:hazelcast-cloud>
+        </hz:network>
+    </hz:client>
+
+    <hz:client id="client13-exponential-connection-retry" credentials-ref="credentials">
+        <hz:network connection-attempt-limit="0">
+            <hz:member>127.0.0.1:5700</hz:member>
+            <hz:member>127.0.0.1:5701</hz:member>
+        </hz:network>
+        <hz:connection-strategy async-start="true" reconnect-mode="ASYNC">
+            <hz:connection-retry enabled="true">
+                <hz:initial-backoff-millis>2000</hz:initial-backoff-millis>
+                <hz:max-backoff-millis>60000</hz:max-backoff-millis>
+                <hz:multiplier>3</hz:multiplier>
+                <hz:fail-on-max-backoff>true</hz:fail-on-max-backoff>
+                <hz:jitter>0.5</hz:jitter>
+            </hz:connection-retry>
+        </hz:connection-strategy>
+    </hz:client>
+
+    <hz:client id="client14-reliable-topic" credentials-ref="credentials">
+        <hz:network connection-attempt-limit="0">
+            <hz:member>127.0.0.1:5700</hz:member>
+            <hz:member>127.0.0.1:5701</hz:member>
+        </hz:network>
+        <!--<hz:reliable-topic name="rel-topic" topic-overload-policy="DISCARD_NEWEST" read-batch-size="100"/>-->
+        <hz:reliable-topic name="rel-topic">
+            <hz:topic-overload-policy>DISCARD_NEWEST</hz:topic-overload-policy>
+            <hz:read-batch-size>100</hz:read-batch-size>
+        </hz:reliable-topic>
+    </hz:client>
+
+    <hz:client id="client15-credentials-factory">
+        <hz:group name="${cluster.group.name}" password="${cluster.group.password}"/>
+        <hz:network connection-attempt-limit="0">
+            <hz:member>127.0.0.1:5700</hz:member>
+            <hz:member>127.0.0.1:5701</hz:member>
+        </hz:network>
+        <hz:security>
+            <hz:credentials-factory class-name="com.hazelcast.examples.MyCredentialsFactory"
+                                    implementation="dummyCredentialsFactory">
+                <hz:properties>
+                    <hz:property name="property">value</hz:property>
+                </hz:properties>
+            </hz:credentials-factory>
+        </hz:security>
+    </hz:client>
+
+    <hz:client id="client16-name-and-labels">
+        <hz:group name="${cluster.group.name}" password="${cluster.group.password}"/>
+        <hz:network connection-attempt-limit="0">
+            <hz:member>127.0.0.1:5700</hz:member>
+            <hz:member>127.0.0.1:5701</hz:member>
+        </hz:network>
+        <hz:instance-name>clientName</hz:instance-name>
+        <hz:labels>
+            <hz:label>foo</hz:label>
+        </hz:labels>
+    </hz:client>
+
     <bean id="credentials" class="com.hazelcast.security.UsernamePasswordCredentials">
         <property name="username" value="spring-group"/>
         <property name="password" value="spring-group-pass"/>
@@ -249,11 +376,13 @@
     <hz:list id="list" instance-ref="client" name="list"/>
     <hz:executorService id="executorService" instance-ref="client" name="executorService"/>
     <hz:idGenerator id="idGenerator" instance-ref="client" name="idGenerator"/>
+    <hz:flakeIdGenerator id="flakeIdGenerator" instance-ref="client" name="flakeIdGenerator"/>
     <hz:atomicLong id="atomicLong" instance-ref="client" name="atomicLong"/>
     <hz:atomicReference id="atomicReference" instance-ref="client" name="atomicReference"/>
     <hz:countDownLatch id="countDownLatch" instance-ref="client" name="countDownLatch"/>
     <hz:semaphore id="semaphore" instance-ref="client" name="semaphore"/>
+    <hz:reliableTopic id="reliableTopic" instance-ref="client" name="reliableTopic"/>
 
     <bean id="dummyMembershipListener" class="com.hazelcast.spring.DummyMembershipListener"/>
-
+    <bean id="dummyCredentialsFactory" class="com.hazelcast.spring.security.DummyCredentialsFactory"/>
 </beans>

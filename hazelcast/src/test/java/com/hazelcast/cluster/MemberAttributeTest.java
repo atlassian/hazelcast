@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,13 +58,13 @@ public class MemberAttributeTest extends HazelcastTestSupport {
         Member m2 = h2.getCluster().getLocalMember();
         assertEquals(123, (int) m2.getIntAttribute("Test"));
 
-        assertEquals(2, h1.getCluster().getMembers().size());
-        assertEquals(2, h2.getCluster().getMembers().size());
+        assertClusterSize(2, h1, h2);
 
         Member member = null;
         for (Member m : h2.getCluster().getMembers()) {
-            if (m == h2.getCluster().getLocalMember())
+            if (m.equals(h2.getCluster().getLocalMember())) {
                 continue;
+            }
             member = m;
         }
 
@@ -74,8 +74,9 @@ public class MemberAttributeTest extends HazelcastTestSupport {
         assertEquals(123, (int) member.getIntAttribute("Test"));
 
         for (Member m : h1.getCluster().getMembers()) {
-            if (m == h1.getCluster().getLocalMember())
+            if (m == h1.getCluster().getLocalMember()) {
                 continue;
+            }
             member = m;
         }
 
@@ -97,12 +98,13 @@ public class MemberAttributeTest extends HazelcastTestSupport {
         m1.setIntAttribute("Test", 123);
 
         HazelcastInstance h2 = factory.newHazelcastInstance();
-        assertEquals(2, h2.getCluster().getMembers().size());
+        assertClusterSize(2, h2);
 
         Member member = null;
         for (Member m : h2.getCluster().getMembers()) {
-            if (m == h2.getCluster().getLocalMember())
+            if (m.equals(h2.getCluster().getLocalMember())) {
                 continue;
+            }
             member = m;
         }
 
@@ -124,12 +126,13 @@ public class MemberAttributeTest extends HazelcastTestSupport {
         m1.setIntAttribute("Test", 123);
 
         HazelcastInstance h2 = factory.newHazelcastInstance();
-        assertEquals(2, h2.getCluster().getMembers().size());
+        assertClusterSize(2, h2);
 
         Member member = null;
         for (Member m : h2.getCluster().getMembers()) {
-            if (m == h2.getCluster().getLocalMember())
+            if (m.equals(h2.getCluster().getLocalMember())) {
                 continue;
+            }
             member = m;
         }
 
@@ -164,12 +167,13 @@ public class MemberAttributeTest extends HazelcastTestSupport {
         m1.setIntAttribute("Test", 123);
 
         HazelcastInstance h2 = factory.newHazelcastInstance();
-        assertEquals(2, h2.getCluster().getMembers().size());
+        assertClusterSize(2, h2);
 
         Member member = null;
         for (Member m : h2.getCluster().getMembers()) {
-            if (m == h2.getCluster().getLocalMember())
+            if (m.equals(h2.getCluster().getLocalMember())) {
                 continue;
+            }
             member = m;
         }
 
@@ -204,12 +208,13 @@ public class MemberAttributeTest extends HazelcastTestSupport {
         m1.setIntAttribute("Test", 123);
 
         HazelcastInstance h2 = factory.newHazelcastInstance();
-        assertEquals(2, h2.getCluster().getMembers().size());
+        assertClusterSize(2, h2);
 
         Member member = null;
         for (Member m : h2.getCluster().getMembers()) {
-            if (m == h2.getCluster().getLocalMember())
+            if (m.equals(h2.getCluster().getLocalMember())) {
                 continue;
+            }
             member = m;
         }
 
@@ -257,6 +262,7 @@ public class MemberAttributeTest extends HazelcastTestSupport {
     }
 
     private static class LatchMembershipListener implements MembershipListener {
+
         private final CountDownLatch latch;
 
         private LatchMembershipListener(CountDownLatch latch) {
@@ -276,5 +282,4 @@ public class MemberAttributeTest extends HazelcastTestSupport {
             latch.countDown();
         }
     }
-
 }

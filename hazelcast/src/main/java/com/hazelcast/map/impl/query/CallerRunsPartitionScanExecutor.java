@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,9 @@
 package com.hazelcast.map.impl.query;
 
 import com.hazelcast.query.Predicate;
-import com.hazelcast.query.impl.QueryableEntry;
+import com.hazelcast.query.impl.QueryableEntriesSegment;
 import com.hazelcast.spi.exception.RetryableHazelcastException;
 
-import java.util.ArrayList;
 import java.util.Collection;
 
 /**
@@ -36,12 +35,11 @@ public class CallerRunsPartitionScanExecutor implements PartitionScanExecutor {
     }
 
     @Override
-    public Collection<QueryableEntry> execute(String mapName, Predicate predicate, Collection<Integer> partitions) {
+    public void execute(String mapName, Predicate predicate, Collection<Integer> partitions, Result result) {
         RetryableHazelcastException storedException = null;
-        Collection<QueryableEntry> result = new ArrayList<QueryableEntry>();
         for (Integer partitionId : partitions) {
             try {
-                result.addAll(partitionScanRunner.run(mapName, predicate, partitionId));
+                partitionScanRunner.run(mapName, predicate, partitionId, result);
             } catch (RetryableHazelcastException e) {
                 // RetryableHazelcastException are stored and re-thrown later. this is to ensure all partitions
                 // are touched as when the parallel execution was used.
@@ -54,7 +52,10 @@ public class CallerRunsPartitionScanExecutor implements PartitionScanExecutor {
         if (storedException != null) {
             throw storedException;
         }
-        return result;
     }
 
+    @Override
+    public QueryableEntriesSegment execute(String mapName, Predicate predicate, int partitionId, int tableIndex, int fetchSize) {
+        return partitionScanRunner.run(mapName, predicate, partitionId, tableIndex, fetchSize);
+    }
 }

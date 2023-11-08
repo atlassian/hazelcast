@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,18 @@
 
 package com.hazelcast.monitor;
 
+import java.util.Map;
+
 /**
- * Local map statistics. As everything is partitioned in Hazelcast,
- * each member owns 1/N (N being the number of members in the cluster)
- * entries of a distributed map. Each member also holds backup entries
- * of other members. LocalMapStats tells you the count of owned and backup
- * entries besides their size in memory.
+ * Local map statistics to be used by {@link MemberState} implementations.
+ * <p>
+ * As {@link com.hazelcast.core.IMap} is a partitioned data structure in
+ * Hazelcast, each member owns a fraction of the total number of entries of a
+ * distributed map.
+ * <p>
+ * Depending on the {@link com.hazelcast.core.IMap}'s configuration, each
+ * member may also hold backup entries of other members. LocalMapStats
+ * provides the count of owned and backup entries besides their size in memory.
  */
 public interface LocalMapStats extends LocalInstanceStats {
 
@@ -74,7 +80,6 @@ public interface LocalMapStats extends LocalInstanceStats {
      */
     long getLastAccessTime();
 
-
     /**
      * Returns the last update time of the locally owned entries.
      *
@@ -83,14 +88,20 @@ public interface LocalMapStats extends LocalInstanceStats {
     long getLastUpdateTime();
 
     /**
-     * Returns the number of hits (reads) of the locally owned entries.
+     * Returns the number of hits (reads) of locally owned entries, including those
+     * which are no longer in the map (for example, may have been evicted).
+     * <p>
+     * The number of hits may be inaccurate after a partition is migrated to a new
+     * owner member.
      *
      * @return number of hits (reads) of the locally owned entries.
      */
     long getHits();
 
     /**
-     * Returns the number of currently locked locally owned keys.
+     * Returns the number of currently locked keys. The returned count
+     * includes locks on keys whether or not they are present in the map,
+     * since it is allowed to lock on keys that are not present.
      *
      * @return number of locked entries.
      */
@@ -118,14 +129,12 @@ public interface LocalMapStats extends LocalInstanceStats {
      */
     long getGetOperationCount();
 
-
     /**
      * Returns the number of Remove operations
      *
      * @return number of remove operations
      */
     long getRemoveOperationCount();
-
 
     /**
      * Returns the total latency of put operations. To get the average latency, divide by the number of puts
@@ -191,12 +200,20 @@ public interface LocalMapStats extends LocalInstanceStats {
     long total();
 
     /**
-     * Cost of map & Near Cache & backup in bytes
-     * todo in object mode object size is zero.
+     * Cost of map & Near Cache & backup & Merkle trees in bytes
+     * <p>
+     * When {@link com.hazelcast.config.InMemoryFormat#OBJECT} is used, the heapcost is zero.
      *
      * @return heap cost
      */
     long getHeapCost();
+
+    /**
+     * Returns the heap cost of the Merkle trees
+     *
+     * @return the heap cost of the Merkle trees
+     */
+    long getMerkleTreesCost();
 
     /**
      * Returns statistics related to the Near Cache.
@@ -205,5 +222,29 @@ public interface LocalMapStats extends LocalInstanceStats {
      */
     NearCacheStats getNearCacheStats();
 
+    /**
+     * Returns the total number of queries performed on the map.
+     * <p>
+     * The returned value includes queries processed with and without indexes.
+     *
+     * @see #getIndexedQueryCount()
+     */
+    long getQueryCount();
+
+    /**
+     * Returns the total number of indexed queries performed on the map.
+     * <p>
+     * The returned value includes only queries processed using indexes. If
+     * there are no indexes associated with the map, the returned value is
+     * {@code 0}.
+     *
+     * @see #getQueryCount()
+     */
+    long getIndexedQueryCount();
+
+    /**
+     * Returns the per-index statistics map keyed by the index name.
+     */
+    Map<String, LocalIndexStats> getIndexStats();
 
 }

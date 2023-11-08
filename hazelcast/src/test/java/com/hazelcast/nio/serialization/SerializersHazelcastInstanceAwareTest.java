@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -83,8 +83,7 @@ public class SerializersHazelcastInstanceAwareTest extends HazelcastTestSupport 
     public void testDataSerializableFactoryClass() {
         Config config = new Config();
         config.getSerializationConfig().addDataSerializableFactoryClass(1,
-                HazelcastInstanceAwareDataSerializableFactory.class
-                        .getName());
+                HazelcastInstanceAwareDataSerializableFactory.class.getName());
 
         HazelcastInstance instance = createHazelcastInstance(config);
         Map<String, DataSerializablePerson> map = instance.getMap("map");
@@ -94,6 +93,7 @@ public class SerializersHazelcastInstanceAwareTest extends HazelcastTestSupport 
     }
 
     private static class HazelcastInstanceAwarePortableFactory implements PortableFactory, HazelcastInstanceAware {
+
         private HazelcastInstance hz;
 
         @Override
@@ -133,6 +133,7 @@ public class SerializersHazelcastInstanceAwareTest extends HazelcastTestSupport 
 
     private static class HazelcastInstanceAwareDataSerializableFactory
             implements DataSerializableFactory, HazelcastInstanceAware {
+
         private HazelcastInstance hz;
 
         @Override
@@ -149,6 +150,7 @@ public class SerializersHazelcastInstanceAwareTest extends HazelcastTestSupport 
     }
 
     private static class DataSerializablePerson implements IdentifiedDataSerializable {
+
         private HazelcastInstance hz;
 
         @Override
@@ -169,5 +171,4 @@ public class SerializersHazelcastInstanceAwareTest extends HazelcastTestSupport 
         public void readData(ObjectDataInput in) throws IOException {
         }
     }
-
 }

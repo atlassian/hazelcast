@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package com.hazelcast.map.impl.event;
 
 import com.hazelcast.core.EntryEventType;
 import com.hazelcast.core.EntryView;
+import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.map.impl.EntryEventFilter;
 import com.hazelcast.map.impl.EventListenerFilter;
 import com.hazelcast.map.impl.MapContainer;
@@ -33,8 +34,8 @@ import com.hazelcast.spi.EventRegistration;
 import com.hazelcast.spi.EventService;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.impl.eventservice.impl.TrueEventFilter;
+import com.hazelcast.spi.partition.IPartitionService;
 import com.hazelcast.spi.properties.HazelcastProperty;
-import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.wan.ReplicationEventObject;
 import com.hazelcast.wan.WanReplicationPublisher;
 
@@ -44,31 +45,41 @@ import java.util.LinkedList;
 
 import static com.hazelcast.map.impl.MapService.SERVICE_NAME;
 import static com.hazelcast.map.impl.event.AbstractFilteringStrategy.FILTER_DOES_NOT_MATCH;
+import static com.hazelcast.util.Clock.currentTimeMillis;
 import static com.hazelcast.util.CollectionUtil.isEmpty;
 
 public class MapEventPublisherImpl implements MapEventPublisher {
 
     /**
-     * When {@code true}, enables processing of entry events for listeners with predicates to fit with "query cache" concept:
-     * for example when the original event indicates an update from an old value that does not match the predicate to a new value
-     * that does match, then the entry listener will be notified with an ADDED event.
-     * This affects only map listeners with predicates and the way entry updates are handled. Put/remove operations are not
-     * affected, neither are listeners without predicates.
-     * Default value is {@code false}, to maintain compatible behavior with previous Hazelcast versions.
+     * When {@code true}, enables processing of entry events for
+     * listeners with predicates to fit with "query cache" concept: for
+     * example when the original event indicates an update from an old
+     * value that does not match the predicate to a new value that does
+     * match, then the entry listener will be notified with an ADDED
+     * event. This affects only map listeners with predicates and the
+     * way entry updates are handled. Put/remove operations are not
+     * affected, neither are listeners without predicates. Default value
+     * is {@code false}, to maintain compatible behavior with previous
+     * Hazelcast versions.
      */
-    public static final HazelcastProperty LISTENER_WITH_PREDICATE_PRODUCES_NATURAL_EVENT_TYPES = new HazelcastProperty(
-            "hazelcast.map.entry.filtering.natural.event.types", false);
+    public static final String PROP_LISTENER_WITH_PREDICATE_PRODUCES_NATURAL_EVENT_TYPES
+            = "hazelcast.map.entry.filtering.natural.event.types";
+    public static final HazelcastProperty LISTENER_WITH_PREDICATE_PRODUCES_NATURAL_EVENT_TYPES
+            = new HazelcastProperty(PROP_LISTENER_WITH_PREDICATE_PRODUCES_NATURAL_EVENT_TYPES, false);
 
-    protected final MapServiceContext mapServiceContext;
     protected final NodeEngine nodeEngine;
-    protected final SerializationService serializationService;
     protected final EventService eventService;
+    protected final IPartitionService partitionService;
+    protected final MapServiceContext mapServiceContext;
     protected final FilteringStrategy filteringStrategy;
+    protected final InternalSerializationService serializationService;
+    protected final QueryCacheEventPublisher queryCacheEventPublisher;
 
     public MapEventPublisherImpl(MapServiceContext mapServiceContext) {
         this.mapServiceContext = mapServiceContext;
         this.nodeEngine = mapServiceContext.getNodeEngine();
-        this.serializationService = nodeEngine.getSerializationService();
+        this.partitionService = nodeEngine.getPartitionService();
+        this.serializationService = ((InternalSerializationService) nodeEngine.getSerializationService());
         this.eventService = nodeEngine.getEventService();
         if (this.nodeEngine.getProperties().
                 getBoolean(LISTENER_WITH_PREDICATE_PRODUCES_NATURAL_EVENT_TYPES)) {
@@ -76,30 +87,52 @@ public class MapEventPublisherImpl implements MapEventPublisher {
         } else {
             this.filteringStrategy = new DefaultEntryEventFilteringStrategy(serializationService, mapServiceContext);
         }
+        this.queryCacheEventPublisher = new QueryCacheEventPublisher(filteringStrategy,
+                mapServiceContext.getQueryCacheContext(), serializationService);
     }
 
     @Override
-    public void publishWanReplicationUpdate(String mapName, EntryView entryView) {
+    public void publishWanUpdate(String mapName,
+                                 EntryView<Data, Data> entryView, boolean hasLoadProvenance) {
+        if (!isOwnedPartition(entryView.getKey())) {
+            return;
+        }
+
         MapContainer mapContainer = mapServiceContext.getMapContainer(mapName);
-        MapReplicationUpdate replicationEvent
-                = new MapReplicationUpdate(mapName, mapContainer.getWanMergePolicy(), entryView);
-        mapContainer.getWanReplicationPublisher().publishReplicationEvent(SERVICE_NAME, replicationEvent);
+        Object wanMergePolicy = mapContainer.getWanMergePolicy();
+        MapReplicationUpdate event = new MapReplicationUpdate(mapName, wanMergePolicy, entryView);
+        publishWanEvent(mapName, event);
     }
 
     @Override
-    public void publishWanReplicationRemove(String mapName, Data key, long removeTime) {
-        MapReplicationRemove event = new MapReplicationRemove(mapName, key, removeTime);
-        publishWanReplicationEventInternal(mapName, event);
+    public void publishWanRemove(String mapName, Data key) {
+        if (!isOwnedPartition(key)) {
+            return;
+        }
+
+        MapReplicationRemove event = new MapReplicationRemove(mapName, key, currentTimeMillis());
+        publishWanEvent(mapName, event);
     }
 
-    @Override
-    public void publishWanReplicationUpdateBackup(String mapName, EntryView entryView) {
-        // NOP
+    /**
+     * Publishes the {@code event} to the {@link WanReplicationPublisher} configured for this map.
+     *
+     * @param mapName the map name
+     * @param event   the event
+     */
+    protected void publishWanEvent(String mapName, ReplicationEventObject event) {
+        MapContainer mapContainer = mapServiceContext.getMapContainer(mapName);
+        WanReplicationPublisher wanReplicationPublisher = mapContainer.getWanReplicationPublisher();
+        if (isOwnedPartition(event.getKey())) {
+            wanReplicationPublisher.publishReplicationEvent(SERVICE_NAME, event);
+        } else {
+            wanReplicationPublisher.publishReplicationEventBackup(SERVICE_NAME, event);
+        }
     }
 
-    @Override
-    public void publishWanReplicationRemoveBackup(String mapName, Data key, long removeTime) {
-        // NOP
+    private boolean isOwnedPartition(Data dataKey) {
+        int partitionId = partitionService.getPartitionId(dataKey);
+        return partitionService.getPartition(partitionId, false).isLocal();
     }
 
     @Override
@@ -133,14 +166,15 @@ public class MapEventPublisherImpl implements MapEventPublisher {
         }
 
         String source = getThisNodesAddress();
-        MapEventData mapEventData = new MapEventData(source, mapName, caller, eventType.getType(), numberOfEntriesAffected);
+        MapEventData mapEventData = new MapEventData(source, mapName, caller,
+                eventType.getType(), numberOfEntriesAffected);
         publishEventInternal(registrations, mapEventData, mapName.hashCode());
     }
 
     @Override
     public void publishEvent(Address caller, String mapName, EntryEventType eventType,
-                             Data dataKey, Object dataOldValue, Object dataValue) {
-        publishEvent(caller, mapName, eventType, dataKey, dataOldValue, dataValue, null);
+                             Data dataKey, Object oldValue, Object dataValue) {
+        publishEvent(caller, mapName, eventType, dataKey, oldValue, dataValue, null);
     }
 
 
@@ -155,10 +189,28 @@ public class MapEventPublisherImpl implements MapEventPublisher {
         publishEvent(registrations, caller, mapName, eventType, dataKey, oldValue, value, mergingValue);
     }
 
+    /**
+     * Publish the event to the specified listener {@code registrations} if
+     * the event passes the filters specified by the {@link FilteringStrategy}.
+     * <p>
+     * The method uses the hashcode of the {@code dataKey} to order the
+     * events in the event subsystem. This means that all events for the same
+     * key will be ordered. Events with different keys need not be ordered.
+     *
+     * @param registrations the listener registrations to which we are publishing
+     * @param caller        the address of the caller that caused the event
+     * @param mapName       the map name
+     * @param eventType     the event type
+     * @param dataKey       the key of the event map entry
+     * @param oldValue      the old value of the map entry
+     * @param newValue      the new value of the map entry
+     * @param mergingValue  the value used when performing a merge
+     *                      operation in case of a {@link EntryEventType#MERGED} event.
+     *                      This value together with the old value produced the new value.
+     */
     private void publishEvent(Collection<EventRegistration> registrations, Address caller, String mapName,
-                                     EntryEventType eventType, Data dataKey, Object oldValue, Object value,
-                                     Object mergingValue) {
-
+                              EntryEventType eventType, Data dataKey, Object oldValue, Object newValue,
+                              Object mergingValue) {
         EntryEventDataCache eventDataCache = filteringStrategy.getEntryEventDataCache();
 
         int orderKey = pickOrderKey(dataKey);
@@ -167,13 +219,13 @@ public class MapEventPublisherImpl implements MapEventPublisher {
             EventFilter filter = registration.getFilter();
             // a filtering strategy determines whether the event must be published on the specific
             // event registration and may alter the type of event to be published
-            int eventTypeForPublishing = filteringStrategy.doFilter(filter, dataKey, oldValue, value, eventType, mapName);
+            int eventTypeForPublishing = filteringStrategy.doFilter(filter, dataKey, oldValue, newValue, eventType, mapName);
             if (eventTypeForPublishing == FILTER_DOES_NOT_MATCH) {
                 continue;
             }
 
             EntryEventData eventDataToBePublished = eventDataCache.getOrCreateEventData(mapName, caller, dataKey,
-                    value, oldValue, mergingValue, eventTypeForPublishing, isIncludeValue(filter));
+                    newValue, oldValue, mergingValue, eventTypeForPublishing, isIncludeValue(filter));
             eventService.publishEvent(SERVICE_NAME, registration, eventDataToBePublished, orderKey);
         }
 
@@ -184,21 +236,36 @@ public class MapEventPublisherImpl implements MapEventPublisher {
     }
 
     /**
-     * Hook for actions to perform after any of {@code publishEvent} methods is executed.
-     * This method will be invoked once per unique EntryEventData generated by {@code publishEvent},
-     * regardless of the number of registrations on which the event is published.
-     * @param eventDataIncludingValues
-     * @param eventDataExcludingValues
+     * Hook for actions to perform after any of {@link #publishEvent}
+     * methods is executed and if there were any registrations for
+     * the event. This method will be invoked once per unique {@link
+     * EntryEventData} generated by {@code publishEvent}, regardless
+     * of the number of registrations on which the event is published.
+     *
+     * @param eventDataIncludingValues the event data including all of the entry values (old, new, merging)
+     * @param eventDataExcludingValues the event data without entry values
      */
     protected void postPublishEvent(Collection<EntryEventData> eventDataIncludingValues,
                                     Collection<EntryEventData> eventDataExcludingValues) {
-        // nop
+        // publish event data of interest to query caches; since query cache listener registrations
+        // include values (as these are required to properly filter according to the query cache's predicate),
+        // we do not take into account eventDataExcludingValues, if any were generated
+        if (eventDataIncludingValues != null) {
+            for (EntryEventData entryEventData : eventDataIncludingValues) {
+                queryCacheEventPublisher.addEventToQueryCache(entryEventData);
+            }
+        }
     }
 
-    protected boolean isIncludeValue(EventFilter filter) {
+    /**
+     * Return {@code true} if the {@code filter} requires the entry
+     * values (old, new, merging) to be included in the event.
+     *
+     * @throws IllegalArgumentException if the filter type is not known
+     */
+    static boolean isIncludeValue(EventFilter filter) {
         // the order of the following ifs is important!
         // QueryEventFilter is instance of EntryEventFilter
-        // SyntheticEventFilter wraps an event filter
         if (filter instanceof EventListenerFilter) {
             filter = ((EventListenerFilter) filter).getEventFilter();
         }
@@ -235,7 +302,11 @@ public class MapEventPublisherImpl implements MapEventPublisher {
     @Override
     public void hintMapEvent(Address caller, String mapName, EntryEventType eventType,
                              int numberOfEntriesAffected, int partitionId) {
-        // NOP
+        queryCacheEventPublisher.hintMapEvent(caller, mapName, eventType, numberOfEntriesAffected, partitionId);
+    }
+
+    public void addEventToQueryCache(Object eventData) {
+        queryCacheEventPublisher.addEventToQueryCache(eventData);
     }
 
     @Override
@@ -243,26 +314,30 @@ public class MapEventPublisherImpl implements MapEventPublisher {
         return eventService.hasEventRegistration(SERVICE_NAME, mapName);
     }
 
+    /**
+     * Return all listener registrations for the map with {@code mapName}.
+     *
+     * @param mapName the map name
+     * @return the collection of listener registrations
+     */
     protected Collection<EventRegistration> getRegistrations(String mapName) {
         return eventService.getRegistrations(SERVICE_NAME, mapName);
     }
 
+    /**
+     * Returns the hashCode of the {@code key} or -1 if {@code null}
+     */
     private int pickOrderKey(Data key) {
         return key == null ? -1 : key.hashCode();
     }
 
     protected void publishEventInternal(Collection<EventRegistration> registrations, Object eventData, int orderKey) {
         eventService.publishEvent(SERVICE_NAME, registrations, eventData, orderKey);
+        queryCacheEventPublisher.addEventToQueryCache(eventData);
     }
 
     private String getThisNodesAddress() {
         Address thisAddress = nodeEngine.getThisAddress();
         return thisAddress.toString();
-    }
-
-    protected void publishWanReplicationEventInternal(String mapName, ReplicationEventObject event) {
-        MapContainer mapContainer = mapServiceContext.getMapContainer(mapName);
-        WanReplicationPublisher wanReplicationPublisher = mapContainer.getWanReplicationPublisher();
-        wanReplicationPublisher.publishReplicationEvent(SERVICE_NAME, event);
     }
 }

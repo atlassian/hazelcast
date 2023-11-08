@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,11 @@
 
 package com.hazelcast.map.impl.operation;
 
-import com.hazelcast.core.EntryView;
-import com.hazelcast.map.impl.EntryViews;
 import com.hazelcast.map.impl.MapDataSerializerHook;
-import com.hazelcast.map.impl.record.Record;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.BackupOperation;
-import com.hazelcast.spi.impl.MutatingOperation;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -36,7 +32,7 @@ import java.util.List;
  *
  * @see PutFromLoadAllOperation
  */
-public class PutFromLoadAllBackupOperation extends MapOperation implements BackupOperation, MutatingOperation {
+public class PutFromLoadAllBackupOperation extends MapOperation implements BackupOperation {
 
     private List<Data> keyValueSequence;
 
@@ -60,7 +56,13 @@ public class PutFromLoadAllBackupOperation extends MapOperation implements Backu
             final Data value = keyValueSequence.get(i + 1);
             final Object object = mapServiceContext.toObject(value);
             recordStore.putFromLoadBackup(key, object);
-            publishWanReplicationEvent(key, value, recordStore.getRecord(key));
+            // the following check is for the case when the putFromLoad does not put the data due to various reasons
+            // one of the reasons may be size eviction threshold has been reached
+            if (!recordStore.existInMemory(key)) {
+                continue;
+            }
+
+            publishLoadAsWanUpdate(key, value);
         }
     }
 
@@ -69,17 +71,6 @@ public class PutFromLoadAllBackupOperation extends MapOperation implements Backu
         evict(null);
 
         super.afterRun();
-    }
-
-    private void publishWanReplicationEvent(Data key, Data value, Record record) {
-        if (record == null) {
-            return;
-        }
-
-        if (mapContainer.getWanReplicationPublisher() != null && mapContainer.getWanMergePolicy() != null) {
-            EntryView entryView = EntryViews.createSimpleEntryView(key, value, record);
-            mapEventPublisher.publishWanReplicationUpdateBackup(name, entryView);
-        }
     }
 
     @Override

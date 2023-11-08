@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@ public class CallerRunsAccumulationExecutor implements AccumulationExecutor {
         this.serializationService = serializationService;
     }
 
+    @Override
     @SuppressWarnings("unchecked")
     public AggregationResult execute(
             Aggregator aggregator, Collection<QueryableEntry> entries, Collection<Integer> partitionIds) {
@@ -45,9 +46,8 @@ public class CallerRunsAccumulationExecutor implements AccumulationExecutor {
             resultAggregator.onAccumulationFinished();
         }
 
-        AggregationResult result = new AggregationResult(resultAggregator);
+        AggregationResult result = new AggregationResult(resultAggregator, serializationService);
         result.setPartitionIds(partitionIds);
         return result;
     }
-
 }

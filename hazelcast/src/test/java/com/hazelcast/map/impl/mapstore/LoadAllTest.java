@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.map.impl.mapstore;
 
 import com.hazelcast.config.Config;
@@ -6,6 +22,7 @@ import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
 import com.hazelcast.core.MapStore;
 import com.hazelcast.map.listener.EntryAddedListener;
+import com.hazelcast.map.listener.EntryLoadedListener;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
 import com.hazelcast.test.annotation.ParallelTest;
@@ -32,7 +49,7 @@ import static org.junit.Assert.assertEquals;
 public class LoadAllTest extends AbstractMapStoreTest {
 
     @Test(expected = NullPointerException.class)
-    public void load_givenKeys_null() throws Exception {
+    public void load_givenKeys_null() {
         final String mapName = randomMapName();
         final Config config = createNewConfig(mapName);
         final HazelcastInstance node = createHazelcastInstance(config);
@@ -42,7 +59,7 @@ public class LoadAllTest extends AbstractMapStoreTest {
     }
 
     @Test
-    public void load_givenKeys_withEmptySet() throws Exception {
+    public void load_givenKeys_withEmptySet() {
         final String mapName = randomMapName();
         final Config config = createNewConfig(mapName);
         final HazelcastInstance node = createHazelcastInstance(config);
@@ -53,36 +70,50 @@ public class LoadAllTest extends AbstractMapStoreTest {
     }
 
     @Test
-    public void load_givenKeys() throws Exception {
+    public void load_givenKeys() {
+        // SETUP
         final String mapName = randomMapName();
         final Config config = createNewConfig(mapName);
         final HazelcastInstance node = createHazelcastInstance(config);
         final IMap<Integer, Integer> map = node.getMap(mapName);
         populateMap(map, 1000);
+
+        // GIVEN
         map.evictAll();
+        assertEquals(0, map.size());
+
+        // WHEN
         final Set<Integer> keysToLoad = selectKeysToLoad(100, 910);
         map.loadAll(keysToLoad, true);
 
+        // THEN
         assertEquals(810, map.size());
         assertRangeLoaded(map, 100, 910);
     }
 
     @Test
-    public void load_allKeys() throws Exception {
+    public void load_allKeys() {
+        // SETUP
         final String mapName = randomMapName();
         final Config config = createNewConfig(mapName);
         final HazelcastInstance node = createHazelcastInstance(config);
         final IMap<Integer, Integer> map = node.getMap(mapName);
         final int itemCount = 1000;
         populateMap(map, itemCount);
+
+        // GIVEN
         map.evictAll();
+        assertEquals(0, map.size());
+
+        // WHEN
         map.loadAll(true);
 
+        // THEN
         assertEquals(itemCount, map.size());
     }
 
     @Test
-    public void testAllItemsLoaded_whenLoadingAllOnMultipleInstances() throws Exception {
+    public void testAllItemsLoaded_whenLoadingAllOnMultipleInstances() {
         String mapName = randomMapName();
         Config config = createNewConfig(mapName);
 
@@ -99,7 +130,7 @@ public class LoadAllTest extends AbstractMapStoreTest {
     }
 
     @Test
-    public void testItemsNotOverwritten_whenLoadingWithoutReplacing() throws Exception {
+    public void testItemsNotOverwritten_whenLoadingWithoutReplacing() {
         String mapName = randomMapName();
         Config config = createNewConfig(mapName);
 
@@ -119,7 +150,7 @@ public class LoadAllTest extends AbstractMapStoreTest {
     }
 
     @Test
-    public void load_allKeys_preserveExistingKeys_firesEvent() throws Exception {
+    public void load_allKeys_preserveExistingKeys_firesEvent() {
         final String mapName = randomMapName();
         final Config config = createNewConfig(mapName);
 
@@ -130,36 +161,36 @@ public class LoadAllTest extends AbstractMapStoreTest {
         populateMap(map, itemCount);
         evictRange(map, 0, 700);
 
-        final CountDownLatch addEventCounter = new CountDownLatch(700);
-        addListener(map, addEventCounter);
+        final CountDownLatch loadEventCounter = new CountDownLatch(700);
+        addLoadedListener(map, loadEventCounter);
 
         map.loadAll(false);
 
-        assertOpenEventually(addEventCounter);
+        assertOpenEventually(loadEventCounter);
         assertEquals(itemCount, map.size());
     }
 
     @Test
-    public void load_allKeys_firesEvent() throws Exception {
+    public void load_allKeys_firesEvent() {
         final int itemCount = 1000;
         final String mapName = randomMapName();
         final Config config = createNewConfig(mapName);
         final HazelcastInstance node = createHazelcastInstance(config);
         final IMap<Integer, Integer> map = node.getMap(mapName);
-        final CountDownLatch eventCounter = new CountDownLatch(itemCount);
+        final CountDownLatch loadedCounter = new CountDownLatch(itemCount);
         populateMap(map, itemCount);
         map.evictAll();
 
-        addListener(map, eventCounter);
+        addLoadedListener(map, loadedCounter);
 
         map.loadAll(true);
 
-        assertOpenEventually(eventCounter);
+        assertOpenEventually(loadedCounter);
         assertEquals(itemCount, map.size());
     }
 
     @Test
-    public void load_givenKeys_withBackupNodes() throws Exception {
+    public void load_givenKeys_withBackupNodes() {
         final int itemCount = 10000;
         final int rangeStart = 1000;
         // select an ordinary value
@@ -209,6 +240,15 @@ public class LoadAllTest extends AbstractMapStoreTest {
         map.addEntryListener(new EntryAddedListener<Object, Object>() {
             @Override
             public void entryAdded(EntryEvent<Object, Object> event) {
+                counter.countDown();
+            }
+        }, true);
+    }
+
+    private static void addLoadedListener(IMap map, final CountDownLatch counter) {
+        map.addEntryListener(new EntryLoadedListener<Object, Object>() {
+            @Override
+            public void entryLoaded(EntryEvent<Object, Object> event) {
                 counter.countDown();
             }
         }, true);

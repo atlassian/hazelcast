@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.spi.impl.operationservice.impl;
 
 import com.hazelcast.config.Config;
@@ -6,7 +22,6 @@ import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.ICompletableFuture;
 import com.hazelcast.core.OperationTimeoutException;
 import com.hazelcast.spi.OperationService;
-import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
@@ -25,10 +40,10 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeoutException;
 
+import static com.hazelcast.spi.properties.GroupProperty.OPERATION_CALL_TIMEOUT_MILLIS;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -37,7 +52,7 @@ import static org.mockito.Mockito.verify;
 @Category({QuickTest.class, ParallelTest.class})
 public class Invocation_TimeoutTest extends HazelcastTestSupport {
 
-    private final static Object RESPONSE = "someresponse";
+    private static final Object RESPONSE = "someresponse";
 
     /**
      * Tests if the get is called with a timeout, and the operation takes more time to execute then the timeout, that the call
@@ -70,7 +85,7 @@ public class Invocation_TimeoutTest extends HazelcastTestSupport {
     @Test
     public void whenMultipleThreadsCallGetOnSameLongRunningOperation() throws ExecutionException, InterruptedException {
         long callTimeout = 5000;
-        Config config = new Config().setProperty(GroupProperty.OPERATION_CALL_TIMEOUT_MILLIS.getName(), "" + callTimeout);
+        Config config = new Config().setProperty(OPERATION_CALL_TIMEOUT_MILLIS.getName(), "" + callTimeout);
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(2);
         HazelcastInstance local = factory.newHazelcastInstance(config);
         HazelcastInstance remote = factory.newHazelcastInstance(config);
@@ -106,8 +121,8 @@ public class Invocation_TimeoutTest extends HazelcastTestSupport {
 
     @Test
     public void sync_whenLongRunningOperation() throws InterruptedException, ExecutionException, TimeoutException {
-        long callTimeout = 5000;
-        Config config = new Config().setProperty(GroupProperty.OPERATION_CALL_TIMEOUT_MILLIS.getName(), "" + callTimeout);
+        long callTimeout = 10000;
+        Config config = new Config().setProperty(OPERATION_CALL_TIMEOUT_MILLIS.getName(), "" + callTimeout);
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(2);
         HazelcastInstance local = factory.newHazelcastInstance(config);
         HazelcastInstance remote = factory.newHazelcastInstance(config);
@@ -126,8 +141,8 @@ public class Invocation_TimeoutTest extends HazelcastTestSupport {
 
     @Test
     public void async_whenLongRunningOperation() throws InterruptedException, ExecutionException, TimeoutException {
-        long callTimeout = 5000;
-        Config config = new Config().setProperty(GroupProperty.OPERATION_CALL_TIMEOUT_MILLIS.getName(), "" + callTimeout);
+        long callTimeout = 10000;
+        Config config = new Config().setProperty(OPERATION_CALL_TIMEOUT_MILLIS.getName(), "" + callTimeout);
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(2);
         HazelcastInstance local = factory.newHazelcastInstance(config);
         HazelcastInstance remote = factory.newHazelcastInstance(config);
@@ -161,7 +176,7 @@ public class Invocation_TimeoutTest extends HazelcastTestSupport {
     @Test
     public void sync_whenHeartbeatTimeout_thenOperationTimeoutException() throws Exception {
         long callTimeoutMs = 5000;
-        Config config = new Config().setProperty(GroupProperty.OPERATION_CALL_TIMEOUT_MILLIS.getName(), "" + callTimeoutMs);
+        Config config = new Config().setProperty(OPERATION_CALL_TIMEOUT_MILLIS.getName(), "" + callTimeoutMs);
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(2);
         HazelcastInstance local = factory.newHazelcastInstance(config);
         HazelcastInstance remote = factory.newHazelcastInstance(config);
@@ -180,14 +195,14 @@ public class Invocation_TimeoutTest extends HazelcastTestSupport {
         } catch (ExecutionException e) {
             Throwable cause = e.getCause();
             assertInstanceOf(OperationTimeoutException.class, cause);
-            assertTrue(cause.getMessage(), cause.getMessage().contains("operation-heartbeat-timeout"));
+            assertContains(cause.getMessage(), "operation-heartbeat-timeout");
         }
     }
 
     @Test
     public void async_whenHeartbeatTimeout_thenOperationTimeoutException() throws Exception {
         long callTimeoutMs = 1000;
-        Config config = new Config().setProperty(GroupProperty.OPERATION_CALL_TIMEOUT_MILLIS.getName(), "" + callTimeoutMs);
+        Config config = new Config().setProperty(OPERATION_CALL_TIMEOUT_MILLIS.getName(), "" + callTimeoutMs);
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(2);
         HazelcastInstance local = factory.newHazelcastInstance(config);
         HazelcastInstance remote = factory.newHazelcastInstance(config);
@@ -217,7 +232,7 @@ public class Invocation_TimeoutTest extends HazelcastTestSupport {
     @Test
     public void sync_whenEventuallyHeartbeatTimeout_thenOperationTimeoutException() throws Exception {
         long callTimeoutMs = 5000;
-        Config config = new Config().setProperty(GroupProperty.OPERATION_CALL_TIMEOUT_MILLIS.getName(), "" + callTimeoutMs);
+        Config config = new Config().setProperty(OPERATION_CALL_TIMEOUT_MILLIS.getName(), "" + callTimeoutMs);
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(2);
         HazelcastInstance local = factory.newHazelcastInstance(config);
         HazelcastInstance remote = factory.newHazelcastInstance(config);
@@ -236,14 +251,14 @@ public class Invocation_TimeoutTest extends HazelcastTestSupport {
         } catch (ExecutionException e) {
             Throwable cause = e.getCause();
             assertInstanceOf(OperationTimeoutException.class, cause);
-            assertTrue(cause.getMessage(), cause.getMessage().contains("operation-heartbeat-timeout"));
+            assertContains(cause.getMessage(), "operation-heartbeat-timeout");
         }
     }
 
     @Test
     public void async_whenEventuallyHeartbeatTimeout_thenOperationTimeoutException() throws Exception {
         long callTimeoutMs = 5000;
-        Config config = new Config().setProperty(GroupProperty.OPERATION_CALL_TIMEOUT_MILLIS.getName(), "" + callTimeoutMs);
+        Config config = new Config().setProperty(OPERATION_CALL_TIMEOUT_MILLIS.getName(), "" + callTimeoutMs);
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(2);
         HazelcastInstance local = factory.newHazelcastInstance(config);
         HazelcastInstance remote = factory.newHazelcastInstance(config);
@@ -270,7 +285,7 @@ public class Invocation_TimeoutTest extends HazelcastTestSupport {
     @Test
     public void sync_whenCallTimeout_thenOperationTimeoutException() throws Exception {
         long callTimeoutMs = 60000;
-        Config config = new Config().setProperty(GroupProperty.OPERATION_CALL_TIMEOUT_MILLIS.getName(), "" + callTimeoutMs);
+        Config config = new Config().setProperty(OPERATION_CALL_TIMEOUT_MILLIS.getName(), "" + callTimeoutMs);
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(2);
         HazelcastInstance local = factory.newHazelcastInstance(config);
         HazelcastInstance remote = factory.newHazelcastInstance(config);
@@ -290,14 +305,14 @@ public class Invocation_TimeoutTest extends HazelcastTestSupport {
         } catch (ExecutionException e) {
             Throwable cause = e.getCause();
             assertInstanceOf(OperationTimeoutException.class, cause);
-            assertTrue(cause.getMessage(), cause.getMessage().contains("operation-call-timeout"));
+            assertContains(cause.getMessage(), "operation-call-timeout");
         }
     }
 
     @Test
     public void async_whenCallTimeout_thenOperationTimeoutException() throws Exception {
         long callTimeoutMs = 60000;
-        Config config = new Config().setProperty(GroupProperty.OPERATION_CALL_TIMEOUT_MILLIS.getName(), "" + callTimeoutMs);
+        Config config = new Config().setProperty(OPERATION_CALL_TIMEOUT_MILLIS.getName(), "" + callTimeoutMs);
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(2);
         HazelcastInstance local = factory.newHazelcastInstance(config);
         HazelcastInstance remote = factory.newHazelcastInstance(config);
@@ -330,7 +345,7 @@ public class Invocation_TimeoutTest extends HazelcastTestSupport {
                 verify(callback).onFailure(argument.capture());
                 Throwable cause = argument.getValue();
                 assertInstanceOf(OperationTimeoutException.class, cause);
-                assertTrue(cause.getMessage(), cause.getMessage().contains("operation-heartbeat-timeout"));
+                assertContains(cause.getMessage(), "operation-heartbeat-timeout");
             }
         });
     }
@@ -344,7 +359,7 @@ public class Invocation_TimeoutTest extends HazelcastTestSupport {
 
                 Throwable cause = argument.getValue();
                 assertInstanceOf(OperationTimeoutException.class, cause);
-                assertTrue(cause.getMessage(), cause.getMessage().contains("operation-call-timeout"));
+                assertContains(cause.getMessage(), "operation-call-timeout");
             }
         });
     }

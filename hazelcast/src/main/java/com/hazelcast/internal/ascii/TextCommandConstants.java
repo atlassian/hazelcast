@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,7 +55,7 @@ public final class TextCommandConstants {
 
     public enum TextCommandType {
         GET((byte) 0),
-        PARTIAL_GET((byte) 1),
+        BULK_GET((byte) 1),
         GETS((byte) 2),
         SET((byte) 3),
         APPEND((byte) 4),
@@ -77,6 +77,7 @@ public final class TextCommandConstants {
         HTTP_POST((byte) 31),
         HTTP_PUT((byte) 32),
         HTTP_DELETE((byte) 33),
+        HTTP_HEAD((byte) 34),
         NO_OP((byte) 98),
         STOP((byte) 99);
 

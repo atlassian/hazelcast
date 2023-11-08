@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,13 @@
 
 package com.hazelcast.monitor.impl;
 
-import com.eclipsesource.json.JsonObject;
+import com.hazelcast.internal.json.JsonObject;
+import com.hazelcast.internal.metrics.Probe;
+import com.hazelcast.monitor.LocalIndexStats;
 import com.hazelcast.monitor.LocalReplicatedMapStats;
 import com.hazelcast.util.Clock;
 
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 
 import static com.hazelcast.util.ConcurrencyUtil.setMax;
@@ -30,9 +33,9 @@ import static java.util.concurrent.atomic.AtomicLongFieldUpdater.newUpdater;
  * This class collects statistics about the replication map usage for management center and is
  * able to transform those between wire format and instance view.
  */
+@SuppressWarnings("checkstyle:methodcount")
 public class LocalReplicatedMapStatsImpl implements LocalReplicatedMapStats {
 
-    //CHECKSTYLE:OFF
     private static final AtomicLongFieldUpdater<LocalReplicatedMapStatsImpl> LAST_ACCESS_TIME =
             newUpdater(LocalReplicatedMapStatsImpl.class, "lastAccessTime");
     private static final AtomicLongFieldUpdater<LocalReplicatedMapStatsImpl> LAST_UPDATE_TIME =
@@ -63,26 +66,42 @@ public class LocalReplicatedMapStatsImpl implements LocalReplicatedMapStats {
             newUpdater(LocalReplicatedMapStatsImpl.class, "maxRemoveLatency");
     private static final AtomicLongFieldUpdater<LocalReplicatedMapStatsImpl> OWNED_ENTRY_MEMORY_COST =
             newUpdater(LocalReplicatedMapStatsImpl.class, "ownedEntryMemoryCost");
-    //CHECKSTYLE:ON
 
-    // These fields are only accessed through the updaters
+    // these fields are only accessed through the updaters
+    @Probe
     private volatile long lastAccessTime;
+    @Probe
     private volatile long lastUpdateTime;
+    @Probe
     private volatile long hits;
+    @Probe
     private volatile long numberOfOtherOperations;
+    @Probe
     private volatile long numberOfEvents;
+    @Probe
     private volatile long getCount;
+    @Probe
     private volatile long putCount;
+    @Probe
     private volatile long removeCount;
+    @Probe
     private volatile long totalGetLatencies;
+    @Probe
     private volatile long totalPutLatencies;
+    @Probe
     private volatile long totalRemoveLatencies;
+    @Probe
     private volatile long maxGetLatency;
+    @Probe
     private volatile long maxPutLatency;
+    @Probe
     private volatile long maxRemoveLatency;
 
+    @Probe
     private volatile long creationTime;
+    @Probe
     private volatile long ownedEntryCount;
+    @Probe
     private volatile long ownedEntryMemoryCost;
 
     public LocalReplicatedMapStatsImpl() {
@@ -184,6 +203,7 @@ public class LocalReplicatedMapStatsImpl implements LocalReplicatedMapStats {
     public void setDirtyEntryCount(long dirtyEntryCount) {
     }
 
+    @Probe
     @Override
     public long total() {
         return putCount + getCount + removeCount + numberOfOtherOperations;
@@ -270,6 +290,7 @@ public class LocalReplicatedMapStatsImpl implements LocalReplicatedMapStats {
         NUMBER_OF_EVENTS.incrementAndGet(this);
     }
 
+    @Override
     public long getHeapCost() {
         return 0;
     }
@@ -279,6 +300,16 @@ public class LocalReplicatedMapStatsImpl implements LocalReplicatedMapStats {
     }
 
     @Override
+    public long getMerkleTreesCost() {
+        return 0;
+    }
+
+    // TODO: unused
+    public void setMerkleTreesCost(long merkleTreesCost) {
+    }
+
+    @Probe
+    @Override
     public long getReplicationEventCount() {
         return 0;
     }
@@ -287,6 +318,21 @@ public class LocalReplicatedMapStatsImpl implements LocalReplicatedMapStats {
     @Override
     public NearCacheStatsImpl getNearCacheStats() {
         throw new UnsupportedOperationException("Replicated map has no Near Cache!");
+    }
+
+    @Override
+    public long getQueryCount() {
+        throw new UnsupportedOperationException("Queries on replicated maps are not supported.");
+    }
+
+    @Override
+    public long getIndexedQueryCount() {
+        throw new UnsupportedOperationException("Queries on replicated maps are not supported.");
+    }
+
+    @Override
+    public Map<String, LocalIndexStats> getIndexStats() {
+        throw new UnsupportedOperationException("Queries on replicated maps are not supported.");
     }
 
     @Override

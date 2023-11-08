@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,11 +23,11 @@ import com.hazelcast.core.TypeConverter;
  * pure property based configuration inside Hazelcast and helps implementing
  * an automatic and transparent way to verify configuration as well as converting
  * types based on provided validators and converters.
- * <p/>
+ * <p>
  * All verification is done on property level which means that the configuration
  * overall might still be invalid and needs to be checked by the provider vendor
  * before actually using it.
- * <p/>
+ * <p>
  * All used {@link com.hazelcast.core.TypeConverter}s and
  * {@link com.hazelcast.config.properties.ValueValidator}s need to be fully thread-safe
  * and are recommended to be stateless to prevent any kind of unexpected concurrency
@@ -54,7 +54,8 @@ public interface PropertyDefinition {
      * Returns an optional validator to validate a value before finalizing the
      * configuration.
      *
-     * @return true if validation passed, otherwise false
+     * @return the optional validator. Is allowed to be <code>null</code> in case
+     * there is no validation required.
      */
     ValueValidator validator();
 
@@ -64,8 +65,7 @@ public interface PropertyDefinition {
      * possibly defined {@link com.hazelcast.config.properties.ValueValidator}
      * test.
      *
-     * @return true if this property is optional, otherwise false
+     * @return {@code true} if this property is optional, {@code false} otherwise
      */
     boolean optional();
-
 }

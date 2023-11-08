@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import com.hazelcast.transaction.impl.TransactionLogRecord;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 
 public class XATransactionDTO implements IdentifiedDataSerializable {
@@ -32,7 +33,7 @@ public class XATransactionDTO implements IdentifiedDataSerializable {
     private String ownerUuid;
     private long timeoutMilis;
     private long startTime;
-    private List<TransactionLogRecord> records;
+    private Collection<TransactionLogRecord> records;
 
     public XATransactionDTO() {
     }
@@ -76,7 +77,7 @@ public class XATransactionDTO implements IdentifiedDataSerializable {
         return startTime;
     }
 
-    public List<TransactionLogRecord> getRecords() {
+    public Collection<TransactionLogRecord> getRecords() {
         return records;
     }
 

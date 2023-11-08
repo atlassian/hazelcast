@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,9 +48,9 @@ public interface HazelcastOSGiService {
     String HAZELCAST_OSGI_JSR223_DISABLED = "hazelcast.osgi.jsr223.disabled";
 
     /**
-     * Gets the id of service.
+     * Gets the ID of service.
      *
-     * @return the id of service
+     * @return the ID of service
      */
     String getId();
 

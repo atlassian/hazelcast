@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,19 +18,26 @@ package com.hazelcast.map.impl.operation;
 
 import com.hazelcast.map.impl.MapDataSerializerHook;
 import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.spi.impl.MutatingOperation;
 
 import static com.hazelcast.core.EntryEventType.ADDED;
 import static com.hazelcast.core.EntryEventType.UPDATED;
 
-public class SetOperation extends BasePutOperation {
+public class SetOperation extends BasePutOperation implements MutatingOperation {
 
     private boolean newRecord;
 
     public SetOperation() {
     }
 
-    public SetOperation(String name, Data dataKey, Data value, long ttl) {
-        super(name, dataKey, value, ttl);
+    public SetOperation(String name, Data dataKey, Data value, long ttl, long maxIdle) {
+        super(name, dataKey, value, ttl, maxIdle);
+    }
+
+    @Override
+    public void run() {
+        oldValue = recordStore.set(dataKey, dataValue, ttl, maxIdle);
+        newRecord = oldValue == null;
     }
 
     @Override
@@ -38,16 +45,6 @@ public class SetOperation extends BasePutOperation {
         eventType = newRecord ? ADDED : UPDATED;
 
         super.afterRun();
-    }
-
-    @Override
-    public void run() {
-        newRecord = recordStore.set(dataKey, dataValue, ttl);
-    }
-
-    @Override
-    public Object getResponse() {
-        return newRecord;
     }
 
     @Override

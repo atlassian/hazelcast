@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,6 +32,8 @@ import java.security.Permission;
 public class ReplicatedMapGetMessageTask
         extends AbstractPartitionMessageTask<ReplicatedMapGetCodec.RequestParameters> {
 
+    private volatile long startTimeNanos;
+
     public ReplicatedMapGetMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
     }
@@ -44,6 +46,21 @@ public class ReplicatedMapGetMessageTask
     @Override
     protected ReplicatedMapGetCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
         return ReplicatedMapGetCodec.decodeRequest(clientMessage);
+    }
+
+    @Override
+    protected void beforeProcess() {
+        startTimeNanos = System.nanoTime();
+    }
+
+    @Override
+    protected void beforeResponse() {
+        long latencyNanos = System.nanoTime() - startTimeNanos;
+        ReplicatedMapService replicatedMapService = getService(ReplicatedMapService.SERVICE_NAME);
+
+        if (replicatedMapService.getReplicatedMapConfig(parameters.name).isStatisticsEnabled()) {
+            replicatedMapService.getLocalMapStatsImpl(parameters.name).incrementGets(latencyNanos);
+        }
     }
 
     @Override

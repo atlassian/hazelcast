@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,27 @@
 
 package com.hazelcast.config;
 
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+import com.hazelcast.nio.serialization.impl.Versioned;
+import com.hazelcast.spi.merge.SplitBrainMergeTypeProvider;
+import com.hazelcast.spi.merge.SplitBrainMergeTypes;
+import com.hazelcast.util.StringUtil;
+
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
 import static com.hazelcast.util.Preconditions.checkAsyncBackupCount;
 import static com.hazelcast.util.Preconditions.checkBackupCount;
+import static com.hazelcast.util.Preconditions.checkNotNull;
 
 /**
  * Configuration for MultiMap.
  */
-public class MultiMapConfig {
+@SuppressWarnings("checkstyle:methodcount")
+public class MultiMapConfig implements SplitBrainMergeTypeProvider, IdentifiedDataSerializable, Versioned, NamedConfig {
 
     /**
      * The default number of synchronous backups for this MultiMap.
@@ -44,13 +55,15 @@ public class MultiMapConfig {
 
     private String name;
     private String valueCollectionType = DEFAULT_VALUE_COLLECTION_TYPE.toString();
-    private List<EntryListenerConfig> listenerConfigs;
+    private List<EntryListenerConfig> listenerConfigs = new ArrayList<EntryListenerConfig>();
     private boolean binary = true;
     private int backupCount = DEFAULT_SYNC_BACKUP_COUNT;
     private int asyncBackupCount = DEFAULT_ASYNC_BACKUP_COUNT;
     private boolean statisticsEnabled = true;
-    //    private PartitioningStrategyConfig partitionStrategyConfig;
-    private MultiMapConfigReadOnly readOnly;
+    private String quorumName;
+    private MergePolicyConfig mergePolicyConfig = new MergePolicyConfig();
+
+    private transient MultiMapConfigReadOnly readOnly;
 
     public MultiMapConfig() {
     }
@@ -59,27 +72,16 @@ public class MultiMapConfig {
         setName(name);
     }
 
-    public MultiMapConfig(MultiMapConfig defConfig) {
-        this.name = defConfig.getName();
-        this.valueCollectionType = defConfig.valueCollectionType;
-        this.binary = defConfig.binary;
-        this.backupCount = defConfig.backupCount;
-        this.asyncBackupCount = defConfig.asyncBackupCount;
-        this.statisticsEnabled = defConfig.statisticsEnabled;
-        this.listenerConfigs = new ArrayList<EntryListenerConfig>(defConfig.getEntryListenerConfigs());
-//        this.partitionStrategyConfig = defConfig.getPartitioningStrategyConfig();
-    }
-
-    /**
-     * Gets the immutable version of this MultiMap config.
-     *
-     * @return Immutable version of this MultiMap config.
-     */
-    public MultiMapConfigReadOnly getAsReadOnly() {
-        if (readOnly == null) {
-            readOnly = new MultiMapConfigReadOnly(this);
-        }
-        return readOnly;
+    public MultiMapConfig(MultiMapConfig config) {
+        this.name = config.getName();
+        this.valueCollectionType = config.valueCollectionType;
+        this.listenerConfigs.addAll(config.listenerConfigs);
+        this.binary = config.binary;
+        this.backupCount = config.backupCount;
+        this.asyncBackupCount = config.asyncBackupCount;
+        this.statisticsEnabled = config.statisticsEnabled;
+        this.quorumName = config.quorumName;
+        this.mergePolicyConfig = config.mergePolicyConfig;
     }
 
     /**
@@ -99,7 +101,7 @@ public class MultiMapConfig {
     /**
      * Gets the name of this MultiMap.
      *
-     * @return The name of this MultiMap.
+     * @return the name of this MultiMap
      */
     public String getName() {
         return name;
@@ -108,8 +110,8 @@ public class MultiMapConfig {
     /**
      * Sets the name of this MultiMap.
      *
-     * @param name The name to set for this MultiMap.
-     * @return This updated MultiMap configuration.
+     * @param name the name to set for this MultiMap
+     * @return this updated MultiMap configuration
      */
     public MultiMapConfig setName(String name) {
         this.name = name;
@@ -119,17 +121,17 @@ public class MultiMapConfig {
     /**
      * Gets the collection type for the values of this MultiMap.
      *
-     * @return The collection type for the values of this MultiMap.
+     * @return the collection type for the values of this MultiMap
      */
     public ValueCollectionType getValueCollectionType() {
-        return ValueCollectionType.valueOf(valueCollectionType.toUpperCase());
+        return ValueCollectionType.valueOf(valueCollectionType.toUpperCase(StringUtil.LOCALE_INTERNAL));
     }
 
     /**
      * Sets the collection type for the values of this MultiMap.
      *
-     * @param valueCollectionType The collection type for the values of this MultiMap (SET or LIST).
-     * @return This updated MultiMap configuration.
+     * @param valueCollectionType the collection type for the values of this MultiMap (SET or LIST)
+     * @return this updated MultiMap configuration
      */
     public MultiMapConfig setValueCollectionType(String valueCollectionType) {
         this.valueCollectionType = valueCollectionType;
@@ -139,8 +141,8 @@ public class MultiMapConfig {
     /**
      * Sets the collection type for the values of this MultiMap.
      *
-     * @param valueCollectionType The collection type for the values of this MultiMap (SET or LIST).
-     * @return This updated MultiMap configuration.
+     * @param valueCollectionType the collection type for the values of this MultiMap (SET or LIST)
+     * @return this updated MultiMap configuration
      */
     public MultiMapConfig setValueCollectionType(ValueCollectionType valueCollectionType) {
         this.valueCollectionType = valueCollectionType.toString();
@@ -150,7 +152,7 @@ public class MultiMapConfig {
     /**
      * Adds an entry listener to this MultiMap (listens for when entries are added or removed).
      *
-     * @param listenerConfig The entry listener to add to this MultiMap.
+     * @param listenerConfig the entry listener to add to this MultiMap
      */
     public MultiMapConfig addEntryListenerConfig(EntryListenerConfig listenerConfig) {
         getEntryListenerConfigs().add(listenerConfig);
@@ -160,20 +162,17 @@ public class MultiMapConfig {
     /**
      * Gets the list of entry listeners (listens for when entries are added or removed) for this MultiMap.
      *
-     * @return The list of entry listeners for this MultiMap.
+     * @return the list of entry listeners for this MultiMap
      */
     public List<EntryListenerConfig> getEntryListenerConfigs() {
-        if (listenerConfigs == null) {
-            listenerConfigs = new ArrayList<EntryListenerConfig>();
-        }
         return listenerConfigs;
     }
 
     /**
      * Sets the list of entry listeners (listens for when entries are added or removed) for this MultiMap.
      *
-     * @param listenerConfigs The list of entry listeners for this MultiMap.
-     * @return This updated MultiMap configuration.
+     * @param listenerConfigs the list of entry listeners for this MultiMap
+     * @return this updated MultiMap configuration
      */
     public MultiMapConfig setEntryListenerConfigs(List<EntryListenerConfig> listenerConfigs) {
         this.listenerConfigs = listenerConfigs;
@@ -183,7 +182,7 @@ public class MultiMapConfig {
     /**
      * Checks if the MultiMap is in binary (serialized) form.
      *
-     * @return True if the MultiMap is in binary (serialized) form, false otherwise.
+     * @return {@code true} if the MultiMap is in binary (serialized) form, {@code false} otherwise
      */
     public boolean isBinary() {
         return binary;
@@ -192,8 +191,8 @@ public class MultiMapConfig {
     /**
      * Enables or disables binary (serialized) form for this MultiMap.
      *
-     * @param binary True to set the MultiMap to binary (serialized) form, false otherwise.
-     * @return This updated MultiMap configuration.
+     * @param binary {@code true} to set the MultiMap to binary (serialized) form, {@code false} otherwise
+     * @return this updated MultiMap configuration
      */
 
     public MultiMapConfig setBinary(boolean binary) {
@@ -215,7 +214,7 @@ public class MultiMapConfig {
     /**
      * Gets the number of synchronous backups for this MultiMap.
      *
-     * @return The number of synchronous backups for this MultiMap.
+     * @return the number of synchronous backups for this MultiMap
      */
     public int getBackupCount() {
         return backupCount;
@@ -227,8 +226,8 @@ public class MultiMapConfig {
      * @param backupCount the number of synchronous backups to set for this MultiMap
      * @return the current MultiMapConfig
      * @throws IllegalArgumentException if backupCount smaller than 0,
-     *             or larger than the maximum number of backup
-     *             or the sum of the backups and async backups is larger than the maximum number of backups
+     *                                  or larger than the maximum number of backup
+     *                                  or the sum of the backups and async backups is larger than the maximum number of backups
      * @see #setAsyncBackupCount(int)
      */
     public MultiMapConfig setBackupCount(int backupCount) {
@@ -239,7 +238,7 @@ public class MultiMapConfig {
     /**
      * Gets the number of asynchronous backups for this MultiMap.
      *
-     * @return The number of asynchronous backups for this MultiMap.
+     * @return the number of asynchronous backups for this MultiMap
      */
     public int getAsyncBackupCount() {
         return asyncBackupCount;
@@ -251,8 +250,8 @@ public class MultiMapConfig {
      * @param asyncBackupCount the number of asynchronous synchronous backups to set
      * @return the updated MultiMapConfig
      * @throws IllegalArgumentException if asyncBackupCount smaller than 0,
-     *             or larger than the maximum number of backup
-     *             or the sum of the backups and async backups is larger than the maximum number of backups
+     *                                  or larger than the maximum number of backup
+     *                                  or the sum of the backups and async backups is larger than the maximum number of backups
      * @see #setBackupCount(int)
      * @see #getAsyncBackupCount()
      */
@@ -264,7 +263,7 @@ public class MultiMapConfig {
     /**
      * Gets the total number of backups (synchronous + asynchronous) for this MultiMap.
      *
-     * @return The total number of backups (synchronous + asynchronous) for this MultiMap.
+     * @return the total number of backups (synchronous + asynchronous) for this MultiMap
      */
     public int getTotalBackupCount() {
         return backupCount + asyncBackupCount;
@@ -273,7 +272,7 @@ public class MultiMapConfig {
     /**
      * Checks to see if statistics are enabled for this MultiMap.
      *
-     * @return True if statistics are enabled for this MultiMap, false otherwise.
+     * @return {@code true} if statistics are enabled for this MultiMap, {@code false} otherwise
      */
     public boolean isStatisticsEnabled() {
         return statisticsEnabled;
@@ -282,7 +281,7 @@ public class MultiMapConfig {
     /**
      * Enables or disables statistics for this MultiMap.
      *
-     * @param statisticsEnabled True to enable statistics for this MultiMap, false to disable.
+     * @param statisticsEnabled {@code true} to enable statistics for this MultiMap, {@code false} to disable
      * @return the updated MultiMapConfig
      */
     public MultiMapConfig setStatisticsEnabled(boolean statisticsEnabled) {
@@ -290,14 +289,49 @@ public class MultiMapConfig {
         return this;
     }
 
-//    public PartitioningStrategyConfig getPartitioningStrategyConfig() {
-//        return partitionStrategyConfig;
-//    }
-//
-//    public MultiMapConfig setPartitioningStrategyConfig(PartitioningStrategyConfig partitionStrategyConfig) {
-//        this.partitionStrategyConfig = partitionStrategyConfig;
-//        return this;
-//    }
+    /**
+     * Returns the quorum name for operations.
+     *
+     * @return the quorum name
+     */
+    public String getQuorumName() {
+        return quorumName;
+    }
+
+    /**
+     * Sets the quorum name for operations.
+     *
+     * @param quorumName the quorum name
+     * @return the updated configuration
+     */
+    public MultiMapConfig setQuorumName(String quorumName) {
+        this.quorumName = quorumName;
+        return this;
+    }
+
+    /**
+     * Gets the {@link MergePolicyConfig} for this MultiMap.
+     *
+     * @return the {@link MergePolicyConfig} for this MultiMap
+     */
+    public MergePolicyConfig getMergePolicyConfig() {
+        return mergePolicyConfig;
+    }
+
+    /**
+     * Sets the {@link MergePolicyConfig} for this MultiMap.
+     *
+     * @return the updated MultiMapConfig
+     */
+    public MultiMapConfig setMergePolicyConfig(MergePolicyConfig mergePolicyConfig) {
+        this.mergePolicyConfig = checkNotNull(mergePolicyConfig, "mergePolicyConfig cannot be null");
+        return this;
+    }
+
+    @Override
+    public Class getProvidedMergeTypes() {
+        return SplitBrainMergeTypes.MultiMapMergeTypes.class;
+    }
 
     public String toString() {
         return "MultiMapConfig{"
@@ -307,6 +341,128 @@ public class MultiMapConfig {
                 + ", binary=" + binary
                 + ", backupCount=" + backupCount
                 + ", asyncBackupCount=" + asyncBackupCount
+                + ", quorumName=" + quorumName
+                + ", mergePolicyConfig=" + mergePolicyConfig
                 + '}';
+    }
+
+    @Override
+    public int getFactoryId() {
+        return ConfigDataSerializerHook.F_ID;
+    }
+
+    @Override
+    public int getId() {
+        return ConfigDataSerializerHook.MULTIMAP_CONFIG;
+    }
+
+    @Override
+    public void writeData(ObjectDataOutput out) throws IOException {
+        out.writeUTF(name);
+        out.writeUTF(valueCollectionType);
+        if (listenerConfigs == null || listenerConfigs.isEmpty()) {
+            out.writeBoolean(false);
+        } else {
+            out.writeBoolean(true);
+            out.writeInt(listenerConfigs.size());
+            for (ListenerConfig listenerConfig : listenerConfigs) {
+                out.writeObject(listenerConfig);
+            }
+        }
+        out.writeBoolean(binary);
+        out.writeInt(backupCount);
+        out.writeInt(asyncBackupCount);
+        out.writeBoolean(statisticsEnabled);
+        out.writeUTF(quorumName);
+        out.writeObject(mergePolicyConfig);
+    }
+
+    @Override
+    public void readData(ObjectDataInput in) throws IOException {
+        name = in.readUTF();
+        valueCollectionType = in.readUTF();
+        boolean hasListenerConfig = in.readBoolean();
+        if (hasListenerConfig) {
+            int configSize = in.readInt();
+            listenerConfigs = new ArrayList<EntryListenerConfig>(configSize);
+            for (int i = 0; i < configSize; i++) {
+                EntryListenerConfig listenerConfig = in.readObject();
+                listenerConfigs.add(listenerConfig);
+            }
+        }
+        binary = in.readBoolean();
+        backupCount = in.readInt();
+        asyncBackupCount = in.readInt();
+        statisticsEnabled = in.readBoolean();
+        quorumName = in.readUTF();
+        mergePolicyConfig = in.readObject();
+    }
+
+    @Override
+    @SuppressWarnings({"checkstyle:cyclomaticcomplexity", "checkstyle:npathcomplexity"})
+    public final boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof MultiMapConfig)) {
+            return false;
+        }
+
+        MultiMapConfig that = (MultiMapConfig) o;
+        if (binary != that.binary) {
+            return false;
+        }
+        if (backupCount != that.backupCount) {
+            return false;
+        }
+        if (asyncBackupCount != that.asyncBackupCount) {
+            return false;
+        }
+        if (statisticsEnabled != that.statisticsEnabled) {
+            return false;
+        }
+        if (name != null ? !name.equals(that.name) : that.name != null) {
+            return false;
+        }
+        if (valueCollectionType != null
+                ? !valueCollectionType.equals(that.valueCollectionType)
+                : that.valueCollectionType != null) {
+            return false;
+        }
+        if (listenerConfigs != null ? !listenerConfigs.equals(that.listenerConfigs) : that.listenerConfigs != null) {
+            return false;
+        }
+        if (quorumName != null ? !quorumName.equals(that.quorumName) : that.quorumName != null) {
+            return false;
+        }
+        return mergePolicyConfig != null ? mergePolicyConfig.equals(that.mergePolicyConfig) : that.mergePolicyConfig == null;
+    }
+
+    @Override
+    @SuppressWarnings("checkstyle:npathcomplexity")
+    public final int hashCode() {
+        int result = name != null ? name.hashCode() : 0;
+        result = 31 * result + (valueCollectionType != null ? valueCollectionType.hashCode() : 0);
+        result = 31 * result + (listenerConfigs != null ? listenerConfigs.hashCode() : 0);
+        result = 31 * result + (binary ? 1 : 0);
+        result = 31 * result + backupCount;
+        result = 31 * result + asyncBackupCount;
+        result = 31 * result + (statisticsEnabled ? 1 : 0);
+        result = 31 * result + (quorumName != null ? quorumName.hashCode() : 0);
+        result = 31 * result + (mergePolicyConfig != null ? mergePolicyConfig.hashCode() : 0);
+        return result;
+    }
+
+    /**
+     * Gets immutable version of this configuration.
+     *
+     * @return Immutable version of this configuration
+     * @deprecated this method will be removed in 4.0; it is meant for internal usage only
+     */
+    public MultiMapConfigReadOnly getAsReadOnly() {
+        if (readOnly == null) {
+            readOnly = new MultiMapConfigReadOnly(this);
+        }
+        return readOnly;
     }
 }

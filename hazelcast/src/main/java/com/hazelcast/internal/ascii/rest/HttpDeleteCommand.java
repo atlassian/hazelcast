@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,30 +16,12 @@
 
 package com.hazelcast.internal.ascii.rest;
 
-import java.nio.ByteBuffer;
-
 import static com.hazelcast.internal.ascii.TextCommandConstants.TextCommandType.HTTP_DELETE;
 
 public class HttpDeleteCommand extends HttpCommand {
-    private boolean nextLine;
 
     public HttpDeleteCommand(String uri) {
         super(HTTP_DELETE, uri);
     }
 
-    @Override
-    public boolean readFrom(ByteBuffer src) {
-        while (src.hasRemaining()) {
-            char c = (char) src.get();
-            if (c == '\n') {
-                if (nextLine) {
-                    return true;
-                }
-                nextLine = true;
-            } else if (c != '\r') {
-                nextLine = false;
-            }
-        }
-        return false;
-    }
 }

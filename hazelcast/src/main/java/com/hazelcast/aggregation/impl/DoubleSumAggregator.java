@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,15 @@
 package com.hazelcast.aggregation.impl;
 
 import com.hazelcast.aggregation.Aggregator;
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+import com.hazelcast.query.impl.Numbers;
 
-import java.util.Map;
+import java.io.IOException;
 
-public class DoubleSumAggregator<K, V> extends AbstractAggregator<Double, K, V> {
+public final class DoubleSumAggregator<I> extends AbstractAggregator<I, Number, Double>
+        implements IdentifiedDataSerializable {
 
     private double sum;
 
@@ -33,9 +38,8 @@ public class DoubleSumAggregator<K, V> extends AbstractAggregator<Double, K, V> 
     }
 
     @Override
-    public void accumulate(Map.Entry<K, V> entry) {
-        Double extractedValue = (Double) extract(entry);
-        sum += extractedValue;
+    public void accumulateExtracted(I entry, Number value) {
+        sum += Numbers.asDoubleExactly(value);
     }
 
     @Override
@@ -47,6 +51,28 @@ public class DoubleSumAggregator<K, V> extends AbstractAggregator<Double, K, V> 
     @Override
     public Double aggregate() {
         return sum;
+    }
+
+    @Override
+    public int getFactoryId() {
+        return AggregatorDataSerializerHook.F_ID;
+    }
+
+    @Override
+    public int getId() {
+        return AggregatorDataSerializerHook.DOUBLE_SUM;
+    }
+
+    @Override
+    public void writeData(ObjectDataOutput out) throws IOException {
+        out.writeUTF(attributePath);
+        out.writeDouble(sum);
+    }
+
+    @Override
+    public void readData(ObjectDataInput in) throws IOException {
+        this.attributePath = in.readUTF();
+        this.sum = in.readDouble();
     }
 
 }

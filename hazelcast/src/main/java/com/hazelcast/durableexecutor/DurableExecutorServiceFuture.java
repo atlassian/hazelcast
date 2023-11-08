@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,22 +17,19 @@
 package com.hazelcast.durableexecutor;
 
 import com.hazelcast.core.ICompletableFuture;
-import com.hazelcast.spi.annotation.Beta;
 
 /**
- * A Future where one can obtain the task id for tracking the response
+ * A Future where one can obtain the task ID for tracking the response.
  *
  * @param <V>
  * @since 3.7
  */
-@Beta
 public interface DurableExecutorServiceFuture<V> extends ICompletableFuture<V> {
 
     /**
-     * A unique id for the executing task
+     * A unique ID for the executing task
      *
-     * @return the task id
+     * @return the task ID
      */
     long getTaskId();
-
 }

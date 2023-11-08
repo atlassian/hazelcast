@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,7 +44,9 @@ import com.hazelcast.core.DistributedObject;
  * </p>
  *
  * @since 3.2
- * @deprecated Hazelcast Jet will replace, maybe re-implement this API shortly
+ * @deprecated MapReduce is deprecated and will be removed in 4.0.
+ * For map aggregations, you can use {@link com.hazelcast.aggregation.Aggregator} on IMap.
+ * For general data processing, it is superseded by <a href="http://jet.hazelcast.org">Hazelcast Jet</a>.
  */
 @Deprecated
 public interface JobTracker
@@ -80,13 +82,12 @@ public interface JobTracker
     //<K, V> ProcessJob<K, V> newProcessJob(KeyValueSource<K, V> source);
 
     /**
-     * Returns an implementation of {@link TrackableJob}, or null if the job id is not available
+     * Returns an implementation of {@link TrackableJob}, or null if the job ID is not available
      * or the job is already finished.
      *
-     * @param jobId job id to search the TrackableJob for
+     * @param jobId job ID to search the TrackableJob for
      * @param <V>   type of the resulting value
-     * @return a trackable job for given job id or null if the job id is not available
+     * @return a trackable job for given job ID or null if the job ID is not available
      */
     <V> TrackableJob<V> getTrackableJob(String jobId);
-
 }

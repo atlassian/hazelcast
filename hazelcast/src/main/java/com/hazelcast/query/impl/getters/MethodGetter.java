@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,12 +30,16 @@ final class MethodGetter extends AbstractMultiValueGetter {
 
     @Override
     protected Object extractFrom(Object object) throws IllegalAccessException, InvocationTargetException {
-        return method.invoke(object);
+        try {
+            return method.invoke(object);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(composeAttributeValueExtractionFailedMessage(method), e);
+        }
     }
 
     @Override
     boolean isCacheable() {
-        return ReflectionHelper.THIS_CL.equals(method.getDeclaringClass().getClassLoader());
+        return true;
     }
 
     @Override

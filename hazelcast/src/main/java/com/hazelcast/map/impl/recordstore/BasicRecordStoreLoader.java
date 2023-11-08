@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,12 +23,12 @@ import com.hazelcast.map.impl.MapServiceContext;
 import com.hazelcast.map.impl.mapstore.MapDataStore;
 import com.hazelcast.map.impl.operation.MapOperation;
 import com.hazelcast.map.impl.operation.MapOperationProvider;
+import com.hazelcast.map.impl.operation.RemoveFromLoadAllOperation;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.ExecutionService;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.OperationAccessor;
-import com.hazelcast.spi.OperationResponseHandler;
 import com.hazelcast.spi.OperationService;
 import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.util.ExceptionUtil;
@@ -43,26 +43,17 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.hazelcast.spi.ExecutionService.MAP_LOADER_EXECUTOR;
 
 /**
- * Responsible for loading keys from configured map store.
+ * Responsible for loading keys from configured map store for a single partition.
  */
 class BasicRecordStoreLoader implements RecordStoreLoader {
-
-    private final AtomicBoolean loaded;
-
     private final ILogger logger;
-
     private final String name;
-
     private final MapServiceContext mapServiceContext;
-
     private final MapDataStore mapDataStore;
-
     private final int partitionId;
 
     BasicRecordStoreLoader(RecordStore recordStore) {
@@ -72,12 +63,17 @@ class BasicRecordStoreLoader implements RecordStoreLoader {
         this.partitionId = recordStore.getPartitionId();
         this.mapDataStore = recordStore.getMapDataStore();
         this.logger = mapServiceContext.getNodeEngine().getLogger(getClass());
-        this.loaded = new AtomicBoolean(false);
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Offloads the value loading task to the
+     * {@link ExecutionService#MAP_LOADER_EXECUTOR} executor.
+     */
     @Override
-    public Future<?> loadValues(List<Data> keys) {
-        final Callable task = new GivenKeysLoaderTask(keys);
+    public Future<?> loadValues(List<Data> keys, boolean replaceExistingValues) {
+        Callable task = new GivenKeysLoaderTask(keys, replaceExistingValues);
         return executeTask(MAP_LOADER_EXECUTOR, task);
     }
 
@@ -86,67 +82,120 @@ class BasicRecordStoreLoader implements RecordStoreLoader {
     }
 
     private ExecutionService getExecutionService() {
-        final NodeEngine nodeEngine = mapServiceContext.getNodeEngine();
+        NodeEngine nodeEngine = mapServiceContext.getNodeEngine();
         return nodeEngine.getExecutionService();
     }
 
     /**
-     * Task for loading values of given keys.
-     * This task is used to make load in an outer thread instead of partition thread.
+     * Task for loading values of given keys and dispatching the loaded key-value
+     * pairs to the partition threads to update the record stores.
+     * <p>
+     * This task is used to load the values on a thread different than the partition thread.
+     *
+     * @see com.hazelcast.core.MapLoader#loadAll(Collection)
      */
     private final class GivenKeysLoaderTask implements Callable<Object> {
 
         private final List<Data> keys;
+        private final boolean replaceExistingValues;
 
-        private GivenKeysLoaderTask(List<Data> keys) {
+        private GivenKeysLoaderTask(List<Data> keys, boolean replaceExistingValues) {
             this.keys = keys;
+            this.replaceExistingValues = replaceExistingValues;
         }
 
         @Override
         public Object call() throws Exception {
-            loadValuesInternal(keys);
+            loadValuesInternal(keys, replaceExistingValues);
             return null;
         }
     }
 
-    private void loadValuesInternal(List<Data> keys) throws Exception {
+    /**
+     * Loads the values for the provided keys and invokes partition operations
+     * to put the loaded entries into the partition record store. The method
+     * will block until all entries have been put into the partition record store.
+     * <p>
+     * Unloadable keys will be removed before loading the values. Also, if
+     * {@code replaceExistingValues} is {@code false}, the list of keys will
+     * be filtered for existing keys in the partition record store.
+     *
+     * @param keys                  the keys for which values will be loaded
+     * @param replaceExistingValues if the existing entries for the keys should
+     *                              be replaced with the loaded values
+     * @throws Exception if there is an exception when invoking partition operations
+     *                   to remove the existing keys or to put the loaded values into
+     *                   the record store
+     */
+    private void loadValuesInternal(List<Data> keys, boolean replaceExistingValues) throws Exception {
+        if (!replaceExistingValues) {
+            Future removeKeysFuture = removeExistingKeys(keys);
+            removeKeysFuture.get();
+        }
         removeUnloadableKeys(keys);
-
         if (keys.isEmpty()) {
-            loaded.set(true);
             return;
         }
-
         List<Future> futures = doBatchLoad(keys);
         for (Future future : futures) {
             future.get();
         }
     }
 
+    /**
+     * Removes keys already present in the partition record store from
+     * the provided keys list.
+     * This is done by sending a partition operation. This operation is
+     * supposed to be invoked locally and the provided parameter is supposed
+     * to be thread-safe as it will be mutated directly from the partition
+     * thread.
+     *
+     * @param keys the keys to be filtered
+     * @return the future representing the pending completion of the key
+     * filtering task
+     */
+    private Future removeExistingKeys(List<Data> keys) {
+        OperationService operationService = mapServiceContext.getNodeEngine().getOperationService();
+        Operation operation = new RemoveFromLoadAllOperation(name, keys);
+        return operationService.invokeOnPartition(MapService.SERVICE_NAME, operation, partitionId);
+    }
+
+    /**
+     * Loads the values for the provided keys in batches and invokes
+     * partition operations to put the loaded entry batches into the
+     * record store.
+     *
+     * @param keys the keys for which entries are loaded and put into the
+     *             record store
+     * @return the list of futures representing the pending completion of
+     * the operations storing the loaded entries into the partition record
+     * store
+     */
     private List<Future> doBatchLoad(List<Data> keys) {
-        final Queue<List<Data>> batchChunks = createBatchChunks(keys);
-        final int size = batchChunks.size();
-        final AtomicInteger finishedBatchCounter = new AtomicInteger(size);
-        List<Future> futures = new ArrayList<Future>();
+        Queue<List<Data>> batchChunks = createBatchChunks(keys);
+        int size = batchChunks.size();
+        List<Future> futures = new ArrayList<Future>(size);
 
         while (!batchChunks.isEmpty()) {
-            final List<Data> chunk = batchChunks.poll();
-            final List<Data> keyValueSequence = loadAndGet(chunk);
+            List<Data> chunk = batchChunks.poll();
+            List<Data> keyValueSequence = loadAndGet(chunk);
             if (keyValueSequence.isEmpty()) {
-                if (finishedBatchCounter.decrementAndGet() == 0) {
-                    loaded.set(true);
-                }
                 continue;
             }
-            futures.add(sendOperation(keyValueSequence, finishedBatchCounter));
+            futures.add(sendOperation(keyValueSequence));
         }
 
         return futures;
     }
 
+    /**
+     * Returns a queue of key batches
+     *
+     * @param keys the keys to be batched
+     */
     private Queue<List<Data>> createBatchChunks(List<Data> keys) {
-        final Queue<List<Data>> chunks = new LinkedList<List<Data>>();
-        final int loadBatchSize = getLoadBatchSize();
+        Queue<List<Data>> chunks = new LinkedList<List<Data>>();
+        int loadBatchSize = getLoadBatchSize();
         int page = 0;
         List<Data> tmpKeys;
         while ((tmpKeys = getBatchChunk(keys, loadBatchSize, page++)) != null) {
@@ -155,27 +204,40 @@ class BasicRecordStoreLoader implements RecordStoreLoader {
         return chunks;
     }
 
+    /**
+     * Loads the provided keys from the underlying map store
+     * and transforms them to a list of alternating serialised key-value pairs.
+     *
+     * @param keys the keys for which values are loaded
+     * @return the list of loaded key-values
+     * @see com.hazelcast.core.MapLoader#loadAll(Collection)
+     */
     private List<Data> loadAndGet(List<Data> keys) {
-        Map<Object, Object> entries = Collections.emptyMap();
         try {
-            entries = mapDataStore.loadAll(keys);
+            Map entries = mapDataStore.loadAll(keys);
+            return getKeyValueSequence(entries);
         } catch (Throwable t) {
             logger.warning("Could not load keys from map store", t);
-            ExceptionUtil.rethrow(t);
+            throw ExceptionUtil.rethrow(t);
         }
-        return getKeyValueSequence(entries);
     }
 
-    private List<Data> getKeyValueSequence(Map<Object, Object> entries) {
+    /**
+     * Transforms a map to a list of serialised alternating key-value pairs.
+     *
+     * @param entries the map to be transformed
+     * @return the list of serialised alternating key-value pairs
+     */
+    private List<Data> getKeyValueSequence(Map<?, ?> entries) {
         if (entries == null || entries.isEmpty()) {
             return Collections.emptyList();
         }
-        final List<Data> keyValueSequence = new ArrayList<Data>(entries.size());
-        for (final Map.Entry<Object, Object> entry : entries.entrySet()) {
-            final Object key = entry.getKey();
-            final Object value = entry.getValue();
-            final Data dataKey = mapServiceContext.toData(key);
-            final Data dataValue = mapServiceContext.toData(value);
+        List<Data> keyValueSequence = new ArrayList<Data>(entries.size() * 2);
+        for (Map.Entry<?, ?> entry : entries.entrySet()) {
+            Object key = entry.getKey();
+            Object value = entry.getValue();
+            Data dataKey = mapServiceContext.toData(key);
+            Data dataValue = mapServiceContext.toData(value);
             keyValueSequence.add(dataKey);
             keyValueSequence.add(dataValue);
         }
@@ -183,45 +245,55 @@ class BasicRecordStoreLoader implements RecordStoreLoader {
     }
 
     /**
-     * Used to partition the list to chunks.
+     * Returns a sublist (page) of items in the provided list. The start and
+     * end index of the sublist are determined by the {@code pageSize} and
+     * {@code pageNumber} parameters. This method may be used to paginate
+     * through the entire list - the {@code pageSize} should be kept the same
+     * and the {@code pageNumber} should be incremented from {@code 0} until
+     * the returned sublist is {@code null}.
      *
-     * @param list        to be paged.
-     * @param batchSize   batch operation size.
-     * @param chunkNumber batch chunk number.
-     * @return sub-list of list if any or null.
+     * @param list       list to be paged
+     * @param pageSize   size of a page batch operation size
+     * @param pageNumber batch chunk number
+     * @return a sublist of items or {@code null} if the provided list is empty or
+     * the sub-list does not contain any items
      */
-    private List<Data> getBatchChunk(List<Data> list, int batchSize, int chunkNumber) {
+    private List<Data> getBatchChunk(List<Data> list, int pageSize, int pageNumber) {
         if (list == null || list.isEmpty()) {
             return null;
         }
-        final int start = chunkNumber * batchSize;
-        final int end = Math.min(start + batchSize, list.size());
+        int start = pageNumber * pageSize;
+        int end = Math.min(start + pageSize, list.size());
         if (start >= end) {
             return null;
         }
         return list.subList(start, end);
     }
 
-    private Future<?> sendOperation(List<Data> keyValueSequence, AtomicInteger finishedBatchCounter) {
+    /**
+     * Invokes an operation to put the provided key-value pairs to the partition
+     * record store.
+     *
+     * @param keyValueSequence the list of serialised alternating key-value pairs
+     * @return the future representing the pending completion of the put operation
+     */
+    private Future<?> sendOperation(List<Data> keyValueSequence) {
         OperationService operationService = mapServiceContext.getNodeEngine().getOperationService();
-        final Operation operation = createOperation(keyValueSequence, finishedBatchCounter);
-        //operationService.executeOperation(operation);
+        Operation operation = createOperation(keyValueSequence);
         return operationService.invokeOnPartition(MapService.SERVICE_NAME, operation, partitionId);
     }
 
-    private Operation createOperation(List<Data> keyValueSequence, final AtomicInteger finishedBatchCounter) {
-        final NodeEngine nodeEngine = mapServiceContext.getNodeEngine();
+    /**
+     * Returns an operation to put the provided key-value pairs into the
+     * partition record store.
+     *
+     * @param keyValueSequence the list of serialised alternating key-value pairs
+     */
+    private Operation createOperation(List<Data> keyValueSequence) {
+        NodeEngine nodeEngine = mapServiceContext.getNodeEngine();
         MapOperationProvider operationProvider = mapServiceContext.getMapOperationProvider(name);
         MapOperation operation = operationProvider.createPutFromLoadAllOperation(name, keyValueSequence);
         operation.setNodeEngine(nodeEngine);
-        operation.setOperationResponseHandler(new OperationResponseHandler() {
-            @Override
-            public void sendResponse(Operation op, Object obj) {
-                if (finishedBatchCounter.decrementAndGet() == 0) {
-                    loaded.set(true);
-                }
-            }
-        });
         operation.setPartitionId(partitionId);
         OperationAccessor.setCallerAddress(operation, nodeEngine.getThisAddress());
         operation.setCallerUuid(nodeEngine.getLocalMember().getUuid());
@@ -229,19 +301,29 @@ class BasicRecordStoreLoader implements RecordStoreLoader {
         return operation;
     }
 
+    /**
+     * Removes unloadable keys from the provided key collection.
+     *
+     * @see MapDataStore#loadable(Object)
+     */
     private void removeUnloadableKeys(Collection<Data> keys) {
         if (keys == null || keys.isEmpty()) {
             return;
         }
-        final Iterator<Data> iterator = keys.iterator();
+        Iterator<Data> iterator = keys.iterator();
         while (iterator.hasNext()) {
-            final Data key = iterator.next();
+            Data key = iterator.next();
             if (!mapDataStore.loadable(key)) {
                 iterator.remove();
             }
         }
     }
 
+    /**
+     * Returns the size of the key batch for which values are loaded.
+     * Each partition may load this many values at any moment independently
+     * of other value loading tasks on other partitions.
+     */
     private int getLoadBatchSize() {
         return mapServiceContext.getNodeEngine().getProperties().getInteger(GroupProperty.MAP_LOAD_CHUNK_SIZE);
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package com.hazelcast.cache.impl;
 
+import com.hazelcast.cache.CacheEventType;
+
 /**
  * Cache Event Listener interface is designated for handling cache events internally such as delegating events
  * to cache event listener.
@@ -30,7 +32,7 @@ public interface CacheEventListener {
      * Cache Event handling function.
      *
      * @param eventObject Event data object, can be one of {@link CacheEventSet} or {@link CacheEventData} classes.
-     * @see com.hazelcast.cache.impl.CacheEventType Event Types that can be handled.
+     * @see CacheEventType Event Types that can be handled.
      */
     void handleEvent(Object eventObject);
 

@@ -1,124 +1,75 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.concurrent.countdownlatch;
 
-import com.hazelcast.config.Config;
-import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.ICountDownLatch;
-import com.hazelcast.core.LifecycleEvent;
-import com.hazelcast.core.LifecycleListener;
-import com.hazelcast.core.MemberAttributeEvent;
-import com.hazelcast.core.MembershipEvent;
-import com.hazelcast.core.MembershipListener;
-import com.hazelcast.instance.HazelcastInstanceFactory;
-import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.test.HazelcastSerialClassRunner;
-import com.hazelcast.test.HazelcastTestSupport;
-import com.hazelcast.test.annotation.SlowTest;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import com.hazelcast.test.SplitBrainTestSupport;
+import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.QuickTest;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
-
-import java.io.IOException;
-import java.util.concurrent.CountDownLatch;
 
 import static org.junit.Assert.assertEquals;
 
 @RunWith(HazelcastSerialClassRunner.class)
-@Category(SlowTest.class)
-public class CountDownLatchSplitBrainTest extends HazelcastTestSupport {
+@Category({QuickTest.class, ParallelTest.class})
+public class CountDownLatchSplitBrainTest extends SplitBrainTestSupport {
 
-    @Before
-    @After
-    public void killAllHazelcastInstances() throws IOException {
-        HazelcastInstanceFactory.shutdownAll();
+    private String name;
+    private int count = 5;
+
+    @Override
+    protected int[] brains() {
+        // 2nd merges to the 1st
+        return new int[]{2, 1};
     }
 
-    @Test
-    public void testCountDownLatchSplitBrain() throws InterruptedException {
-        Config config = newConfig();
-        HazelcastInstance h1 = Hazelcast.newHazelcastInstance(config);
-        HazelcastInstance h2 = Hazelcast.newHazelcastInstance(config);
-        HazelcastInstance h3 = Hazelcast.newHazelcastInstance(config);
-        final String name = generateKeyOwnedBy(h3);
-        ICountDownLatch countDownLatch = h3.getCountDownLatch(name);
-        countDownLatch.trySetCount(5);
+    @Override
+    protected void onBeforeSplitBrainCreated(HazelcastInstance[] instances) {
+        warmUpPartitions(instances);
+        name = generateKeyOwnedBy(instances[instances.length - 1]);
 
-        TestMemberShipListener memberShipListener = new TestMemberShipListener(2);
-        h3.getCluster().addMembershipListener(memberShipListener);
-        TestLifeCycleListener lifeCycleListener = new TestLifeCycleListener(1);
-        h3.getLifecycleService().addLifecycleListener(lifeCycleListener);
+        ICountDownLatch latch = instances[0].getCountDownLatch(name);
+        latch.trySetCount(count);
 
-        countDownLatch.countDown();
-
-        closeConnectionBetween(h1, h3);
-        closeConnectionBetween(h2, h3);
-
-        assertOpenEventually(memberShipListener.latch);
-        assertClusterSizeEventually(2, h1);
-        assertClusterSizeEventually(2, h2);
-        assertClusterSizeEventually(1, h3);
-
-        ICountDownLatch countDownLatch1 = h1.getCountDownLatch(name);
-        countDownLatch1.countDown();
-
-        countDownLatch.countDown();
-        countDownLatch.countDown();
-
-        assertOpenEventually(lifeCycleListener.latch);
-        assertClusterSizeEventually(3, h1);
-        assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
-
-        ICountDownLatch countDownLatchTest = h3.getCountDownLatch(name);
-        assertEquals(3, countDownLatchTest.getCount());
+        waitAllForSafeState(instances);
     }
 
-    private Config newConfig() {
-        Config config = new Config();
-        config.setProperty(GroupProperty.MERGE_FIRST_RUN_DELAY_SECONDS.getName(), "30");
-        config.setProperty(GroupProperty.MERGE_NEXT_RUN_DELAY_SECONDS.getName(), "3");
-        return config;
-    }
+    @Override
+    protected void onAfterSplitBrainCreated(HazelcastInstance[] firstBrain, HazelcastInstance[] secondBrain) {
+        ICountDownLatch latch1 = firstBrain[0].getCountDownLatch(name);
+        // count = 4
+        latch1.countDown();
+        count = latch1.getCount();
 
-    private class TestLifeCycleListener implements LifecycleListener {
-
-        CountDownLatch latch;
-
-        TestLifeCycleListener(int countdown) {
-            latch = new CountDownLatch(countdown);
-        }
-
-        @Override
-        public void stateChanged(LifecycleEvent event) {
-            if (event.getState() == LifecycleEvent.LifecycleState.MERGED) {
-                latch.countDown();
-            }
+        ICountDownLatch latch2 = secondBrain[0].getCountDownLatch(name);
+        // count = 0
+        while (latch2.getCount() > 0) {
+            latch2.countDown();
         }
     }
 
-    private class TestMemberShipListener implements MembershipListener {
-
-        final CountDownLatch latch;
-
-        TestMemberShipListener(int countdown) {
-            latch = new CountDownLatch(countdown);
-        }
-
-        @Override
-        public void memberAdded(MembershipEvent membershipEvent) {
-
-        }
-
-        @Override
-        public void memberRemoved(MembershipEvent membershipEvent) {
-            latch.countDown();
-        }
-
-        @Override
-        public void memberAttributeChanged(MemberAttributeEvent memberAttributeEvent) {
-
+    @Override
+    protected void onAfterSplitBrainHealed(HazelcastInstance[] instances) {
+        for (HazelcastInstance instance : instances) {
+            ICountDownLatch latch = instance.getCountDownLatch(name);
+            assertEquals(count, latch.getCount());
         }
     }
 }

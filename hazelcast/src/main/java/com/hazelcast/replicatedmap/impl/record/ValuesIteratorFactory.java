@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,8 +22,7 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.NoSuchElementException;
 
-class ValuesIteratorFactory<K, V>
-        implements IteratorFactory<K, V, V> {
+class ValuesIteratorFactory<K, V> implements IteratorFactory<K, V, V> {
 
     private final ReplicatedRecordStore recordStore;
 
@@ -32,18 +31,17 @@ class ValuesIteratorFactory<K, V>
     }
 
     @Override
-    public Iterator<V> create(final Iterator<Map.Entry<K, ReplicatedRecord<K, V>>> iterator) {
+    public Iterator<V> create(Iterator<Map.Entry<K, ReplicatedRecord<K, V>>> iterator) {
         return new ValuesIterator(iterator);
     }
 
-    private final class ValuesIterator
-            implements Iterator<V> {
+    private final class ValuesIterator implements Iterator<V> {
 
         private final Iterator<Map.Entry<K, ReplicatedRecord<K, V>>> iterator;
 
         private Map.Entry<K, ReplicatedRecord<K, V>> entry;
 
-        public ValuesIterator(Iterator<Map.Entry<K, ReplicatedRecord<K, V>>> iterator) {
+        ValuesIterator(Iterator<Map.Entry<K, ReplicatedRecord<K, V>>> iterator) {
             this.iterator = iterator;
         }
 
@@ -107,5 +105,4 @@ class ValuesIteratorFactory<K, V>
             return entry;
         }
     }
-
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.hazelcast.client.proxy;
 
-import com.hazelcast.client.impl.ClientLockReferenceIdGenerator;
+import com.hazelcast.client.impl.clientside.ClientLockReferenceIdGenerator;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.MultiMapAddEntryListenerCodec;
 import com.hazelcast.client.impl.protocol.codec.MultiMapAddEntryListenerToKeyCodec;
@@ -24,6 +24,7 @@ import com.hazelcast.client.impl.protocol.codec.MultiMapClearCodec;
 import com.hazelcast.client.impl.protocol.codec.MultiMapContainsEntryCodec;
 import com.hazelcast.client.impl.protocol.codec.MultiMapContainsKeyCodec;
 import com.hazelcast.client.impl.protocol.codec.MultiMapContainsValueCodec;
+import com.hazelcast.client.impl.protocol.codec.MultiMapDeleteCodec;
 import com.hazelcast.client.impl.protocol.codec.MultiMapEntrySetCodec;
 import com.hazelcast.client.impl.protocol.codec.MultiMapForceUnlockCodec;
 import com.hazelcast.client.impl.protocol.codec.MultiMapGetCodec;
@@ -39,6 +40,7 @@ import com.hazelcast.client.impl.protocol.codec.MultiMapTryLockCodec;
 import com.hazelcast.client.impl.protocol.codec.MultiMapUnlockCodec;
 import com.hazelcast.client.impl.protocol.codec.MultiMapValueCountCodec;
 import com.hazelcast.client.impl.protocol.codec.MultiMapValuesCodec;
+import com.hazelcast.client.spi.ClientContext;
 import com.hazelcast.client.spi.ClientProxy;
 import com.hazelcast.client.spi.EventHandler;
 import com.hazelcast.client.spi.impl.ListenerMessageCodec;
@@ -46,7 +48,6 @@ import com.hazelcast.core.EntryEvent;
 import com.hazelcast.core.EntryEventType;
 import com.hazelcast.core.EntryListener;
 import com.hazelcast.core.HazelcastException;
-import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.ICompletableFuture;
 import com.hazelcast.core.IMapEvent;
 import com.hazelcast.core.MapEvent;
@@ -82,6 +83,7 @@ import static com.hazelcast.map.impl.ListenerAdapters.createListenerAdapter;
 import static com.hazelcast.util.Preconditions.checkNotNull;
 import static com.hazelcast.util.Preconditions.checkPositive;
 import static com.hazelcast.util.Preconditions.isNotNull;
+import static java.lang.Thread.currentThread;
 
 /**
  * Proxy implementation of {@link MultiMap}.
@@ -97,8 +99,8 @@ public class ClientMultiMapProxy<K, V> extends ClientProxy implements MultiMap<K
 
     private ClientLockReferenceIdGenerator lockReferenceIdGenerator;
 
-    public ClientMultiMapProxy(String serviceName, String name) {
-        super(serviceName, name);
+    public ClientMultiMapProxy(String serviceName, String name, ClientContext context) {
+        super(serviceName, name, context);
     }
 
     @Override
@@ -147,6 +149,13 @@ public class ClientMultiMapProxy<K, V> extends ClientProxy implements MultiMap<K
         ClientMessage response = invoke(request, keyData);
         MultiMapRemoveCodec.ResponseParameters resultParameters = MultiMapRemoveCodec.decodeResponse(response);
         return new UnmodifiableLazyList<V>(resultParameters.response, getSerializationService());
+    }
+
+    public void delete(Object key) {
+        checkNotNull(key, NULL_KEY_IS_NOT_ALLOWED);
+        Data keyData = toData(key);
+        ClientMessage request = MultiMapDeleteCodec.encodeRequest(name, keyData, ThreadUtil.getThreadId());
+        invoke(request, keyData);
     }
 
     @Override
@@ -294,6 +303,7 @@ public class ClientMultiMapProxy<K, V> extends ClientProxy implements MultiMap<K
 
     @Override
     public String addEntryListener(EntryListener<K, V> listener, K key, final boolean includeValue) {
+        isNotNull(listener, "listener");
         final Data keyData = toData(key);
         EventHandler<ClientMessage> handler = createHandler(listener);
         return registerListener(createEntryListenerToKeyCodec(includeValue, keyData), handler);
@@ -363,6 +373,7 @@ public class ClientMultiMapProxy<K, V> extends ClientProxy implements MultiMap<K
         try {
             return tryLock(key, 0, TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
+            currentThread().interrupt();
             return false;
         }
     }
@@ -410,15 +421,14 @@ public class ClientMultiMapProxy<K, V> extends ClientProxy implements MultiMap<K
 
     @Override
     public LocalMultiMapStats getLocalMultiMapStats() {
-        throw new UnsupportedOperationException("Locality is ambiguous for client!!!");
+        throw new UnsupportedOperationException("Locality is ambiguous for client!");
     }
 
     @Override
     public <SuppliedValue, Result> Result aggregate(Supplier<K, V, SuppliedValue> supplier,
                                                     Aggregation<K, SuppliedValue, Result> aggregation) {
 
-        HazelcastInstance hazelcastInstance = getContext().getHazelcastInstance();
-        JobTracker jobTracker = hazelcastInstance.getJobTracker("hz::aggregation-multimap-" + name);
+        JobTracker jobTracker = getClient().getJobTracker("hz::aggregation-multimap-" + name);
         return aggregate(supplier, aggregation, jobTracker);
     }
 
@@ -485,7 +495,7 @@ public class ClientMultiMapProxy<K, V> extends ClientProxy implements MultiMap<K
         }
 
         @Override
-        public void handle(Data key, Data value, Data oldValue, Data mergingValue,
+        public void handleEntryEventV10(Data key, Data value, Data oldValue, Data mergingValue,
                            int eventType, String uuid, int numberOfAffectedEntries) {
             Member member = getContext().getClusterService().getMember(uuid);
             final IMapEvent iMapEvent = createIMapEvent(key, value, oldValue,
@@ -522,8 +532,8 @@ public class ClientMultiMapProxy<K, V> extends ClientProxy implements MultiMap<K
 
         private EntryEvent<K, V> createEntryEvent(Data keyData, Data valueData, Data oldValueData,
                                                   Data mergingValueData, int eventType, Member member) {
-            return new DataAwareEntryEvent(member, eventType, name, keyData, valueData,
-                    oldValueData, mergingValueData, getContext().getSerializationService());
+            return new DataAwareEntryEvent<K, V>(member, eventType, name, keyData, valueData, oldValueData, mergingValueData,
+                    getSerializationService());
         }
 
         @Override

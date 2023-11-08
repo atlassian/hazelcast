@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.replicatedmap;
 
 import com.hazelcast.config.Config;
@@ -20,6 +36,7 @@ import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
 import com.hazelcast.test.annotation.SlowTest;
+import org.junit.After;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -37,9 +54,22 @@ import static org.junit.Assert.assertTrue;
 @Category(SlowTest.class)
 public class ReplicatedMapReorderedReplicationTest extends HazelcastTestSupport {
 
+    // if data serializable factory of ReplicatedMapDataSerializerHook is replaced by updateFactory()
+    // during a test, this field stores its original value to be restored on test tear down
+    private DataSerializableFactory replicatedMapDataSerializableFactory;
+    private Field field;
+
+    @After
+    public void tearDown() throws Exception {
+        // if updateFactory() has been executed, field & replicatedMapDataSerializableFactory are populated
+        if (replicatedMapDataSerializableFactory != null && field != null) {
+            // restore original value of ReplicatedMapDataSerializerHook.FACTORY
+            field.set(null, replicatedMapDataSerializableFactory);
+        }
+    }
+
     @Test
-    public void testNonConvergingReplicatedMaps()
-            throws Exception {
+    public void testNonConvergingReplicatedMaps() throws Exception {
         final int nodeCount = 4;
         final int keyCount = 10000;
         final int threadCount = 2;
@@ -48,7 +78,6 @@ public class ReplicatedMapReorderedReplicationTest extends HazelcastTestSupport 
 
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory();
         final Config config = new Config();
-        config.setProperty("hazelcast.logging.type", "log4j");
         final HazelcastInstance[] instances = factory
                 .newInstances(config, nodeCount);
 
@@ -89,8 +118,7 @@ public class ReplicatedMapReorderedReplicationTest extends HazelcastTestSupport 
 
         assertTrueEventually(new AssertTask() {
             @Override
-            public void run()
-                    throws Exception {
+            public void run() throws Exception {
                 long version = stores[0].getVersion();
 
                 for (ReplicatedRecordStore store : stores) {
@@ -115,14 +143,14 @@ public class ReplicatedMapReorderedReplicationTest extends HazelcastTestSupport 
 
         PutOperation putOperation = new PutOperation(mapName, dataKey, dataValue);
         InternalCompletableFuture<Object> future = nodeEngine.getOperationService()
-                                                             .invokeOnPartition(ReplicatedMapService.SERVICE_NAME, putOperation,
-                                                                     partitionId);
+                .invokeOnPartition(ReplicatedMapService.SERVICE_NAME, putOperation,
+                        partitionId);
         VersionResponsePair result = (VersionResponsePair) future.join();
         return nodeEngine.toObject(result.getResponse());
     }
 
-    private void updateFactory() throws NoSuchFieldException, IllegalAccessException {
-        Field field = ReplicatedMapDataSerializerHook.class.getDeclaredField("FACTORY");
+    private void updateFactory() throws Exception {
+        field = ReplicatedMapDataSerializerHook.class.getDeclaredField("FACTORY");
 
         // remove final modifier from field
         Field modifiersField = Field.class.getDeclaredField("modifiers");
@@ -131,15 +159,15 @@ public class ReplicatedMapReorderedReplicationTest extends HazelcastTestSupport 
 
         field.setAccessible(true);
         final DataSerializableFactory factory = (DataSerializableFactory) field.get(null);
+        replicatedMapDataSerializableFactory = factory;
         field.set(null, new TestReplicatedMapDataSerializerFactory(factory));
-
     }
 
     private static class TestReplicatedMapDataSerializerFactory implements DataSerializableFactory {
 
         private final DataSerializableFactory factory;
 
-        public TestReplicatedMapDataSerializerFactory(DataSerializableFactory factory) {
+        TestReplicatedMapDataSerializerFactory(DataSerializableFactory factory) {
             this.factory = factory;
         }
 
@@ -148,25 +176,20 @@ public class ReplicatedMapReorderedReplicationTest extends HazelcastTestSupport 
             if (typeId == ReplicatedMapDataSerializerHook.REPLICATE_UPDATE) {
                 return new RetriedReplicateUpdateOperation();
             }
-
             return factory.create(typeId);
         }
-
     }
 
     private static class RetriedReplicateUpdateOperation extends ReplicateUpdateOperation {
 
-        private static final Random random = new Random();
+        private final Random random = new Random();
 
         @Override
         public void run() throws Exception {
             if (random.nextInt(10) < 2) {
                 throw new RetryableHazelcastException();
             }
-
             super.run();
         }
-
     }
-
 }

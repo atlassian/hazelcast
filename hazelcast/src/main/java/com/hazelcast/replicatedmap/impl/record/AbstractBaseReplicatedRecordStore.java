@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,17 +42,19 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 public abstract class AbstractBaseReplicatedRecordStore<K, V> implements ReplicatedRecordStore {
 
-    protected final AtomicReference<InternalReplicatedMapStorage<K, V>> storageRef;
-    protected final ReplicatedMapService replicatedMapService;
-    protected final ReplicatedMapConfig replicatedMapConfig;
-    protected final NodeEngine nodeEngine;
-    protected final SerializationService serializationService;
-    protected final IPartitionService partitionService;
-    protected final AtomicBoolean isLoaded = new AtomicBoolean(false);
-    protected final EntryTaskScheduler<Object, Object> ttlEvictionScheduler;
-    protected final EventService eventService;
-    protected final String name;
     protected int partitionId;
+
+    protected final String name;
+    protected final NodeEngine nodeEngine;
+    protected final EventService eventService;
+    protected final IPartitionService partitionService;
+    protected final ReplicatedMapConfig replicatedMapConfig;
+    protected final SerializationService serializationService;
+    protected final ReplicatedMapService replicatedMapService;
+    protected final AtomicReference<InternalReplicatedMapStorage<K, V>> storageRef;
+    protected final AtomicBoolean isLoaded = new AtomicBoolean(false);
+
+    private final EntryTaskScheduler<Object, Object> ttlEvictionScheduler;
 
     protected AbstractBaseReplicatedRecordStore(String name, ReplicatedMapService replicatedMapService, int partitionId) {
         this.name = name;
@@ -78,6 +80,16 @@ public abstract class AbstractBaseReplicatedRecordStore<K, V> implements Replica
         return storageRef;
     }
 
+    // only used for testing purposes
+    public EntryTaskScheduler getTtlEvictionScheduler() {
+        return ttlEvictionScheduler;
+    }
+
+    @Override
+    public int getPartitionId() {
+        return partitionId;
+    }
+
     @Override
     public String getName() {
         return name;
@@ -93,6 +105,15 @@ public abstract class AbstractBaseReplicatedRecordStore<K, V> implements Replica
         if (storage != null) {
             storage.clear();
         }
+        ttlEvictionScheduler.cancelAll();
+    }
+
+    protected InternalReplicatedMapStorage<K, V> clearInternal() {
+        InternalReplicatedMapStorage<K, V> storage = getStorage();
+        storage.clear();
+        getStats().incrementOtherOperations();
+        ttlEvictionScheduler.cancelAll();
+        return storage;
     }
 
     @Override

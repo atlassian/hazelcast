@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,88 +16,92 @@
 
 package com.hazelcast.spi.impl.operationservice.impl;
 
-import com.hazelcast.internal.metrics.MetricsProvider;
-import com.hazelcast.internal.metrics.MetricsRegistry;
-import com.hazelcast.internal.metrics.Probe;
 import com.hazelcast.internal.partition.ReplicaErrorLogger;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.internal.util.counters.MwCounter;
 import com.hazelcast.internal.util.counters.SwCounter;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Address;
+import com.hazelcast.nio.Bits;
 import com.hazelcast.nio.Packet;
-import com.hazelcast.spi.impl.NodeEngineImpl;
-import com.hazelcast.spi.impl.PacketHandler;
-import com.hazelcast.spi.impl.operationservice.impl.responses.BackupAckResponse;
-import com.hazelcast.spi.impl.operationservice.impl.responses.CallTimeoutResponse;
+import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.impl.operationservice.impl.responses.ErrorResponse;
-import com.hazelcast.spi.impl.operationservice.impl.responses.NormalResponse;
-import com.hazelcast.spi.impl.operationservice.impl.responses.Response;
+import com.hazelcast.util.function.Consumer;
 
-import static com.hazelcast.internal.metrics.ProbeLevel.MANDATORY;
+import java.nio.ByteOrder;
+
 import static com.hazelcast.internal.util.counters.MwCounter.newMwCounter;
 import static com.hazelcast.internal.util.counters.SwCounter.newSwCounter;
+import static com.hazelcast.nio.Packet.FLAG_OP_RESPONSE;
+import static com.hazelcast.nio.Packet.Type.OPERATION;
+import static com.hazelcast.spi.impl.SpiDataSerializerHook.BACKUP_ACK_RESPONSE;
+import static com.hazelcast.spi.impl.SpiDataSerializerHook.CALL_TIMEOUT_RESPONSE;
+import static com.hazelcast.spi.impl.SpiDataSerializerHook.ERROR_RESPONSE;
+import static com.hazelcast.spi.impl.SpiDataSerializerHook.NORMAL_RESPONSE;
+import static com.hazelcast.spi.impl.operationservice.impl.responses.NormalResponse.OFFSET_BACKUP_ACKS;
+import static com.hazelcast.spi.impl.operationservice.impl.responses.Response.OFFSET_CALL_ID;
+import static com.hazelcast.spi.impl.operationservice.impl.responses.Response.OFFSET_TYPE_ID;
+import static com.hazelcast.util.Preconditions.checkNotNull;
+import static com.hazelcast.util.Preconditions.checkTrue;
 
 /**
- * Responsible for handling responses for invocations. Based on the content of the response packet, it will lookup the
- * Invocation from the InvocationRegistry and notify the Invocation.
+ * Responsible for handling responses for invocations. Based on the content of the
+ * response packet, it will lookup the Invocation from the InvocationRegistry and
+ * notify the Invocation.
+ *
+ * InboundResponseHandlers are not thread-safe. So if there are multiple threads
+ * processing responses, each thread needs to get its own instance. Only the backup
+ * handling is thread-safe since backups can be completed locally by any thread.
  */
-public final class InboundResponseHandler implements PacketHandler, MetricsProvider {
+public final class InboundResponseHandler implements Consumer<Packet> {
 
+    final SwCounter responsesNormal = newSwCounter();
+    final SwCounter responsesTimeout = newSwCounter();
+    final MwCounter responsesBackup = newMwCounter();
+    final SwCounter responsesError = newSwCounter();
+    final MwCounter responsesMissing = newMwCounter();
     private final ILogger logger;
     private final InternalSerializationService serializationService;
     private final InvocationRegistry invocationRegistry;
-    private final NodeEngineImpl nodeEngine;
-    @Probe(name = "responses[normal]", level = MANDATORY)
-    private final SwCounter responsesNormal = newSwCounter();
-    @Probe(name = "responses[timeout]", level = MANDATORY)
-    private final SwCounter responsesTimeout = newSwCounter();
-    @Probe(name = "responses[backup]", level = MANDATORY)
-    private final MwCounter responsesBackup = newMwCounter();
-    @Probe(name = "responses[error]", level = MANDATORY)
-    private final SwCounter responsesError = newSwCounter();
-    @Probe(name = "responses[missing]", level = MANDATORY)
-    private final MwCounter responsesMissing = newMwCounter();
+    private final NodeEngine nodeEngine;
+    private final boolean useBigEndian;
 
-    InboundResponseHandler(ILogger logger,
-                           InternalSerializationService serializationService,
-                           InvocationRegistry invocationRegistry,
-                           NodeEngineImpl nodeEngine) {
-        this.logger = logger;
-        this.serializationService = serializationService;
+    InboundResponseHandler(InvocationRegistry invocationRegistry, NodeEngine nodeEngine) {
+        this.logger = nodeEngine.getLogger(InboundResponseHandler.class);
+        this.serializationService = (InternalSerializationService) nodeEngine.getSerializationService();
+        this.useBigEndian = serializationService.getByteOrder() == ByteOrder.BIG_ENDIAN;
         this.invocationRegistry = invocationRegistry;
         this.nodeEngine = nodeEngine;
     }
 
     @Override
-    public void provideMetrics(MetricsRegistry registry) {
-        registry.scanAndRegister(this, "operation.invocations");
-    }
+    public void accept(Packet packet) {
+        checkNotNull(packet, "packet can't be null");
+        checkTrue(packet.getPacketType() == OPERATION, "Packet type is not OPERATION");
+        checkTrue(packet.isFlagRaised(FLAG_OP_RESPONSE), "FLAG_OP_RESPONSE is not set");
 
-    @Override
-    public void handle(Packet packet) throws Exception {
-        Response response = serializationService.toObject(packet);
+        byte[] bytes = packet.toByteArray();
+        int typeId = Bits.readInt(bytes, OFFSET_TYPE_ID, useBigEndian);
+        long callId = Bits.readLong(bytes, OFFSET_CALL_ID, useBigEndian);
         Address sender = packet.getConn().getEndPoint();
         try {
-            if (response instanceof NormalResponse) {
-                NormalResponse normalResponse = (NormalResponse) response;
-                notifyNormalResponse(
-                        normalResponse.getCallId(),
-                        normalResponse.getValue(),
-                        normalResponse.getBackupAcks(),
-                        sender);
-            } else if (response instanceof BackupAckResponse) {
-                notifyBackupComplete(response.getCallId());
-            } else if (response instanceof CallTimeoutResponse) {
-                notifyCallTimeout(response.getCallId(), sender);
-            } else if (response instanceof ErrorResponse) {
-                ErrorResponse errorResponse = (ErrorResponse) response;
-                notifyErrorResponse(
-                        errorResponse.getCallId(),
-                        errorResponse.getCause(),
-                        sender);
-            } else {
-                logger.severe("Unrecognized response: " + response);
+            switch (typeId) {
+                case NORMAL_RESPONSE:
+                    byte backupAcks = bytes[OFFSET_BACKUP_ACKS];
+                    notifyNormalResponse(callId, packet, backupAcks, sender);
+                    break;
+                case BACKUP_ACK_RESPONSE:
+                    notifyBackupComplete(callId);
+                    break;
+                case CALL_TIMEOUT_RESPONSE:
+                    notifyCallTimeout(callId, sender);
+                    break;
+                case ERROR_RESPONSE:
+                    ErrorResponse errorResponse = serializationService.toObject(packet);
+                    notifyErrorResponse(callId, errorResponse.getCause(), sender);
+                    break;
+                default:
+                    logger.severe("Unrecognized type: " + typeId + " packet:" + packet);
             }
         } catch (Throwable e) {
             logger.severe("While processing response...", e);
@@ -115,7 +119,7 @@ public final class InboundResponseHandler implements PacketHandler, MetricsProvi
             // taking too much time.
             if (invocation == null) {
                 if (logger.isFinestEnabled()) {
-                    logger.finest("No Invocation found for backup response with callId " + callId);
+                    logger.finest("No Invocation found for backup response with callId=" + callId);
                 }
                 return;
             }
@@ -132,8 +136,8 @@ public final class InboundResponseHandler implements PacketHandler, MetricsProvi
 
         if (invocation == null) {
             responsesMissing.inc();
-            if (nodeEngine.isRunning()) {
-                logger.warning("No Invocation found for error response with callId: " + callId + " sent from " + sender);
+            if (nodeEngine.isRunning() && callId != 0) {
+                logger.warning("No Invocation found for error response with callId=" + callId + " sent from " + sender);
             }
             return;
         }
@@ -148,7 +152,7 @@ public final class InboundResponseHandler implements PacketHandler, MetricsProvi
         if (invocation == null) {
             responsesMissing.inc();
             if (nodeEngine.isRunning()) {
-                logger.warning("No Invocation found for normal response with callId " + callId + " sent from " + sender);
+                logger.warning("No Invocation found for normal response with callId=" + callId + " sent from " + sender);
             }
             return;
         }
@@ -162,7 +166,7 @@ public final class InboundResponseHandler implements PacketHandler, MetricsProvi
         if (invocation == null) {
             responsesMissing.inc();
             if (nodeEngine.isRunning()) {
-                logger.warning("No Invocation found for call timeout response with callId" + callId + " sent from " + sender);
+                logger.warning("No Invocation found for call timeout response with callId=" + callId + " sent from " + sender);
             }
             return;
         }

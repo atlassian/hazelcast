@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,6 @@ import com.hazelcast.core.MembershipEvent;
 import com.hazelcast.core.MembershipListener;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
-import com.hazelcast.test.TestHazelcastInstanceFactory;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.After;
@@ -55,7 +54,6 @@ public class ClientMemberAttributeTest extends HazelcastTestSupport {
     public void cleanup() {
         hazelcastFactory.terminateAll();
     }
-
 
     @Test
     public void testChangeMemberAttributes() throws Exception {
@@ -93,11 +91,11 @@ public class ClientMemberAttributeTest extends HazelcastTestSupport {
         Member m2 = h2.getCluster().getLocalMember();
         assertEquals(123, (int) m2.getIntAttribute("Test"));
 
-        assertEquals(2, h2.getCluster().getMembers().size());
+        assertClusterSize(2, h2);
 
         Member member = null;
         for (Member m : h2.getCluster().getMembers()) {
-            if (m == h2.getCluster().getLocalMember()) {
+            if (m.equals(h2.getCluster().getLocalMember())) {
                 continue;
             }
             member = m;
@@ -113,7 +111,6 @@ public class ClientMemberAttributeTest extends HazelcastTestSupport {
         for (Member m : members) {
             assertEquals(123, (int) m.getIntAttribute("Test"));
         }
-
     }
 
     @Test(timeout = 120000)
@@ -122,18 +119,17 @@ public class ClientMemberAttributeTest extends HazelcastTestSupport {
         JoinConfig join = c.getNetworkConfig().getJoin();
         join.getTcpIpConfig().addMember("127.0.0.1").setEnabled(true);
         join.getMulticastConfig().setEnabled(false);
-        TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(2);
 
         HazelcastInstance h1 = hazelcastFactory.newHazelcastInstance(c);
         Member m1 = h1.getCluster().getLocalMember();
         m1.setIntAttribute("Test", 123);
 
         HazelcastInstance h2 = hazelcastFactory.newHazelcastInstance(c);
-        assertEquals(2, h2.getCluster().getMembers().size());
+        assertClusterSize(2, h2);
 
         Member member = null;
         for (Member m : h2.getCluster().getMembers()) {
-            if (m == h2.getCluster().getLocalMember()) {
+            if (m.equals(h2.getCluster().getLocalMember())) {
                 continue;
             }
             member = m;
@@ -155,7 +151,6 @@ public class ClientMemberAttributeTest extends HazelcastTestSupport {
         }
 
         assertTrue(found);
-
     }
 
     @Test(timeout = 120000)
@@ -170,11 +165,11 @@ public class ClientMemberAttributeTest extends HazelcastTestSupport {
         m1.setIntAttribute("Test", 123);
 
         HazelcastInstance h2 = hazelcastFactory.newHazelcastInstance(c);
-        assertEquals(2, h2.getCluster().getMembers().size());
+        assertClusterSize(2, h2);
 
         Member member = null;
         for (Member m : h2.getCluster().getMembers()) {
-            if (m == h2.getCluster().getLocalMember()) {
+            if (m.equals(h2.getCluster().getLocalMember())) {
                 continue;
             }
             member = m;
@@ -225,11 +220,11 @@ public class ClientMemberAttributeTest extends HazelcastTestSupport {
         m1.setIntAttribute("Test", 123);
 
         HazelcastInstance h2 = hazelcastFactory.newHazelcastInstance(c);
-        assertEquals(2, h2.getCluster().getMembers().size());
+        assertClusterSize(2, h2);
 
         Member member = null;
         for (Member m : h2.getCluster().getMembers()) {
-            if (m == h2.getCluster().getLocalMember()) {
+            if (m.equals(h2.getCluster().getLocalMember())) {
                 continue;
             }
             member = m;
@@ -280,11 +275,11 @@ public class ClientMemberAttributeTest extends HazelcastTestSupport {
         m1.setIntAttribute("Test", 123);
 
         HazelcastInstance h2 = hazelcastFactory.newHazelcastInstance(c);
-        assertEquals(2, h2.getCluster().getMembers().size());
+        assertClusterSize(2, h2);
 
         Member member = null;
         for (Member m : h2.getCluster().getMembers()) {
-            if (m == h2.getCluster().getLocalMember()) {
+            if (m.equals(h2.getCluster().getLocalMember())) {
                 continue;
             }
             member = m;
@@ -323,6 +318,7 @@ public class ClientMemberAttributeTest extends HazelcastTestSupport {
     }
 
     private static class LatchMembershipListener implements MembershipListener {
+
         private final CountDownLatch latch;
 
         private LatchMembershipListener(CountDownLatch latch) {
@@ -342,5 +338,4 @@ public class ClientMemberAttributeTest extends HazelcastTestSupport {
             latch.countDown();
         }
     }
-
 }

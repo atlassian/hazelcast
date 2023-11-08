@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,11 +20,13 @@ import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
+import com.hazelcast.util.Clock;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
+import static com.hazelcast.test.HazelcastTestSupport.assumeDifferentHashCodes;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
@@ -65,7 +67,7 @@ public class AbstractRecordTest {
 
         recordOtherCreationTime = new ObjectRecord(VALUE);
         recordOtherCreationTime.setKey(KEY);
-        recordOtherCreationTime.setCreationTime(152344145);
+        recordOtherCreationTime.setCreationTime(Clock.currentTimeMillis());
 
         recordOtherHits = new ObjectRecord(VALUE);
         recordOtherHits.setKey(KEY);
@@ -73,11 +75,11 @@ public class AbstractRecordTest {
 
         recordOtherLastAccessTime = new ObjectRecord(VALUE);
         recordOtherLastAccessTime.setKey(KEY);
-        recordOtherLastAccessTime.setLastAccessTime(354712354);
+        recordOtherLastAccessTime.setLastAccessTime(Clock.currentTimeMillis());
 
         recordOtherLastUpdateTime = new ObjectRecord(VALUE);
         recordOtherLastUpdateTime.setKey(KEY);
-        recordOtherLastUpdateTime.setLastUpdateTime(124241425);
+        recordOtherLastUpdateTime.setLastUpdateTime(Clock.currentTimeMillis() + 10000);
     }
 
     @Test
@@ -115,6 +117,7 @@ public class AbstractRecordTest {
         assertEquals(record.hashCode(), record.hashCode());
         assertEquals(record.hashCode(), recordSameAttributes.hashCode());
 
+        assumeDifferentHashCodes();
         assertNotEquals(record.hashCode(), recordOtherVersion.hashCode());
         assertNotEquals(record.hashCode(), recordOtherTtl.hashCode());
         assertNotEquals(record.hashCode(), recordOtherCreationTime.hashCode());

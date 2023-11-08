@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,10 +22,10 @@ package com.hazelcast.spi.impl;
 public interface PartitionSpecificRunnable extends Runnable {
 
     /**
-     * Returns the partition-id. If the partition-id is smaller than 0, than it isn't specific to
+     * Returns the partition ID. If the partition ID is smaller than 0, than it isn't specific to
      * a partition.
      *
-     * @return the partition-id.
+     * @return the partition ID
      */
     int getPartitionId();
 }

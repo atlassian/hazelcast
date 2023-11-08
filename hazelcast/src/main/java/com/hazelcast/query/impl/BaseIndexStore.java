@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,88 +17,51 @@
 package com.hazelcast.query.impl;
 
 import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.query.impl.getters.MultiResult;
 
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+
+import static com.hazelcast.query.impl.AbstractIndex.NULL;
 
 /**
  * Base class for concrete index store implementations
  */
 public abstract class BaseIndexStore implements IndexStore {
 
-    protected static final float LOAD_FACTOR = 0.75F;
+    static final float LOAD_FACTOR = 0.75F;
 
-    protected ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
-    protected ReentrantReadWriteLock.ReadLock readLock = lock.readLock();
-    protected ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
+    private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
+    private final ReentrantReadWriteLock.ReadLock readLock = lock.readLock();
+    private final ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
 
-    private boolean multiResultHasToDetectDuplicates;
+    private final CopyFunctor<Data, QueryableEntry> resultCopyFunctor;
 
-
-    abstract void newIndexInternal(Comparable newValue, QueryableEntry record);
-
-    abstract void removeIndexInternal(Comparable oldValue, Data indexKey);
-
-    @Override
-    public final void newIndex(Object newValue, QueryableEntry record) {
-        takeWriteLock();
-        try {
-            unwrapAndAddToIndex(newValue, record);
-        } finally {
-            releaseWriteLock();
-        }
-    }
-
-    private void unwrapAndAddToIndex(Object newValue, QueryableEntry record) {
-        if (newValue instanceof MultiResult) {
-            multiResultHasToDetectDuplicates = true;
-            List<Object> results = ((MultiResult) newValue).getResults();
-            for (Object o : results) {
-                Comparable sanitizedValue = sanitizeValue(o);
-                newIndexInternal(sanitizedValue, record);
-            }
+    BaseIndexStore(IndexCopyBehavior copyOn) {
+        if (copyOn == IndexCopyBehavior.COPY_ON_WRITE || copyOn == IndexCopyBehavior.NEVER) {
+            resultCopyFunctor = new PassThroughFunctor();
         } else {
-            Comparable sanitizedValue = sanitizeValue(newValue);
-            newIndexInternal(sanitizedValue, record);
+            resultCopyFunctor = new CopyInputFunctor();
         }
     }
 
-    @Override
-    public final void removeIndex(Object oldValue, Data indexKey) {
-        takeWriteLock();
-        try {
-            unwrapAndRemoveFromIndex(oldValue, indexKey);
-        } finally {
-            releaseWriteLock();
-        }
-    }
-
-    private void unwrapAndRemoveFromIndex(Object oldValue, Data indexKey) {
-        if (oldValue instanceof MultiResult) {
-            List<Object> results = ((MultiResult) oldValue).getResults();
-            for (Object o : results) {
-                Comparable sanitizedValue = sanitizeValue(o);
-                removeIndexInternal(sanitizedValue, indexKey);
-            }
-        } else {
-            Comparable sanitizedValue = sanitizeValue(oldValue);
-            removeIndexInternal(sanitizedValue, indexKey);
-        }
-    }
-
-    @Override
-    public final void updateIndex(Object oldValue, Object newValue, QueryableEntry entry) {
-        takeWriteLock();
-        try {
-            Data indexKey = entry.getKeyData();
-            unwrapAndRemoveFromIndex(oldValue, indexKey);
-            unwrapAndAddToIndex(newValue, entry);
-        } finally {
-            releaseWriteLock();
-        }
-    }
-
+    /**
+     * Canonicalizes the given value for storing it in this index store.
+     * <p>
+     * The method is used by hash indexes to achieve the canonical
+     * representation of mixed-type numeric values, so {@code equals} and {@code
+     * hashCode} logic can work properly.
+     * <p>
+     * The main difference comparing to {@link IndexStore#canonicalizeQueryArgumentScalar}
+     * is that this method is specifically designed to support the
+     * canonicalization of persistent index values (think of map entry attribute
+     * values), so a more suitable value representation may chosen.
+     *
+     * @param value the value to canonicalize.
+     * @return the canonicalized value.
+     */
+    abstract Comparable canonicalizeScalarForStorage(Comparable value);
 
     void takeWriteLock() {
         writeLock.lock();
@@ -108,31 +71,85 @@ public abstract class BaseIndexStore implements IndexStore {
         writeLock.unlock();
     }
 
-    protected void takeReadLock() {
+    void takeReadLock() {
         readLock.lock();
     }
 
-    protected void releaseReadLock() {
+    void releaseReadLock() {
         readLock.unlock();
     }
 
-    private Comparable sanitizeValue(Object input) {
+    final void copyToMultiResultSet(MultiResultSet resultSet, Map<Data, QueryableEntry> records) {
+        resultSet.addResultSet(resultCopyFunctor.invoke(records));
+    }
+
+    final Set<QueryableEntry> toSingleResultSet(Map<Data, QueryableEntry> records) {
+        return new SingleResultSet(resultCopyFunctor.invoke(records));
+    }
+
+    @Override
+    public void destroy() {
+        // nothing to destroy
+    }
+
+    Comparable sanitizeValue(Object input) {
+        if (input instanceof CompositeValue) {
+            CompositeValue compositeValue = (CompositeValue) input;
+            Comparable[] components = compositeValue.getComponents();
+            for (int i = 0; i < components.length; ++i) {
+                components[i] = sanitizeScalar(components[i]);
+            }
+            return compositeValue;
+        } else {
+            return sanitizeScalar(input);
+        }
+    }
+
+    private Comparable sanitizeScalar(Object input) {
         if (input == null || input instanceof Comparable) {
             Comparable value = (Comparable) input;
             if (value == null) {
-                value = IndexImpl.NULL;
+                value = NULL;
             } else if (value.getClass().isEnum()) {
                 value = TypeConverters.ENUM_CONVERTER.convert(value);
             }
-            return value;
+            return canonicalizeScalarForStorage(value);
         } else {
-            throw new IllegalArgumentException("It is not allowed to used a type that is not Comparable: "
-                    + input.getClass());
+            throw new IllegalArgumentException("It is not allowed to use a type that is not Comparable: " + input.getClass());
+        }
+    }
+
+    interface CopyFunctor<A, B> {
+
+        Map<A, B> invoke(Map<A, B> map);
+
+    }
+
+    interface IndexFunctor<A, B> {
+
+        Object invoke(A param1, B param2);
+
+    }
+
+    private static class PassThroughFunctor implements CopyFunctor<Data, QueryableEntry> {
+
+        @Override
+        public Map<Data, QueryableEntry> invoke(Map<Data, QueryableEntry> map) {
+            return map;
         }
 
     }
 
-    protected MultiResultSet createMultiResultSet() {
-        return multiResultHasToDetectDuplicates ? new DuplicateDetectingMultiResult() : new FastMultiResultSet();
+    private static class CopyInputFunctor implements CopyFunctor<Data, QueryableEntry> {
+
+        @Override
+        public Map<Data, QueryableEntry> invoke(Map<Data, QueryableEntry> map) {
+            if (map != null && !map.isEmpty()) {
+                return new HashMap<Data, QueryableEntry>(map);
+            }
+            return map;
+        }
+
     }
+
 }

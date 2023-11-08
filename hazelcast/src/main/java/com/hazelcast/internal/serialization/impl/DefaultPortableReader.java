@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ import com.hazelcast.query.extractor.ValueCallback;
 import com.hazelcast.query.extractor.ValueCollector;
 import com.hazelcast.query.extractor.ValueReader;
 import com.hazelcast.query.extractor.ValueReadingException;
+import com.hazelcast.query.impl.getters.ImmutableMultiResult;
 import com.hazelcast.query.impl.getters.MultiResult;
 
 import java.io.IOException;
@@ -37,9 +38,17 @@ import java.util.Set;
 import static com.hazelcast.internal.serialization.impl.PortableUtils.getPortableArrayCellPosition;
 
 /**
- * Can't be accessed concurrently
+ * Can't be accessed concurrently.
  */
 public class DefaultPortableReader extends ValueReader implements PortableReader {
+
+    private static final MultiResult NULL_EMPTY_TARGET_MULTIRESULT;
+
+    static {
+        MultiResult<Object> result = new MultiResult<Object>();
+        result.addNullOrEmptyTarget();
+        NULL_EMPTY_TARGET_MULTIRESULT = new ImmutableMultiResult<Object>(result);
+    }
 
     protected final ClassDefinition cd;
     protected final PortableSerializer serializer;
@@ -100,7 +109,7 @@ public class DefaultPortableReader extends ValueReader implements PortableReader
         return in;
     }
 
-    final void end() throws IOException {
+    final void end() {
         in.position(finalPosition);
     }
 
@@ -597,11 +606,17 @@ public class DefaultPortableReader extends ValueReader implements PortableReader
             if (position.isMultiPosition()) {
                 return readMultiPosition(position.asMultiPosition());
             } else if (position.isNull()) {
+                if (position.isAny()) {
+                    return NULL_EMPTY_TARGET_MULTIRESULT;
+                }
                 return null;
             } else if (position.isEmpty()) {
                 if (position.isLeaf() && position.getType() != null) {
                     return readSinglePosition(position);
                 } else {
+                    if (position.isAny()) {
+                        return NULL_EMPTY_TARGET_MULTIRESULT;
+                    }
                     return null;
                 }
             } else {
@@ -615,11 +630,12 @@ public class DefaultPortableReader extends ValueReader implements PortableReader
     private <T> MultiResult<T> readMultiPosition(List<PortablePosition> positions) throws IOException {
         MultiResult<T> result = new MultiResult<T>();
         for (PortablePosition position : positions) {
-            T read = null;
             if (!position.isNullOrEmpty()) {
-                read = readSinglePosition(position);
+                T read = readSinglePosition(position);
+                result.add(read);
+            } else {
+                result.addNullOrEmptyTarget();
             }
-            result.add(read);
         }
         return result;
     }
@@ -681,7 +697,7 @@ public class DefaultPortableReader extends ValueReader implements PortableReader
                 in.position(position.getStreamPosition());
                 return (T) serializer.readAndInitialize(in, position.getFactoryId(), position.getClassId());
             default:
-                throw new IllegalArgumentException("Unsupported type " + position.getType());
+                throw new IllegalArgumentException("Unsupported type: " + position.getType());
         }
     }
 
@@ -751,7 +767,7 @@ public class DefaultPortableReader extends ValueReader implements PortableReader
     private void validateNotMultiPosition(PortablePosition position) {
         if (position.isMultiPosition()) {
             throw new IllegalArgumentException("The method expected a single result but multiple results have been returned."
-                    + "Did you use the [any] quantifier? If so, use the readArray method family.");
+                    + " Did you use the [any] quantifier? If so, use the readArray method family.");
         }
     }
 
@@ -761,9 +777,9 @@ public class DefaultPortableReader extends ValueReader implements PortableReader
             returnedType = returnedType != null ? returnedType.getSingleType() : null;
         }
         if (expectedType != returnedType) {
-            throw new IllegalArgumentException("Wrong type read! Actual:" + returnedType.name() + " Expected: "
-                    + expectedType.name() + ". Did you you a correct read method? E.g. readInt() for int.");
+            String name = returnedType != null ? returnedType.name() : null;
+            throw new IllegalArgumentException("Wrong type read! Actual: " + name + " Expected: " + expectedType.name()
+                    + ". Did you use a correct read method? E.g. readInt() for int.");
         }
     }
-
 }

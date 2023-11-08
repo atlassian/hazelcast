@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -62,6 +62,25 @@ public final class Preconditions {
     }
 
     /**
+     * Tests if the elements inside the argument collection are not null.
+     * If collection is null or empty the test is ignored.
+     *
+     * @param argument     the iterable tested to see if it does not contain null elements; may be null or empty
+     * @param errorMessage the errorMessage
+     * @return the argument that was tested.
+     * @throws java.lang.NullPointerException if argument contains a null element inside
+     */
+    public static <T> Iterable<T> checkNoNullInside(Iterable<T> argument, String errorMessage) {
+        if (argument == null) {
+            return argument;
+        }
+        for (T element : argument) {
+            checkNotNull(element, errorMessage);
+        }
+        return argument;
+    }
+
+    /**
      * Tests if an argument is not null.
      *
      * @param argument the argument tested to see if it is not null.
@@ -92,7 +111,7 @@ public final class Preconditions {
     }
 
     /**
-     * Tests if a value is not negative.
+     * Tests if the {@code value} is >= 0.
      *
      * @param value        the value tested to see if it is not negative.
      * @param errorMessage the errorMessage
@@ -107,7 +126,7 @@ public final class Preconditions {
     }
 
     /**
-     * Tests if a value is not negative.
+     * Tests if the {@code value} is >= 0.
      *
      * @param value        the  value tested to see if it is not negative.
      * @param errorMessage the errorMessage
@@ -122,7 +141,7 @@ public final class Preconditions {
     }
 
     /**
-     * Tests if a long value is not negative.
+     * Tests if the {@code value} is < 0.
      *
      * @param value        the long value tested to see if it is not negative.
      * @param errorMessage the message
@@ -137,7 +156,7 @@ public final class Preconditions {
     }
 
     /**
-     * Tests if a value is positive; so larger than 0.
+     * Tests if a {@code value} is positive, that is strictly larger than 0 (value > 0).
      *
      * @param value        the value tested to see if it is positive.
      * @param errorMessage the message
@@ -152,7 +171,22 @@ public final class Preconditions {
     }
 
     /**
-     * Tests if a value is positive; larger than 0.
+     * Tests if a {@code value} is positive, that is strictly larger than 0 (value > 0).
+     *
+     * @param value        the value tested to see if it is positive.
+     * @param errorMessage the message
+     * @return the value
+     * @throws java.lang.IllegalArgumentException if the value is not positive.
+     */
+    public static double checkPositive(double value, String errorMessage) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(errorMessage);
+        }
+        return value;
+    }
+
+    /**
+     * Tests if a {@code value} is positive, that is strictly larger than 0 (value > 0).
      *
      * @param value        the value tested to see if it is positive.
      * @param errorMessage the message
@@ -235,12 +269,20 @@ public final class Preconditions {
      * @return the object argument.
      * @throws java.lang.IllegalArgumentException if the object is not an instance of the expected type.
      */
-    public static <E> E checkInstanceOf(Class type, E object, String errorMessage) {
+    public static <E> E checkInstanceOf(Class<E> type, Object object, String errorMessage) {
         isNotNull(type, "type");
         if (!type.isInstance(object)) {
             throw new IllegalArgumentException(errorMessage);
         }
-        return object;
+        return (E) object;
+    }
+
+    public static <E> E checkInstanceOf(Class<E> type, Object object) {
+        isNotNull(type, "type");
+        if (!type.isInstance(object)) {
+            throw new IllegalArgumentException(object + " should be instanceof " + type.getName());
+        }
+        return (E) object;
     }
 
     /**

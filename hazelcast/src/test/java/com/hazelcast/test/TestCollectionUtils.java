@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,17 +24,26 @@ import java.util.Set;
 /**
  * Collection of convenience methods not suitable for production usage due performance characteristics, but handy for tests.
  */
-public class TestCollectionUtils {
+public final class TestCollectionUtils {
+
+    private TestCollectionUtils() {
+    }
 
     /**
      * Creates a new set containing items passed as arguments.
      *
-     * @param items
-     * @param <T>
      * @return a new instance of Set with all items passed as an argument
      */
     public static <T> Set<T> setOf(T... items) {
         List<T> list = Arrays.asList(items);
         return new HashSet<T>(list);
+    }
+
+    public static Set<Integer> setOfValuesBetween(int from, int to) {
+        HashSet<Integer> set = new HashSet<Integer>();
+        for (int i = from; i < to; i++) {
+            set.add(i);
+        }
+        return set;
     }
 }

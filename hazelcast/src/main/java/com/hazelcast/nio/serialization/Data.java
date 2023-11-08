@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,16 +35,33 @@ public interface Data {
      * Returns serialization type of binary form. It's defined by
      * {@link Serializer#getTypeId()}
      *
-     * @return serializer type id
+     * @return serializer type ID
      */
     int getType();
 
     /**
-     * Returns the total size of Data in bytes
+     * Returns the total size of Data in bytes.
+     *
+     * The total size is the size of a byte array to contain the full content of this data object. For example in case
+     * of an HeapData object, the total size will be the length of the payload.
      *
      * @return total size
      */
     int totalSize();
+
+    /**
+     * Copies the payload contained in the Data to the destination buffer.
+     *
+     * The dest byte-buffer needs to be large enough to contain the payload. Otherwise an exception is thrown.
+     *
+     * The reason this method exists instead of relying on the {@link #toByteArray()} is the existence of the NativeMemoryData.
+     * With the NativeMemoryData it would lead to a temporary byte-array. This method prevents this temporary byte-array needing
+     * to be created.
+      *
+     * @param dest to byte-buffer to write to
+     * @param destPos the position in the destination buffer.
+     */
+    void copyTo(byte[] dest, int destPos);
 
     /**
      * Returns size of internal binary data in bytes
@@ -95,5 +112,13 @@ public interface Data {
      * @return true if source object is <tt>Portable</tt>, false otherwise.
      */
     boolean isPortable();
+
+    /**
+     * Returns true if this Data is created from a {@link com.hazelcast.core.HazelcastJsonValue} object,
+     * false otherwise
+     *
+     * @return true if source object is <tt>HazelcastJsonValue</tt>, false otherwise.
+     */
+    boolean isJson();
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,7 +34,7 @@ public class PartitionAssignmentsCorrectnessTest extends AbstractPartitionAssign
 
     @Parameterized.Parameters(name = "backups:{0},nodes:{1}")
     public static Collection<Object[]> parameters() {
-        return Arrays.asList(new Object[][] {
+        return Arrays.asList(new Object[][]{
                 {1, 2},
                 {2, 3},
                 {3, 4},

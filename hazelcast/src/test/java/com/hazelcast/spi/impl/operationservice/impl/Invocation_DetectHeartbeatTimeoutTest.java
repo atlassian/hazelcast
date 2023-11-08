@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.spi.impl.operationservice.impl;
 
 import com.hazelcast.config.Config;
@@ -104,14 +120,14 @@ public class Invocation_DetectHeartbeatTimeoutTest extends HazelcastTestSupport 
     /**
      * This test checks if the invocation expires eventually after the operation did manage to execute and did manage to send
      * some heartbeats but for whatever reason the response was not received.
-     *
+     * <p>
      * We do this by sending in a void operation that runs for an long period (so there are heartbeats) but on completion it
      * doesn't send a response.
      */
     @Test
     public void whenExpiresEventually() {
         Config config = new Config();
-        config.setProperty(OPERATION_CALL_TIMEOUT_MILLIS.getName(), "1000");
+        config.setProperty(OPERATION_CALL_TIMEOUT_MILLIS.getName(), "5000");
 
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(2);
         HazelcastInstance local = factory.newHazelcastInstance(config);
