@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,16 +21,17 @@ package com.hazelcast.mapreduce;
  * it is currently working on.
  *
  * @since 3.2
- * @deprecated Hazelcast Jet will replace, maybe re-implement this API shortly
+ * @deprecated MapReduce is deprecated and will be removed in 4.0.
+ * For map aggregations, you can use {@link com.hazelcast.aggregation.Aggregator} on IMap.
+ * For general data processing, it is superseded by <a href="http://jet.hazelcast.org">Hazelcast Jet</a>.
  */
 @Deprecated
 public interface PartitionIdAware {
 
     /**
-     * Sets the partition id to the implementing instance it is executed against
+     * Sets the partition ID to the implementing instance it is executed against
      *
-     * @param partitionId current partitionId
+     * @param partitionId current partition ID
      */
     void setPartitionId(int partitionId);
-
 }

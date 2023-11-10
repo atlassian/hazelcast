@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,13 @@
 
 package com.hazelcast.osgi.impl;
 
+import com.hazelcast.cardinality.CardinalityEstimator;
 import com.hazelcast.config.Config;
 import com.hazelcast.config.GroupConfig;
 import com.hazelcast.core.ClientService;
 import com.hazelcast.core.Cluster;
 import com.hazelcast.core.DistributedObject;
 import com.hazelcast.core.DistributedObjectListener;
-import com.hazelcast.cardinality.CardinalityEstimator;
 import com.hazelcast.core.Endpoint;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IAtomicLong;
@@ -42,13 +42,17 @@ import com.hazelcast.core.LifecycleService;
 import com.hazelcast.core.MultiMap;
 import com.hazelcast.core.PartitionService;
 import com.hazelcast.core.ReplicatedMap;
+import com.hazelcast.cp.CPSubsystem;
+import com.hazelcast.crdt.pncounter.PNCounter;
 import com.hazelcast.durableexecutor.DurableExecutorService;
+import com.hazelcast.flakeidgen.FlakeIdGenerator;
 import com.hazelcast.logging.LoggingService;
 import com.hazelcast.mapreduce.JobTracker;
 import com.hazelcast.osgi.HazelcastOSGiInstance;
 import com.hazelcast.osgi.HazelcastOSGiService;
 import com.hazelcast.quorum.QuorumService;
 import com.hazelcast.ringbuffer.Ringbuffer;
+import com.hazelcast.scheduledexecutor.IScheduledExecutorService;
 import com.hazelcast.transaction.HazelcastXAResource;
 import com.hazelcast.transaction.TransactionContext;
 import com.hazelcast.transaction.TransactionException;
@@ -63,6 +67,7 @@ import java.util.concurrent.ConcurrentMap;
  * {@link com.hazelcast.osgi.HazelcastOSGiInstance} implementation
  * as proxy of delegated {@link com.hazelcast.core.HazelcastInstance} for getting from OSGi service.
  */
+@SuppressWarnings({"checkstyle:classfanoutcomplexity"})
 class HazelcastOSGiInstanceImpl
         implements HazelcastOSGiInstance {
 
@@ -186,6 +191,11 @@ class HazelcastOSGiInstanceImpl
     }
 
     @Override
+    public FlakeIdGenerator getFlakeIdGenerator(String name) {
+        return delegatedInstance.getFlakeIdGenerator(name);
+    }
+
+    @Override
     public IAtomicLong getAtomicLong(String name) {
         return delegatedInstance.getAtomicLong(name);
     }
@@ -268,6 +278,21 @@ class HazelcastOSGiInstanceImpl
     @Override
     public CardinalityEstimator getCardinalityEstimator(String name) {
         return delegatedInstance.getCardinalityEstimator(name);
+    }
+
+    @Override
+    public PNCounter getPNCounter(String name) {
+        return delegatedInstance.getPNCounter(name);
+    }
+
+    @Override
+    public IScheduledExecutorService getScheduledExecutorService(String name) {
+        return delegatedInstance.getScheduledExecutorService(name);
+    }
+
+    @Override
+    public CPSubsystem getCPSubsystem() {
+        return delegatedInstance.getCPSubsystem();
     }
 
     @Override

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,13 @@
 package com.hazelcast.aggregation.impl;
 
 import com.hazelcast.aggregation.Aggregator;
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 
-import java.util.Map;
+import java.io.IOException;
 
-public class CountAggregator<K, V> extends AbstractAggregator<Long, K, V> {
+public final class CountAggregator<I> extends AbstractAggregator<I, Object, Long> implements IdentifiedDataSerializable {
     private long count;
 
     public CountAggregator() {
@@ -32,7 +35,7 @@ public class CountAggregator<K, V> extends AbstractAggregator<Long, K, V> {
     }
 
     @Override
-    public void accumulate(Map.Entry<K, V> entry) {
+    public void accumulateExtracted(I entry, Object value) {
         count++;
     }
 
@@ -45,5 +48,27 @@ public class CountAggregator<K, V> extends AbstractAggregator<Long, K, V> {
     @Override
     public Long aggregate() {
         return count;
+    }
+
+    @Override
+    public int getFactoryId() {
+        return AggregatorDataSerializerHook.F_ID;
+    }
+
+    @Override
+    public int getId() {
+        return AggregatorDataSerializerHook.COUNT;
+    }
+
+    @Override
+    public void writeData(ObjectDataOutput out) throws IOException {
+        out.writeUTF(attributePath);
+        out.writeLong(count);
+    }
+
+    @Override
+    public void readData(ObjectDataInput in) throws IOException {
+        this.attributePath = in.readUTF();
+        this.count = in.readLong();
     }
 }

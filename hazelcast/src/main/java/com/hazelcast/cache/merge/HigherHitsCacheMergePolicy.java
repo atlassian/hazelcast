@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,16 +18,16 @@ package com.hazelcast.cache.merge;
 
 import com.hazelcast.cache.CacheEntryView;
 import com.hazelcast.cache.StorageTypeAwareCacheMergePolicy;
+import com.hazelcast.nio.serialization.BinaryInterface;
 
 /**
- * `HigherHitsCacheMergePolicy` merges cache entry from source to destination cache
- * if source entry has more hits than the destination one.
+ * Merges cache entries from source to destination cache if the source entry
+ * has more hits than the destination one.
  */
-public class HigherHitsCacheMergePolicy
-        implements StorageTypeAwareCacheMergePolicy {
+@BinaryInterface
+public class HigherHitsCacheMergePolicy implements StorageTypeAwareCacheMergePolicy {
 
     public HigherHitsCacheMergePolicy() {
-
     }
 
     @Override
@@ -37,5 +37,4 @@ public class HigherHitsCacheMergePolicy
         }
         return existingEntry.getValue();
     }
-
 }

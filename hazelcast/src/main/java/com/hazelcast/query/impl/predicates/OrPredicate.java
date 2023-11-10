@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,8 @@ package com.hazelcast.query.impl.predicates;
 
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.BinaryInterface;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
-import com.hazelcast.nio.serialization.impl.BinaryInterface;
 import com.hazelcast.query.IndexAwarePredicate;
 import com.hazelcast.query.Predicate;
 import com.hazelcast.query.VisitablePredicate;
@@ -30,12 +30,14 @@ import com.hazelcast.query.impl.QueryableEntry;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import static com.hazelcast.internal.serialization.impl.FactoryIdHelper.PREDICATE_DS_FACTORY_ID;
+import static com.hazelcast.query.impl.Indexes.SKIP_PARTITIONS_COUNT_CHECK;
 
 /**
  * Or Predicate
@@ -43,6 +45,8 @@ import static com.hazelcast.internal.serialization.impl.FactoryIdHelper.PREDICAT
 @BinaryInterface
 public final class OrPredicate
         implements IndexAwarePredicate, VisitablePredicate, NegatablePredicate, IdentifiedDataSerializable, CompoundPredicate {
+
+    private static final long serialVersionUID = 1L;
 
     protected Predicate[] predicates;
 
@@ -60,7 +64,14 @@ public final class OrPredicate
             if (predicate instanceof IndexAwarePredicate) {
                 IndexAwarePredicate iap = (IndexAwarePredicate) predicate;
                 if (iap.isIndexed(queryContext)) {
+                    // Avoid checking indexed partitions count twice to prevent
+                    // scenario when the owner partitions count changes concurrently and null
+                    // value from the filter method may indicate that the index is under
+                    // construction.
+                    int ownedPartitionsCount = queryContext.getOwnedPartitionCount();
+                    queryContext.setOwnedPartitionCount(SKIP_PARTITIONS_COUNT_CHECK);
                     Set<QueryableEntry> s = iap.filter(queryContext);
+                    queryContext.setOwnedPartitionCount(ownedPartitionsCount);
                     if (s != null) {
                         indexedResults.add(s);
                     }
@@ -191,5 +202,23 @@ public final class OrPredicate
         } else {
             throw new IllegalStateException("Cannot reset predicates in an OrPredicate after they have been already set.");
         }
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || !(o instanceof OrPredicate)) {
+            return false;
+        }
+
+        OrPredicate that = (OrPredicate) o;
+        return Arrays.equals(predicates, that.predicates);
+    }
+
+    @Override
+    public int hashCode() {
+        return Arrays.hashCode(predicates);
     }
 }

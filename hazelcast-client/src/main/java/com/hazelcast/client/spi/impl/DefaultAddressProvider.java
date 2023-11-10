@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,34 +18,37 @@ package com.hazelcast.client.spi.impl;
 
 import com.hazelcast.client.config.ClientNetworkConfig;
 import com.hazelcast.client.connection.AddressProvider;
+import com.hazelcast.client.connection.Addresses;
 import com.hazelcast.client.util.AddressHelper;
 
-import java.net.InetSocketAddress;
-import java.util.Collection;
-import java.util.LinkedList;
 import java.util.List;
 
 /**
  * Default address provider of Hazelcast.
- *
+ * <p>
  * Loads addresses from the Hazelcast configuration.
  */
 public class DefaultAddressProvider implements AddressProvider {
 
-    private ClientNetworkConfig networkConfig;
+    private final ClientNetworkConfig networkConfig;
 
     public DefaultAddressProvider(ClientNetworkConfig networkConfig) {
         this.networkConfig = networkConfig;
     }
 
     @Override
-    public Collection<InetSocketAddress> loadAddresses() {
-        final List<String> addresses = networkConfig.getAddresses();
-        final List<InetSocketAddress> socketAddresses = new LinkedList<InetSocketAddress>();
+    public Addresses loadAddresses() {
+        List<String> configuredAddresses = networkConfig.getAddresses();
 
-        for (String address : addresses) {
-            socketAddresses.addAll(AddressHelper.getSocketAddresses(address));
+        if (configuredAddresses.isEmpty()) {
+            configuredAddresses.add("127.0.0.1");
         }
-        return socketAddresses;
+
+        Addresses addresses = new Addresses();
+        for (String address : configuredAddresses) {
+            addresses.addAll(AddressHelper.getSocketAddresses(address));
+        }
+
+        return addresses;
     }
 }

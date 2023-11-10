@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,25 +18,28 @@ package com.hazelcast.internal.ascii.memcache;
 
 import com.hazelcast.internal.ascii.CommandParser;
 import com.hazelcast.internal.ascii.TextCommand;
-import com.hazelcast.nio.ascii.TextReadHandler;
+import com.hazelcast.nio.ascii.TextDecoder;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.StringTokenizer;
 
 public class GetCommandParser implements CommandParser {
 
     @Override
-    public TextCommand parser(TextReadHandler readHandler, String cmd, int space) {
+    public TextCommand parser(TextDecoder decoder, String cmd, int space) {
         String key = cmd.substring(space + 1);
         if (key.indexOf(' ') == -1) {
             GetCommand r = new GetCommand(key);
-            readHandler.publishRequest(r);
+            decoder.publishRequest(r);
         } else {
             StringTokenizer st = new StringTokenizer(key);
+            List<String> keys = new ArrayList<String>();
             while (st.hasMoreTokens()) {
-                PartialGetCommand r = new PartialGetCommand(st.nextToken());
-                readHandler.publishRequest(r);
+                String singleKey = st.nextToken();
+                keys.add(singleKey);
             }
-            readHandler.publishRequest(new EndCommand());
+            decoder.publishRequest(new BulkGetCommand(keys));
         }
         return null;
     }

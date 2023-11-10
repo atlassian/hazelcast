@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,9 @@ import com.hazelcast.spi.EventFilter;
 
 import java.io.IOException;
 
+/**
+ * Event filter which matches events for a specified entry key.
+ */
 public class EntryEventFilter implements EventFilter, IdentifiedDataSerializable {
 
     protected boolean includeValue;

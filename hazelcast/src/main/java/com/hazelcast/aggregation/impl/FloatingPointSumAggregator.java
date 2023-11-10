@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,14 @@
 package com.hazelcast.aggregation.impl;
 
 import com.hazelcast.aggregation.Aggregator;
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 
-import java.util.Map;
+import java.io.IOException;
 
-public class FloatingPointSumAggregator<K, V> extends AbstractAggregator<Double, K, V> {
+public final class FloatingPointSumAggregator<I> extends AbstractAggregator<I, Number, Double>
+        implements IdentifiedDataSerializable {
 
     private double sum;
 
@@ -33,9 +37,8 @@ public class FloatingPointSumAggregator<K, V> extends AbstractAggregator<Double,
     }
 
     @Override
-    public void accumulate(Map.Entry<K, V> entry) {
-        Number extractedValue = (Number) extract(entry);
-        sum += extractedValue.doubleValue();
+    public void accumulateExtracted(I entry, Number value) {
+        sum += value.doubleValue();
     }
 
     @Override
@@ -47,6 +50,28 @@ public class FloatingPointSumAggregator<K, V> extends AbstractAggregator<Double,
     @Override
     public Double aggregate() {
         return sum;
+    }
+
+    @Override
+    public int getFactoryId() {
+        return AggregatorDataSerializerHook.F_ID;
+    }
+
+    @Override
+    public int getId() {
+        return AggregatorDataSerializerHook.FLOATING_POINT_SUM;
+    }
+
+    @Override
+    public void writeData(ObjectDataOutput out) throws IOException {
+        out.writeUTF(attributePath);
+        out.writeDouble(sum);
+    }
+
+    @Override
+    public void readData(ObjectDataInput in) throws IOException {
+        this.attributePath = in.readUTF();
+        this.sum = in.readDouble();
     }
 
 }

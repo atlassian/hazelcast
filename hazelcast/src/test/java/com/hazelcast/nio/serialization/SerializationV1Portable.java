@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.nio.serialization;
 
 import com.hazelcast.nio.ObjectDataInput;
@@ -11,7 +27,7 @@ import java.util.Arrays;
  */
 public class SerializationV1Portable implements Portable {
 
-    static NamedPortable INNER_PORTABLE = new NamedPortable("name", 1);
+    static final NamedPortable INNER_PORTABLE = new NamedPortable("name", 1);
 
     byte aByte;
     boolean aBoolean;
@@ -37,10 +53,11 @@ public class SerializationV1Portable implements Portable {
     public SerializationV1Portable() {
     }
 
+    @SuppressWarnings("checkstyle:parameternumber")
     public SerializationV1Portable(byte aByte, boolean aBoolean, char character, short aShort, int integer, long aLong,
-                                   float aFloat, double aDouble, byte[] bytes, boolean[] booleans, char[] chars, short[] shorts, int[] ints,
-                                   long[] longs, float[] floats, double[] doubles, String string, String[] strings, NamedPortable innerPortable,
-                                   DataSerializable dataSerializable) {
+                                   float aFloat, double aDouble, byte[] bytes, boolean[] booleans, char[] chars, short[] shorts,
+                                   int[] ints, long[] longs, float[] floats, double[] doubles, String string, String[] strings,
+                                   NamedPortable innerPortable, DataSerializable dataSerializable) {
         this.aByte = aByte;
         this.aBoolean = aBoolean;
         this.character = character;
@@ -138,7 +155,7 @@ public class SerializationV1Portable implements Portable {
         ObjectDataInput rawDataInput = in.getRawDataInput();
         boolean isNotNull = rawDataInput.readBoolean();
         if (isNotNull) {
-            SerializationV1Dataserializable dataserializable = new SerializationV1Dataserializable();
+            SerializationV1DataSerializable dataserializable = new SerializationV1DataSerializable();
             dataserializable.readData(rawDataInput);
             this.dataSerializable = dataserializable;
         }
@@ -154,7 +171,6 @@ public class SerializationV1Portable implements Portable {
         }
 
         SerializationV1Portable that = (SerializationV1Portable) o;
-
         if (aByte != that.aByte) {
             return false;
         }
@@ -218,13 +234,40 @@ public class SerializationV1Portable implements Portable {
         return true;
     }
 
+    @Override
+    public int hashCode() {
+        int result;
+        long temp;
+        result = (int) aByte;
+        result = 31 * result + (aBoolean ? 1 : 0);
+        result = 31 * result + (int) character;
+        result = 31 * result + (int) aShort;
+        result = 31 * result + integer;
+        result = 31 * result + (int) (aLong ^ (aLong >>> 32));
+        result = 31 * result + (aFloat != +0.0f ? Float.floatToIntBits(aFloat) : 0);
+        temp = Double.doubleToLongBits(aDouble);
+        result = 31 * result + (int) (temp ^ (temp >>> 32));
+        result = 31 * result + Arrays.hashCode(bytes);
+        result = 31 * result + Arrays.hashCode(booleans);
+        result = 31 * result + Arrays.hashCode(chars);
+        result = 31 * result + Arrays.hashCode(shorts);
+        result = 31 * result + Arrays.hashCode(ints);
+        result = 31 * result + Arrays.hashCode(longs);
+        result = 31 * result + Arrays.hashCode(floats);
+        result = 31 * result + Arrays.hashCode(doubles);
+        result = 31 * result + (string != null ? string.hashCode() : 0);
+        result = 31 * result + Arrays.hashCode(strings);
+        result = 31 * result + (innerPortable != null ? innerPortable.hashCode() : 0);
+        result = 31 * result + (dataSerializable != null ? dataSerializable.hashCode() : 0);
+        return result;
+    }
+
     public static SerializationV1Portable createInstanceWithNonNullFields() {
-        SerializationV1Dataserializable dataserializable = SerializationV1Dataserializable.createInstanceWithNonNullFields();
-        return new SerializationV1Portable((byte) 99, true, 'c', (short) 11, 1234134, 1341431221l, 1.12312f, 432.424,
+        SerializationV1DataSerializable dataserializable = SerializationV1DataSerializable.createInstanceWithNonNullFields();
+        return new SerializationV1Portable((byte) 99, true, 'c', (short) 11, 1234134, 1341431221L, 1.12312f, 432.424,
                 new byte[]{(byte) 1, (byte) 2, (byte) 3}, new boolean[]{true, false, true}, new char[]{'a', 'b', 'c'},
                 new short[]{1, 2, 3}, new int[]{4, 2, 3}, new long[]{11, 2, 3}, new float[]{1.0f, 2.1f, 3.4f},
                 new double[]{11.1, 22.2, 33.3}, "the string text", new String[]{"item1", "item2", "item3"}, INNER_PORTABLE,
                 dataserializable);
     }
-
 }

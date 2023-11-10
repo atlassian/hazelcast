@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,14 +16,13 @@
 
 package com.hazelcast.client.spi;
 
-import com.hazelcast.client.connection.nio.ClientConnection;
 import com.hazelcast.client.spi.impl.ListenerMessageCodec;
 
 /**
  * Client service to add/remove remote listeners.
  *
  * For smart client, it registers local  listeners to all nodes in cluster.
- * For dummy client, it registers global listener to one node.
+ * For unisocket client, it registers global listener to one node.
  */
 public interface ClientListenerService {
 
@@ -31,9 +30,4 @@ public interface ClientListenerService {
 
     boolean deregisterListener(String registrationId);
 
-    /**
-     * Do the appropriate action based on connection to the cluster
-     * @param clientConnection The connection that the client is using for cluster connection.
-     */
-    void onClusterConnect(ClientConnection clientConnection);
 }

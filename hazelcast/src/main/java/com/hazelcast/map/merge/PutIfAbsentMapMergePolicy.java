@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,10 +24,8 @@ import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 
 import java.io.IOException;
 
-
 /**
- * PutIfAbsentMapMergePolicy causes the merging entry to be merged from source to destination map
- * if it does not exist in the destination map.
+ * Merges map entries from source to destination if they don't exist in the destination map.
  */
 public class PutIfAbsentMapMergePolicy implements MapMergePolicy, IdentifiedDataSerializable {
 

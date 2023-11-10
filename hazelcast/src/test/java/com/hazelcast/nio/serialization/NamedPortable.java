@@ -1,10 +1,23 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.nio.serialization;
 
 import java.io.IOException;
 
-/**
- * @author mdogan 22/05/14
- */
 public class NamedPortable implements Portable {
 
     String name;
@@ -18,15 +31,18 @@ public class NamedPortable implements Portable {
         this.k = k;
     }
 
+    @Override
     public int getClassId() {
         return TestSerializationConstants.NAMED_PORTABLE;
     }
 
+    @Override
     public void writePortable(PortableWriter writer) throws IOException {
         writer.writeUTF("name", name);
         writer.writeInt("myint", k);
     }
 
+    @Override
     public void readPortable(PortableReader reader) throws IOException {
         k = reader.readInt("myint");
         name = reader.readUTF("name");
@@ -34,14 +50,20 @@ public class NamedPortable implements Portable {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || !(o instanceof NamedPortable)) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || !(o instanceof NamedPortable)) {
+            return false;
+        }
 
         NamedPortable that = (NamedPortable) o;
-
-        if (k != that.k) return false;
-        if (name != null ? !name.equals(that.name) : that.name != null) return false;
-
+        if (k != that.k) {
+            return false;
+        }
+        if (name != null ? !name.equals(that.name) : that.name != null) {
+            return false;
+        }
         return true;
     }
 
@@ -52,6 +74,7 @@ public class NamedPortable implements Portable {
         return result;
     }
 
+    @Override
     public int getFactoryId() {
         return TestSerializationConstants.PORTABLE_FACTORY_ID;
     }

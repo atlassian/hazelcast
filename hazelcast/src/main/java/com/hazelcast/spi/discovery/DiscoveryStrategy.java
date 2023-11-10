@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -77,8 +77,8 @@ public interface DiscoveryStrategy {
 
     /**
      * Returns a map with discovered metadata provided by the runtime environment. Those information
-     * may include, but are not limited, to location information like datacenter, rack, host or additional
-     * tags to be used for custom purpose.
+     * may include, but are not limited, to location information like datacenter, rack, host,
+     * node name or additional tags to be used for custom purpose.
      * <p/>
      * Information discovered from this method are shaded into the {@link com.hazelcast.core.Member}s
      * attributes. Existing attributes will not be overridden, that way local attribute configuration

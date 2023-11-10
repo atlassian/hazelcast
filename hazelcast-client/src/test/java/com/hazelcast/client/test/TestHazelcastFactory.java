@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,36 +17,46 @@
 package com.hazelcast.client.test;
 
 import com.hazelcast.client.HazelcastClient;
+import com.hazelcast.client.config.ClientAliasedDiscoveryConfigUtils;
 import com.hazelcast.client.config.ClientConfig;
 import com.hazelcast.client.config.XmlClientConfigBuilder;
 import com.hazelcast.client.connection.AddressProvider;
-import com.hazelcast.client.impl.ClientConnectionManagerFactory;
-import com.hazelcast.client.impl.HazelcastClientInstanceImpl;
-import com.hazelcast.client.impl.HazelcastClientProxy;
+import com.hazelcast.client.connection.Addresses;
+import com.hazelcast.client.impl.clientside.HazelcastClientInstanceImpl;
+import com.hazelcast.client.impl.clientside.HazelcastClientProxy;
+import com.hazelcast.client.spi.properties.ClientProperty;
 import com.hazelcast.client.util.AddressHelper;
+import com.hazelcast.config.DiscoveryStrategyConfig;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.instance.OutOfMemoryErrorDispatcher;
 import com.hazelcast.nio.Address;
+import com.hazelcast.spi.properties.HazelcastProperties;
 import com.hazelcast.test.TestEnvironment;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
 
-import java.net.InetSocketAddress;
 import java.util.ArrayList;
-import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
+
+import static com.hazelcast.client.HazelcastClientUtil.getInstanceName;
 
 public class TestHazelcastFactory extends TestHazelcastInstanceFactory {
 
-    private static final AtomicInteger CLIENT_PORTS = new AtomicInteger(40000);
-
     private final boolean mockNetwork = TestEnvironment.isMockNetwork();
-    private final List<HazelcastClientInstanceImpl> clients = new ArrayList<HazelcastClientInstanceImpl>(10);
-    private final TestClientRegistry clientRegistry;
+    private final List<HazelcastClientInstanceImpl> clients = Collections
+            .synchronizedList(new ArrayList<HazelcastClientInstanceImpl>(10));
+    private final TestClientRegistry clientRegistry = new TestClientRegistry(getRegistry());
+
+    public TestHazelcastFactory(int initialPort, String... addresses) {
+        super(initialPort, addresses);
+    }
+
+    public TestHazelcastFactory(int count) {
+        super(count);
+    }
 
     public TestHazelcastFactory() {
-        super(0);
-        this.clientRegistry = new TestClientRegistry(getRegistry());
+        this(0);
     }
 
     public HazelcastInstance newHazelcastClient() {
@@ -62,44 +72,50 @@ public class TestHazelcastFactory extends TestHazelcastInstanceFactory {
             config = new XmlClientConfigBuilder().build();
         }
 
-        ClassLoader tccl = Thread.currentThread().getContextClassLoader();
-        HazelcastClientProxy proxy;
+        Thread currentThread = Thread.currentThread();
+        ClassLoader tccl = currentThread.getContextClassLoader();
         try {
             if (tccl == ClassLoader.getSystemClassLoader()) {
-                Thread.currentThread().setContextClassLoader(HazelcastClient.class.getClassLoader());
+                currentThread.setContextClassLoader(HazelcastClient.class.getClassLoader());
             }
-            ClientConnectionManagerFactory clientConnectionManagerFactory =
-                    clientRegistry.createClientServiceFactory("127.0.0.1", CLIENT_PORTS);
-            AddressProvider testAddressProvider = createAddressProvider(config);
-            HazelcastClientInstanceImpl client =
-                    new HazelcastClientInstanceImpl(config, clientConnectionManagerFactory, testAddressProvider);
+            HazelcastClientInstanceImpl client = new HazelcastClientInstanceImpl(getInstanceName(config), config,
+                    null, clientRegistry.createClientServiceFactory(), createAddressProvider(config));
             client.start();
             clients.add(client);
             OutOfMemoryErrorDispatcher.registerClient(client);
-            proxy = new HazelcastClientProxy(client);
+            return new HazelcastClientProxy(client);
         } finally {
-            Thread.currentThread().setContextClassLoader(tccl);
+            currentThread.setContextClassLoader(tccl);
         }
-        return proxy;
     }
 
     private AddressProvider createAddressProvider(ClientConfig config) {
+        boolean discoveryEnabled = new HazelcastProperties(config.getProperties())
+                .getBoolean(ClientProperty.DISCOVERY_SPI_ENABLED);
+
+        List<DiscoveryStrategyConfig> aliasedDiscoveryConfigs =
+                ClientAliasedDiscoveryConfigUtils.createDiscoveryStrategyConfigs(config);
+
         List<String> userConfiguredAddresses = config.getNetworkConfig().getAddresses();
-        if (!userConfiguredAddresses.contains("localhost")) {
-            // addresses are set explicitly, don't add more addresses
+
+        boolean isAtLeastAProviderConfigured = discoveryEnabled || !aliasedDiscoveryConfigs.isEmpty()
+                || !userConfiguredAddresses.isEmpty();
+
+        if (isAtLeastAProviderConfigured) {
+            // address providers or addresses are configured explicitly, don't add more addresses
             return null;
         }
 
         return new AddressProvider() {
             @Override
-            public Collection<InetSocketAddress> loadAddresses() {
-                Collection<InetSocketAddress> inetAddresses = new ArrayList<InetSocketAddress>();
+            public Addresses loadAddresses() {
+                Addresses possibleAddresses = new Addresses();
                 for (Address address : getKnownAddresses()) {
-                    Collection<InetSocketAddress> addresses = AddressHelper.getPossibleSocketAddresses(address.getPort(),
-                            address.getHost(), 3);
-                    inetAddresses.addAll(addresses);
+                    Addresses addresses = AddressHelper.getPossibleSocketAddresses(address.getPort(),
+                            address.getHost(), 1);
+                    possibleAddresses.addAll(addresses);
                 }
-                return inetAddresses;
+                return possibleAddresses;
             }
         };
     }

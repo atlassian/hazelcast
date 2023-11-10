@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,10 +25,6 @@ import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.UnexpectedRollbackException;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 
-/**
- * @leimer 8/14/12
- */
-
 @Component
 public class DummyTransactionManager implements PlatformTransactionManager {
 
@@ -38,11 +34,13 @@ public class DummyTransactionManager implements PlatformTransactionManager {
         return committed;
     }
 
+    @Override
     public TransactionStatus getTransaction(TransactionDefinition transactionDefinition) throws TransactionException {
         committed = false;
         return new SimpleTransactionStatus(true);
     }
 
+    @Override
     public void commit(TransactionStatus transactionStatus) throws TransactionException {
         if (committed) {
             throw new IllegalTransactionStateException("Transaction should not be committed at this stage!");
@@ -50,6 +48,7 @@ public class DummyTransactionManager implements PlatformTransactionManager {
         committed = true;
     }
 
+    @Override
     public void rollback(TransactionStatus transactionStatus) throws TransactionException {
         throw new UnexpectedRollbackException("We do not expect rollback!");
     }

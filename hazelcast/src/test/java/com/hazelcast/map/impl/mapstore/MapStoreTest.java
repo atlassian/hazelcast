@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,17 +36,16 @@ import com.hazelcast.map.impl.MapService;
 import com.hazelcast.map.impl.MapStoreWrapper;
 import com.hazelcast.map.impl.mapstore.writebehind.MapStoreWithCounter;
 import com.hazelcast.map.impl.proxy.MapProxyImpl;
-import com.hazelcast.map.listener.EntryAddedListener;
+import com.hazelcast.map.listener.EntryLoadedListener;
 import com.hazelcast.map.listener.EntryUpdatedListener;
 import com.hazelcast.monitor.LocalMapStats;
-import com.hazelcast.query.SampleObjects.Employee;
+import com.hazelcast.query.SampleTestObjects.Employee;
 import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
-import com.hazelcast.util.EmptyStatement;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -202,7 +201,7 @@ public class MapStoreTest extends AbstractMapStoreTest {
             final int index = i;
             assertTrueEventually(new AssertTask() {
                 @Override
-                public void run() throws Exception {
+                public void run() {
                     final Integer valueInMap = map.get(index);
                     final Integer valueInStore = (Integer) store.getStore().get(index);
 
@@ -266,7 +265,7 @@ public class MapStoreTest extends AbstractMapStoreTest {
     }
 
     @Test(timeout = 120000)
-    public void testInitialLoadModeEagerWhileStoppigOneNode() throws InterruptedException {
+    public void testInitialLoadModeEagerWhileStoppigOneNode() {
         final int instanceCount = 2;
         final int size = 10000;
         final TestHazelcastInstanceFactory nodeFactory = createHazelcastInstanceFactory(instanceCount);
@@ -302,7 +301,7 @@ public class MapStoreTest extends AbstractMapStoreTest {
     }
 
     @Test(timeout = 240000)
-    public void testMapInitialLoad() throws InterruptedException {
+    public void testMapInitialLoad() {
         int size = 10000;
         String mapName = randomMapName();
         TestHazelcastInstanceFactory nodeFactory = createHazelcastInstanceFactory(3);
@@ -454,7 +453,7 @@ public class MapStoreTest extends AbstractMapStoreTest {
     }
 
     @Test(timeout = 120000)
-    public void testOneMemberFlush() throws Exception {
+    public void testOneMemberFlush() {
         TestMapStore testMapStore = new TestMapStore(1, 1, 1);
         testMapStore.setLoadAllKeys(false);
         int size = 100;
@@ -485,7 +484,7 @@ public class MapStoreTest extends AbstractMapStoreTest {
     }
 
     @Test(timeout = 120000)
-    public void testOneMemberFlushOnShutdown() throws Exception {
+    public void testOneMemberFlushOnShutdown() {
         TestMapStore testMapStore = new TestMapStore(1, 1, 1);
         testMapStore.setLoadAllKeys(false);
         Config config = newConfig(testMapStore, 200);
@@ -504,7 +503,7 @@ public class MapStoreTest extends AbstractMapStoreTest {
     }
 
     @Test(timeout = 120000)
-    public void testGetAllKeys() throws Exception {
+    public void testGetAllKeys() {
         EventBasedMapStore<Integer, String> testMapStore = new EventBasedMapStore<Integer, String>();
         Map<Integer, String> store = testMapStore.getStore();
         int size = 1000;
@@ -552,9 +551,9 @@ public class MapStoreTest extends AbstractMapStoreTest {
 
     /*
      * Test for Issue 572
-    */
+     */
     @Test(timeout = 120000)
-    public void testMapstoreDeleteOnClear() throws Exception {
+    public void testMapstoreDeleteOnClear() {
         Config config = getConfig();
         SimpleMapStore store = new SimpleMapStore();
         config.getMapConfig("testMapstoreDeleteOnClear").setMapStoreConfig(new MapStoreConfig().setEnabled(true).setImplementation(store));
@@ -645,7 +644,7 @@ public class MapStoreTest extends AbstractMapStoreTest {
     }
 
     @Test(timeout = 120000)
-    public void testIssue1019() throws InterruptedException {
+    public void testIssue1019() {
         final String keyWithNullValue = "keyWithNullValue";
 
         EventBasedMapStore<String, Integer> testMapStore = new EventBasedMapStore<String, Integer>() {
@@ -685,7 +684,7 @@ public class MapStoreTest extends AbstractMapStoreTest {
     }
 
     @Test(timeout = 120000)
-    public void testIssue1115EnablingMapstoreMutatingValue() throws InterruptedException {
+    public void testIssue1115EnablingMapstoreMutatingValue() {
         Config config = getConfig();
         String mapName = "testIssue1115";
         MapStore mapStore = new ProcessingStore();
@@ -751,7 +750,7 @@ public class MapStoreTest extends AbstractMapStoreTest {
      * Test for issue https://github.com/hazelcast/hazelcast/issues/1110
      */
     @Test(timeout = 300000)
-    public void testMapLoader_withMapLoadChunkSize() throws InterruptedException {
+    public void testMapLoader_withMapLoadChunkSize() {
         final int chunkSize = 5;
         final int numberOfEntriesToLoad = 100;
         final String mapName = randomString();
@@ -766,9 +765,9 @@ public class MapStoreTest extends AbstractMapStoreTest {
         IMap map = node.getMap(mapName);
 
         final CountDownLatch latch = new CountDownLatch(numberOfEntriesToLoad);
-        map.addEntryListener(new EntryAddedListener<Object, Object>() {
+        map.addEntryListener(new EntryLoadedListener<Object, Object>() {
             @Override
-            public void entryAdded(EntryEvent<Object, Object> event) {
+            public void entryLoaded(EntryEvent<Object, Object> event) {
                 latch.countDown();
             }
         }, true);
@@ -845,7 +844,7 @@ public class MapStoreTest extends AbstractMapStoreTest {
     }
 
     @Test(timeout = 120000)
-    public void testReadingConfiguration() throws Exception {
+    public void testReadingConfiguration() {
         String mapName = "mapstore-test";
         InputStream is = getClass().getResourceAsStream("/com/hazelcast/config/hazelcast-mapstore-config.xml");
         XmlConfigBuilder builder = new XmlConfigBuilder(is);
@@ -883,7 +882,7 @@ public class MapStoreTest extends AbstractMapStoreTest {
     }
 
     @Test(timeout = 120000)
-    public void testMapStoreNotCalledFromEntryProcessorBackup() throws Exception {
+    public void testMapStoreNotCalledFromEntryProcessorBackup() {
         final String mapName = "testMapStoreNotCalledFromEntryProcessorBackup_" + randomString();
         final int instanceCount = 2;
         Config config = getConfig();
@@ -928,14 +927,14 @@ public class MapStoreTest extends AbstractMapStoreTest {
         assertWriteBehindQueuesEmpty(mapName, singletonList(hzInstance));
         assertTrueEventually(new AssertTask() {
             @Override
-            public void run() throws Exception {
+            public void run() {
                 assertEquals(0, store.store.size());
             }
         });
     }
 
     @Test
-    public void testEntryProcessor_calls_load_only_one_time_per_key() throws Exception {
+    public void testEntryProcessor_calls_load_only_one_time_per_key() {
         Config config = getConfig();
         // configure map with one backup and dummy map store
         MapConfig mapConfig = config.getMapConfig("default");
@@ -987,7 +986,7 @@ public class MapStoreTest extends AbstractMapStoreTest {
         // expect oldValue equals 1
         assertTrueEventually(new AssertTask() {
             @Override
-            public void run() throws Exception {
+            public void run() {
                 Integer value = oldValue.get();
                 assertNotNull(value);
                 assertEquals(1, value.intValue());
@@ -1173,9 +1172,8 @@ public class MapStoreTest extends AbstractMapStoreTest {
         }
 
         /**
-         * @return  monotonically increasing timestamp of last store() or storeAll() method calls.
-         *          Timestamp is obtained via {@link System#nanoTime()}
-         *
+         * @return monotonically increasing timestamp of last store() or storeAll() method calls.
+         * Timestamp is obtained via {@link System#nanoTime()}
          */
         public long getLastStoreNanos() {
             return lastStoreTimestamp.get();
@@ -1339,7 +1337,7 @@ public class MapStoreTest extends AbstractMapStoreTest {
                 try {
                     Thread.sleep(sleepStoreAllSeconds * 1000);
                 } catch (InterruptedException e) {
-                    EmptyStatement.ignore(e);
+                    ignore(e);
                 }
             }
             for (Object ignored : map.keySet()) {

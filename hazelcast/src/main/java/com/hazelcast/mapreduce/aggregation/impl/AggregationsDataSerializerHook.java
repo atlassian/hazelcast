@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,10 +29,7 @@ import static com.hazelcast.internal.serialization.impl.FactoryIdHelper.AGGREGAT
 /**
  * This class contains all the ID hooks for IdentifiedDataSerializable classes used for aggregations.
  */
-//Deactivated all checkstyle rules because those classes will never comply
-//CHECKSTYLE:OFF
-public class AggregationsDataSerializerHook
-        implements DataSerializerHook {
+public class AggregationsDataSerializerHook implements DataSerializerHook {
 
     public static final int F_ID = FactoryIdHelper.getFactoryId(AGGREGATIONS_DS_FACTORY, AGGREGATIONS_DS_FACTORY_ID);
 

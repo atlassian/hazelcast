@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,10 +20,14 @@ import com.hazelcast.cluster.MemberAttributeOperationType;
 import com.hazelcast.core.Cluster;
 import com.hazelcast.core.MemberAttributeEvent;
 import com.hazelcast.instance.MemberImpl;
+import com.hazelcast.nio.serialization.SerializableByConvention;
+
+import static com.hazelcast.nio.serialization.SerializableByConvention.Reason.PUBLIC_API;
 
 /**
  * This service event is fired to inform services about a change in a member's attributes collection
  */
+@SerializableByConvention(PUBLIC_API)
 public class MemberAttributeServiceEvent extends MemberAttributeEvent {
 
     public MemberAttributeServiceEvent() {

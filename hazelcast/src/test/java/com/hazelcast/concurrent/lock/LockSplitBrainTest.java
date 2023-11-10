@@ -1,130 +1,66 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.concurrent.lock;
 
-import com.hazelcast.config.Config;
-import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.ILock;
-import com.hazelcast.core.LifecycleEvent;
-import com.hazelcast.core.LifecycleListener;
-import com.hazelcast.core.MemberAttributeEvent;
-import com.hazelcast.core.MembershipEvent;
-import com.hazelcast.core.MembershipListener;
-import com.hazelcast.instance.HazelcastInstanceFactory;
-import com.hazelcast.spi.properties.GroupProperty;
-import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastSerialClassRunner;
-import com.hazelcast.test.HazelcastTestSupport;
-import com.hazelcast.test.annotation.NightlyTest;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import com.hazelcast.test.SplitBrainTestSupport;
+import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.QuickTest;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
-
-import java.io.IOException;
-import java.util.concurrent.CountDownLatch;
 
 import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastSerialClassRunner.class)
-@Category(NightlyTest.class)
-public class LockSplitBrainTest extends HazelcastTestSupport {
+@Category({QuickTest.class, ParallelTest.class})
+public class LockSplitBrainTest extends SplitBrainTestSupport {
 
-    @Before
-    @After
-    public void killAllHazelcastInstances() throws IOException {
-        HazelcastInstanceFactory.shutdownAll();
-    }
+    private String key;
 
-    @Test
-    public void testLockSplitBrain_acquireSameLock() throws InterruptedException {
-        Config config = newConfig();
-        HazelcastInstance h1 = Hazelcast.newHazelcastInstance(config);
-        HazelcastInstance h2 = Hazelcast.newHazelcastInstance(config);
-        final HazelcastInstance h3 = Hazelcast.newHazelcastInstance(config);
-        final String key = generateKeyOwnedBy(h3);
-        ILock lock = h3.getLock(key);
+    @Override
+    protected void onBeforeSplitBrainCreated(HazelcastInstance[] instances) {
+        warmUpPartitions(instances);
+
+        HazelcastInstance lastInstance = instances[instances.length - 1];
+        key = generateKeyOwnedBy(lastInstance);
+
+        ILock lock = lastInstance.getLock(key);
         lock.lock();
 
-        TestMemberShipListener memberShipListener = new TestMemberShipListener(2);
-        h3.getCluster().addMembershipListener(memberShipListener);
-        TestLifeCycleListener lifeCycleListener = new TestLifeCycleListener(1);
-        h3.getLifecycleService().addLifecycleListener(lifeCycleListener);
-
-        assertTrueEventually(new AssertTask() {
-            @Override
-            public void run() throws Exception {
-                assertTrue(h3.getPartitionService().isLocalMemberSafe());
-            }
-        });
-
-        closeConnectionBetween(h1, h3);
-        closeConnectionBetween(h2, h3);
-
-        assertOpenEventually(memberShipListener.latch);
-        assertClusterSizeEventually(2, h1);
-        assertClusterSizeEventually(2, h2);
-        assertClusterSizeEventually(1, h3);
-
-        ILock h1Lock = h1.getLock(key);
-        h1Lock.lock();
-
-        lock.forceUnlock();
-
-        assertOpenEventually(lifeCycleListener.latch);
-        assertClusterSizeEventually(3, h1);
-        assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
-
-        ILock testLock = h3.getLock(key);
-        assertTrue(testLock.isLocked());
+        waitAllForSafeState(instances);
     }
 
+    @Override
+    protected void onAfterSplitBrainCreated(HazelcastInstance[] firstBrain, HazelcastInstance[] secondBrain) {
+        // acquire lock on 1st brain
+        firstBrain[0].getLock(key).lock();
 
-    private Config newConfig() {
-        Config config = new Config();
-        config.setProperty(GroupProperty.MERGE_FIRST_RUN_DELAY_SECONDS.getName(), "3");
-        config.setProperty(GroupProperty.MERGE_NEXT_RUN_DELAY_SECONDS.getName(), "1");
-        return config;
+        // release lock on 2nd brain
+        secondBrain[0].getLock(key).forceUnlock();
     }
 
-    private class TestLifeCycleListener implements LifecycleListener {
-
-        CountDownLatch latch;
-
-        TestLifeCycleListener(int countdown) {
-            latch = new CountDownLatch(countdown);
-        }
-
-        @Override
-        public void stateChanged(LifecycleEvent event) {
-            if (event.getState() == LifecycleEvent.LifecycleState.MERGED) {
-                latch.countDown();
-            }
-        }
-    }
-
-    private class TestMemberShipListener implements MembershipListener {
-
-        final CountDownLatch latch;
-
-        TestMemberShipListener(int countdown) {
-            latch = new CountDownLatch(countdown);
-        }
-
-        @Override
-        public void memberAdded(MembershipEvent membershipEvent) {
-
-        }
-
-        @Override
-        public void memberRemoved(MembershipEvent membershipEvent) {
-            latch.countDown();
-        }
-
-        @Override
-        public void memberAttributeChanged(MemberAttributeEvent memberAttributeEvent) {
-
+    @Override
+    protected void onAfterSplitBrainHealed(HazelcastInstance[] instances) {
+        // all instances observe lock as acquired
+        for (HazelcastInstance instance : instances) {
+            ILock lock = instance.getLock(key);
+            assertTrue(lock.isLocked());
         }
     }
 }

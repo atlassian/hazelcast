@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,6 +47,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -55,6 +56,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.hazelcast.transaction.impl.xa.XAService.SERVICE_NAME;
+import static java.lang.Thread.currentThread;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 
 /**
@@ -63,7 +65,6 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
 public final class XAResourceImpl extends AbstractDistributedObject<XAService> implements HazelcastXAResource {
 
     private static final int DEFAULT_TIMEOUT_SECONDS = (int) MILLISECONDS.toSeconds(TransactionOptions.DEFAULT_TIMEOUT_MILLIS);
-
 
     private final ConcurrentMap<Long, TransactionContext> threadContextMap = new ConcurrentHashMap<Long, TransactionContext>();
     private final ConcurrentMap<Xid, List<TransactionContext>> xidContextMap
@@ -107,7 +108,7 @@ public final class XAResourceImpl extends AbstractDistributedObject<XAService> i
                 }
                 break;
             default:
-                throw new XAException("Unknown flag!!! " + flags);
+                throw new XAException("Unknown flag! " + flags);
         }
     }
 
@@ -249,8 +250,7 @@ public final class XAResourceImpl extends AbstractDistributedObject<XAService> i
             InternalCompletableFuture<SerializableList> future = operationService.invokeOnTarget(SERVICE_NAME, op, address);
             futureList.add(future);
         }
-        HashSet<SerializableXID> xids = new HashSet<SerializableXID>();
-        xids.addAll(xaService.getPreparedXids());
+        Set<SerializableXID> xids = new HashSet<SerializableXID>(xaService.getPreparedXids());
 
         for (Future<SerializableList> future : futureList) {
             try {
@@ -260,6 +260,7 @@ public final class XAResourceImpl extends AbstractDistributedObject<XAService> i
                     xids.add(xid);
                 }
             } catch (InterruptedException e) {
+                currentThread().interrupt();
                 throw new XAException(XAException.XAER_RMERR);
             } catch (MemberLeftException e) {
                 logger.warning("Member left while recovering", e);
@@ -272,7 +273,7 @@ public final class XAResourceImpl extends AbstractDistributedObject<XAService> i
                 }
             }
         }
-        return xids.toArray(new SerializableXID[xids.size()]);
+        return xids.toArray(new SerializableXID[0]);
     }
 
     @Override
@@ -301,7 +302,7 @@ public final class XAResourceImpl extends AbstractDistributedObject<XAService> i
         long threadId = Thread.currentThread().getId();
         TransactionContext transactionContext = threadContextMap.get(threadId);
         if (transactionContext == null) {
-            throw new IllegalStateException("No TransactionContext associated with current thread :" + threadId);
+            throw new IllegalStateException("No TransactionContext associated with current thread: " + threadId);
         }
         return transactionContext;
     }

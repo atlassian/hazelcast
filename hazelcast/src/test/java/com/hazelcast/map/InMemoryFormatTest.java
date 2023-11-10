@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,8 @@ import com.hazelcast.config.MapConfig;
 import com.hazelcast.config.NearCacheConfig;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
+import com.hazelcast.core.PartitionService;
+import com.hazelcast.monitor.impl.MemberPartitionStateImpl;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.DataSerializable;
@@ -36,6 +38,7 @@ import org.junit.runner.RunWith;
 
 import java.io.IOException;
 import java.io.Serializable;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -64,7 +67,7 @@ public class InMemoryFormatTest extends HazelcastTestSupport {
         final SerializationValue serializationValue = new SerializationValue();
         map.put("key", serializationValue);
 
-        //EntryProcessor should not trigger de-serialization
+        // EntryProcessor should not trigger de-serialization
         map.executeOnKey("key", new AbstractEntryProcessor<String, SerializationValue>() {
             @Override
             public Object process(final Map.Entry<String, SerializationValue> entry) {
@@ -130,11 +133,47 @@ public class InMemoryFormatTest extends HazelcastTestSupport {
         assertTrue(objectMap2.containsValue(v1));
     }
 
+    @Test
+    public void countDeserializationsOnContainsValue() {
+        final Config config = new Config()
+                .addMapConfig(new MapConfig("default").setInMemoryFormat(InMemoryFormat.OBJECT));
+        final HazelcastInstance hz = createHazelcastInstance(config);
+        final PartitionService partitionService = hz.getPartitionService();
+        final IMap<Integer, Object> m = hz.getMap("mappy");
+        final HashSet<Integer> nonEmptyPartitions = new HashSet<Integer>();
+
+        for (int i = 0; i < MemberPartitionStateImpl.DEFAULT_PARTITION_COUNT * 5; i++) {
+            m.put(i, i);
+            nonEmptyPartitions.add(partitionService.getPartition(i).getPartitionId());
+        }
+
+        final SerializationCounting value = new SerializationCounting();
+        m.containsValue(value);
+
+        assertEquals(nonEmptyPartitions.size(), SerializationCounting.deserializationCount.get());
+    }
+
+    public static class SerializationCounting implements DataSerializable {
+        public static AtomicInteger serializationCount = new AtomicInteger();
+        public static AtomicInteger deserializationCount = new AtomicInteger();
+
+        @Override
+        public void writeData(ObjectDataOutput out) throws IOException {
+            serializationCount.incrementAndGet();
+        }
+
+        @Override
+        public void readData(ObjectDataInput in) throws IOException {
+            deserializationCount.incrementAndGet();
+        }
+    }
+
     public static final class Pair implements Serializable {
+
         private final String significant;
         private final String insignificant;
 
-        public Pair(String significant, String insignificant) {
+        Pair(String significant, String insignificant) {
             this.significant = significant;
             this.insignificant = insignificant;
         }
@@ -159,7 +198,7 @@ public class InMemoryFormatTest extends HazelcastTestSupport {
 
     public static class SerializationValue implements DataSerializable {
 
-        public static AtomicInteger deSerializeCount = new AtomicInteger();
+        static AtomicInteger deSerializeCount = new AtomicInteger();
 
         public SerializationValue() {
         }
@@ -182,7 +221,6 @@ public class InMemoryFormatTest extends HazelcastTestSupport {
         HazelcastInstance member = createHazelcastInstance(config);
         member.getMap("default");
     }
-
 
     @Test(expected = IllegalArgumentException.class)
     public void testNativeNearCache_throwsException() throws Exception {

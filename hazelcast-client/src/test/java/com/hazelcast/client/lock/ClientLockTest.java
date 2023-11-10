@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
+import com.hazelcast.util.ExceptionUtil;
 import org.junit.After;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -64,25 +65,25 @@ public class ClientLockTest extends HazelcastTestSupport {
                 }
             }
         }.start();
-        assertTrue(latch.await(5, TimeUnit.SECONDS));
+        assertOpenEventually(latch);
         lock.forceUnlock();
     }
 
     @Test
-    public void testLockTtl() throws Exception {
+    public void testTryLockShouldSucceedWhenLockTTLisFinished() throws Exception {
         factory.newHazelcastInstance();
         HazelcastInstance hz = factory.newHazelcastClient();
         final ILock lock = hz.getLock(randomName());
+        final int lockTimeout = 3;
 
-        lock.lock(3, TimeUnit.SECONDS);
-        final CountDownLatch latch = new CountDownLatch(2);
+        lock.lock(lockTimeout, TimeUnit.SECONDS);
+
+        final CountDownLatch latch = new CountDownLatch(1);
         new Thread() {
             public void run() {
-                if (!lock.tryLock()) {
-                    latch.countDown();
-                }
                 try {
-                    if (lock.tryLock(5, TimeUnit.SECONDS)) {
+                    // Allow half the ASSERT_TRUE_EVENTUALLY_TIMEOUT for any possible gc and other pauses
+                    if (lock.tryLock(lockTimeout + ASSERT_TRUE_EVENTUALLY_TIMEOUT / 2, TimeUnit.SECONDS)) {
                         latch.countDown();
                     }
                 } catch (InterruptedException e) {
@@ -90,8 +91,8 @@ public class ClientLockTest extends HazelcastTestSupport {
                 }
             }
         }.start();
-        assertTrue(latch.await(10, TimeUnit.SECONDS));
-        lock.forceUnlock();
+
+        assertOpenEventually(latch);
     }
 
     @Test
@@ -322,6 +323,44 @@ public class ClientLockTest extends HazelcastTestSupport {
 
         final long ttl = 0;
         lock.lock(ttl, TimeUnit.MILLISECONDS);
+    }
+
+    @Test
+    public void testLockLease_withStringPartitionAwareName() throws Exception {
+        factory.newHazelcastInstance();
+        HazelcastInstance hz = factory.newHazelcastClient();
+        final ILock lock = hz.getLock(randomName() + "@hazelcast");
+
+        spawn(new Runnable() {
+            @Override
+            public void run() {
+                lock.lock(5, TimeUnit.SECONDS);
+            }
+        }).get();
+
+        assertTrue("Lock should have been released after lease expires", lock.tryLock(2, TimeUnit.MINUTES));
+    }
+
+    @Test
+    public void testTryLockLease_withStringPartitionAwareName() throws Exception {
+        factory.newHazelcastInstance();
+        HazelcastInstance hz = factory.newHazelcastClient();
+        final ILock lock = hz.getLock(randomName() + "@hazelcast");
+
+        spawn(new Runnable() {
+            @Override
+            public void run() {
+                long timeout = 10;
+                long lease = 5;
+                try {
+                    assertTrue(lock.tryLock(timeout, TimeUnit.SECONDS, lease, TimeUnit.SECONDS));
+                } catch (InterruptedException e) {
+                    throw ExceptionUtil.rethrow(e);
+                }
+            }
+        }).get();
+
+        assertTrue("Lock should have been released after lease expires", lock.tryLock(2, TimeUnit.MINUTES));
     }
 
 }

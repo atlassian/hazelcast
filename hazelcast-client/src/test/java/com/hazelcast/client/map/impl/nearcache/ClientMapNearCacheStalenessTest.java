@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,18 @@
 
 package com.hazelcast.client.map.impl.nearcache;
 
-import com.hazelcast.client.HazelcastClient;
 import com.hazelcast.client.config.ClientConfig;
 import com.hazelcast.client.proxy.NearCachedClientMapProxy;
+import com.hazelcast.client.test.TestHazelcastFactory;
+import com.hazelcast.config.Config;
 import com.hazelcast.config.NearCacheConfig;
-import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
+import com.hazelcast.map.impl.nearcache.MapNearCacheStalenessTest;
+import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
+import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.After;
 import org.junit.Before;
@@ -33,138 +36,116 @@ import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static com.hazelcast.util.RandomPicker.getInt;
+import static com.hazelcast.internal.nearcache.NearCacheTestUtils.getBaseConfig;
+import static com.hazelcast.internal.nearcache.impl.invalidation.RepairingTask.MAX_TOLERATED_MISS_COUNT;
+import static com.hazelcast.map.impl.nearcache.MapNearCacheStalenessTest.getAllEntries;
+import static com.hazelcast.spi.properties.GroupProperty.MAP_INVALIDATION_MESSAGE_BATCH_FREQUENCY_SECONDS;
 import static org.junit.Assert.assertEquals;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class})
+@Category({QuickTest.class, ParallelTest.class})
 public class ClientMapNearCacheStalenessTest extends HazelcastTestSupport {
 
-    private final int ENTRY_COUNT = 10;
-    private final int NEAR_CACHE_INVALIDATOR_THREAD_COUNT = 1;
-    private final int NEAR_CACHE_PUTTER_THREAD_COUNT = 10;
-    private final String MAP_NAME = randomMapName();
-    private final AtomicBoolean stop = new AtomicBoolean(false);
+    private static final int ENTRY_COUNT = 10;
+    private static final int NEAR_CACHE_INVALIDATOR_THREAD_COUNT = 3;
+    private static final int NEAR_CACHE_PUTTER_THREAD_COUNT = 10;
+    private static final int NEAR_CACHE_REMOVER_THREAD_COUNT = 3;
 
-    private HazelcastInstance member;
-    private HazelcastInstance client;
+    private final AtomicBoolean stop = new AtomicBoolean(false);
 
     private IMap<Integer, Integer> clientMap;
     private IMap<Integer, Integer> memberMap;
 
+    protected TestHazelcastFactory hazelcastFactory = new TestHazelcastFactory();
+
     @Before
     public void setUp() {
-        ClientConfig clientConfig = getClientConfig(MAP_NAME);
+        String mapName = randomMapName();
 
-        member = Hazelcast.newHazelcastInstance();
-        client = HazelcastClient.newHazelcastClient(clientConfig);
+        Config config = getConfig();
+        ClientConfig clientConfig = getClientConfig(mapName);
 
-        memberMap = member.getMap(MAP_NAME);
-        clientMap = client.getMap(MAP_NAME);
-    }
+        HazelcastInstance member = hazelcastFactory.newHazelcastInstance(config);
+        HazelcastInstance client = hazelcastFactory.newHazelcastClient(clientConfig);
 
-    protected ClientConfig getClientConfig(String mapName) {
-        NearCacheConfig nearCacheConfig = getNearCacheConfig(mapName);
-
-        ClientConfig clientConfig = new ClientConfig();
-        clientConfig.addNearCacheConfig(nearCacheConfig);
-        return clientConfig;
-    }
-
-    private NearCacheConfig getNearCacheConfig(String mapName) {
-        NearCacheConfig nearCacheConfig = new NearCacheConfig(mapName);
-        nearCacheConfig.setInvalidateOnChange(true);
-        return nearCacheConfig;
+        memberMap = member.getMap(mapName);
+        clientMap = client.getMap(mapName);
     }
 
     @After
-    public void tearDown() {
-        client.shutdown();
-        member.shutdown();
+    public void cleanup() {
+        hazelcastFactory.terminateAll();
     }
 
     @Test
-    public void testNearCache_notContainsStaleValue_whenUpdatedByMultipleThreads() throws Exception {
+    public void testNearCache_notContainsStaleValue_whenUpdatedByMultipleThreads() {
         List<Thread> threads = new ArrayList<Thread>();
-
         for (int i = 0; i < NEAR_CACHE_INVALIDATOR_THREAD_COUNT; i++) {
-            Thread putter = new NearCacheInvalidator();
+            Thread putter = new MapNearCacheStalenessTest.NearCacheInvalidator(stop, memberMap, ENTRY_COUNT);
             threads.add(putter);
         }
-
         for (int i = 0; i < NEAR_CACHE_PUTTER_THREAD_COUNT; i++) {
-            Thread getter = new NearCachePutter();
+            Thread getter = new MapNearCacheStalenessTest.NearCachePutter(stop, clientMap, ENTRY_COUNT);
             threads.add(getter);
         }
-
+        for (int i = 0; i < NEAR_CACHE_REMOVER_THREAD_COUNT; i++) {
+            Thread remover = new MapNearCacheStalenessTest.NearCacheRemover(stop, clientMap, ENTRY_COUNT);
+            threads.add(remover);
+        }
         for (Thread thread : threads) {
             thread.start();
         }
 
         sleepSeconds(5);
-
         stop.set(true);
-
         for (Thread thread : threads) {
-            thread.join();
+            assertJoinable(thread);
         }
 
-        // give some-time to receive possible latest invalidation events
-        sleepSeconds(5);
-
-        assertNoStaleDataExistInNearCache(clientMap);
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run() {
+                assertNoStaleDataExistInNearCache(clientMap);
+            }
+        });
     }
 
-    private void assertNoStaleDataExistInNearCache(IMap<Integer, Integer> map) {
+    @Override
+    protected Config getConfig() {
+        return getBaseConfig()
+                .setProperty(MAP_INVALIDATION_MESSAGE_BATCH_FREQUENCY_SECONDS.getName(), "2");
+    }
+
+    protected ClientConfig getClientConfig(String mapName) {
+        NearCacheConfig nearCacheConfig = getNearCacheConfig(mapName);
+
+        return new ClientConfig()
+                .setProperty(MAX_TOLERATED_MISS_COUNT.getName(), "0")
+                .addNearCacheConfig(nearCacheConfig);
+    }
+
+    protected NearCacheConfig getNearCacheConfig(String mapName) {
+        return new NearCacheConfig(mapName)
+                .setInvalidateOnChange(true);
+    }
+
+    private static void assertNoStaleDataExistInNearCache(IMap<Integer, Integer> map) {
         // 1. get all entries when Near Cache is full, so some values will come from Near Cache
-        Map<Integer, Integer> fromNearCache = getAllEntries(map);
+        Map<Integer, Integer> fromNearCache = getAllEntries(map, ENTRY_COUNT);
 
         // 2. clear the Near Cache
         ((NearCachedClientMapProxy) map).getNearCache().clear();
 
         // 3. get all values when Near Cache is empty,
         // these requests will go directly to underlying IMap because Near Cache is empty
-        Map<Integer, Integer> fromIMap = getAllEntries(map);
+        Map<Integer, Integer> fromIMap = getAllEntries(map, ENTRY_COUNT);
 
         for (int i = 0; i < ENTRY_COUNT; i++) {
             assertEquals(fromIMap.get(i), fromNearCache.get(i));
-        }
-    }
-
-    private HashMap<Integer, Integer> getAllEntries(IMap<Integer, Integer> iMap) {
-        HashMap<Integer, Integer> localMap = new HashMap<Integer, Integer>(ENTRY_COUNT);
-        for (int i = 0; i < ENTRY_COUNT; i++) {
-            localMap.put(i, iMap.get(i));
-        }
-        return localMap;
-    }
-
-    private class NearCacheInvalidator extends Thread {
-
-        @Override
-        public void run() {
-            while (!stop.get()) {
-                for (int i = 0; i < ENTRY_COUNT; i++) {
-                    memberMap.put(i, getInt(ENTRY_COUNT));
-                }
-            }
-        }
-    }
-
-    private class NearCachePutter extends Thread {
-
-        @Override
-        public void run() {
-            while (!stop.get()) {
-                for (int i = 0; i < ENTRY_COUNT; i++) {
-                    clientMap.get(i);
-                }
-            }
         }
     }
 }

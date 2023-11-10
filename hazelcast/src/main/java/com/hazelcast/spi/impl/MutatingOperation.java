@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,16 @@
 
 package com.hazelcast.spi.impl;
 
-import com.hazelcast.spi.annotation.Beta;
-
 /**
- * Marker interface for operations that changes map state/data.
- * Used for quorum to reject operations if quorum size not satisfied
+ * Marker interface for operations that change state/data.
+ * Used for quorum to reject operations if the quorum size not satisfied.
+ * <p>
+ * Operations implementing {@link com.hazelcast.spi.BackupOperation} should
+ * not be marked with this interface.
+ *
+ * @see com.hazelcast.config.QuorumConfig
+ * @see QuorumCheckAwareOperation
+ * @see com.hazelcast.spi.ReadonlyOperation
  */
-@Beta
 public interface MutatingOperation {
 }

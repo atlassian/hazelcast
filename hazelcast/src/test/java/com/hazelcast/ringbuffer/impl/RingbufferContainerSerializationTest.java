@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.ringbuffer.impl;
 
 import com.hazelcast.config.InMemoryFormat;
@@ -82,8 +98,7 @@ public class RingbufferContainerSerializationTest extends HazelcastTestSupport {
                 .setInMemoryFormat(inMemoryFormat)
                 .setTimeToLiveSeconds(ttlSeconds);
 
-        final RingbufferContainer rbContainer = new RingbufferContainer(config.getName(), config,
-                nodeEngine.getSerializationService(), nodeEngine.getConfigClassLoader());
+        final RingbufferContainer rbContainer = getRingbufferContainer(config);
         testSerialization(rbContainer);
 
         for (int k = 0; k < config.getCapacity() * 2; k++) {
@@ -94,7 +109,7 @@ public class RingbufferContainerSerializationTest extends HazelcastTestSupport {
         // now we are going to force the head to move
         final ArrayRingbuffer ringbuffer = (ArrayRingbuffer) rbContainer.getRingbuffer();
         for (int k = 0; k < config.getCapacity() / 2; k++) {
-            ringbuffer.ringItems[k] = null;
+            ringbuffer.getItems()[k] = null;
             if (ttlSeconds != 0) {
                 // we need to set the expiration slot to 0, because it won't be serialized (optimization)
                 // serialization will only dump what is between head and tail
@@ -103,6 +118,11 @@ public class RingbufferContainerSerializationTest extends HazelcastTestSupport {
             ringbuffer.setHeadSequence(ringbuffer.headSequence() + 1);
             testSerialization(rbContainer);
         }
+    }
+
+    private RingbufferContainer getRingbufferContainer(RingbufferConfig config) {
+        // partitionId is irrelevant for this test
+        return new RingbufferContainer(RingbufferService.getRingbufferNamespace(config.getName()), config, nodeEngine, 0);
     }
 
     private void testSerialization(RingbufferContainer original) {
@@ -120,7 +140,7 @@ public class RingbufferContainerSerializationTest extends HazelcastTestSupport {
         }
         final ArrayRingbuffer originalRingbuffer = (ArrayRingbuffer) original.getRingbuffer();
         final ArrayRingbuffer cloneRingbuffer = (ArrayRingbuffer) original.getRingbuffer();
-        assertArrayEquals(originalRingbuffer.ringItems, cloneRingbuffer.ringItems);
+        assertArrayEquals(originalRingbuffer.getItems(), cloneRingbuffer.getItems());
 
         // the most complicated part is the expiration
         if (original.getConfig().getTimeToLiveSeconds() == 0) {

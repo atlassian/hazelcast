@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,17 +17,20 @@
 package com.hazelcast.spi;
 
 /**
- * @author mdogan 1/11/13
+ * Marker interface for services that want to return operations to be executed on the cluster
+ * members after a join has been finalized.
  */
 public interface PostJoinAwareService {
 
     /**
      * Post join operations must be lock free, meaning no locks at all:
-     * no partition locks, no key-based locks, no service level locks,
-     * no database interaction!
+     * no partition locks, no key-based locks, no service level locks, no database interaction!
+     * The {@link Operation#getPartitionId()} method should return a negative value.
+     * This means that the operations should not implement {@link PartitionAwareOperation}.
      * <p>
-     * Post join operations should return response, at least a null response.
-     * @return a response from the post join operation. Can be null.
+     * Post join operations should return response, at least a {@code null} response.
+     *
+     * @return a response from the post join operation. Can be {@code null}.
      */
     Operation getPostJoinOperation();
 

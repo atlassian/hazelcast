@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,9 +35,8 @@ public class ReplicatedQueryEventFilter extends ReplicatedEntryEventFilter {
     }
 
     public boolean eval(Object arg) {
-        final QueryableEntry entry = (QueryableEntry) arg;
-        final Data keyData = entry.getKeyData();
+        QueryableEntry entry = (QueryableEntry) arg;
+        Data keyData = entry.getKeyData();
         return (key == null || key.equals(keyData)) && predicate.apply((Map.Entry) arg);
     }
-
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,10 @@ import com.hazelcast.spi.OperationFactory;
 
 import java.io.IOException;
 
+/**
+ * An {@link OperationFactory} that creates operations by cloning
+ * the passed Operation.
+ */
 public final class BinaryOperationFactory implements OperationFactory, NodeAware, IdentifiedDataSerializable {
 
     private Data operationData;

@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.map.impl;
 
 import com.hazelcast.config.Config;
@@ -20,20 +36,18 @@ import java.util.Collection;
 import java.util.Map;
 import java.util.Random;
 
+import static com.hazelcast.nio.IOUtil.deleteQuietly;
 import static com.hazelcast.test.TestStringUtils.fileAsText;
-import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
 public class StoreLatencyPlugin_MapIntegrationTest extends HazelcastTestSupport {
 
     private HazelcastInstance hz;
-    private Map<String, String> map;
+    private Map<Integer, String> map;
 
     @Before
     public void setup() throws Exception {
-        setLoggingLog4j();
-
         Config config = new Config()
                 .setProperty("hazelcast.diagnostics.enabled", "true")
                 .setProperty("hazelcast.diagnostics.storeLatency.period.seconds", "1");
@@ -45,78 +59,76 @@ public class StoreLatencyPlugin_MapIntegrationTest extends HazelcastTestSupport 
     }
 
     @After
-    public void after(){
+    public void after() {
         File file = getNodeEngineImpl(hz).getDiagnostics().currentFile();
-        file.delete();
+        deleteQuietly(file);
     }
 
     @Test
-    public void test() throws Exception {
+    public void test() {
         for (int k = 0; k < 100; k++) {
             map.get(k);
         }
 
         assertTrueEventually(new AssertTask() {
             @Override
-            public void run() throws Exception {
+            public void run() {
                 File file = getNodeEngineImpl(hz).getDiagnostics().currentFile();
                 String content = fileAsText(file);
-                assertTrue(content.contains("mappy"));
+                assertContains(content, "mappy");
             }
         });
     }
 
     private static MapConfig addMapConfig(Config config) {
         MapConfig mapConfig = config.getMapConfig("mappy");
-        mapConfig.getMapStoreConfig().setEnabled(true).setImplementation(new MapStore() {
-            private final Random random = new Random();
+        mapConfig.getMapStoreConfig()
+                .setEnabled(true)
+                .setImplementation(new MapStore() {
+                    private final Random random = new Random();
 
-            @Override
-            public void store(Object key, Object value) {
+                    @Override
+                    public void store(Object key, Object value) {
+                    }
 
-            }
+                    @Override
+                    public Object load(Object key) {
+                        randomSleep();
+                        return null;
+                    }
 
-            @Override
-            public Object load(Object key) {
-                randomSleep();
-                return null;
-            }
+                    private void randomSleep() {
+                        long delay = random.nextInt(100);
+                        try {
+                            Thread.sleep(delay);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                    }
 
-            private void randomSleep() {
-                long delay = random.nextInt(100);
-                try {
-                    Thread.sleep(delay);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            }
+                    @Override
+                    public Map loadAll(Collection keys) {
+                        return null;
+                    }
 
-            @Override
-            public Map loadAll(Collection keys) {
-                return null;
-            }
+                    @Override
+                    public void storeAll(Map map) {
+                    }
 
-            @Override
-            public void storeAll(Map map) {
+                    @Override
+                    public void delete(Object key) {
+                    }
 
-            }
+                    @Override
+                    public Iterable loadAllKeys() {
+                        return null;
+                    }
 
-            @Override
-            public void delete(Object key) {
+                    @Override
+                    public void deleteAll(Collection keys) {
 
-            }
-
-            @Override
-            public Iterable loadAllKeys() {
-                return null;
-            }
-
-            @Override
-            public void deleteAll(Collection keys) {
-
-            }
-        });
+                    }
+                });
         return mapConfig;
     }
 }
-

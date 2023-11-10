@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import com.hazelcast.spi.ClientAwareService;
 import com.hazelcast.spi.EventPublishingService;
 import com.hazelcast.spi.ManagedService;
 import com.hazelcast.spi.MigrationAwareService;
+import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.PartitionAwareService;
 import com.hazelcast.spi.PostJoinAwareService;
 import com.hazelcast.spi.QuorumAwareService;
@@ -135,7 +136,7 @@ abstract class AbstractMapServiceFactory implements MapServiceFactory {
      * @return Creates a new {@link PartitionAwareService} implementation.
      * @see com.hazelcast.spi.PartitionAwareService
      */
-    abstract QuorumAwareService createQuorumAwareService();
+    abstract MapQuorumAwareService createQuorumAwareService();
 
 
     /**
@@ -146,6 +147,7 @@ abstract class AbstractMapServiceFactory implements MapServiceFactory {
      */
     @Override
     public MapService createMapService() {
+        NodeEngine nodeEngine = getNodeEngine();
         MapServiceContext mapServiceContext = getMapServiceContext();
         ManagedService managedService = createManagedService();
         CountingMigrationAwareService migrationAwareService = createMigrationAwareService();
@@ -157,9 +159,10 @@ abstract class AbstractMapServiceFactory implements MapServiceFactory {
         ReplicationSupportingService replicationSupportingService = createReplicationSupportingService();
         StatisticsAwareService statisticsAwareService = createStatisticsAwareService();
         PartitionAwareService partitionAwareService = createPartitionAwareService();
-        QuorumAwareService quorumAwareService = createQuorumAwareService();
+        MapQuorumAwareService quorumAwareService = createQuorumAwareService();
         ClientAwareService clientAwareService = createClientAwareService();
 
+        checkNotNull(nodeEngine, "nodeEngine should not be null");
         checkNotNull(mapServiceContext, "mapServiceContext should not be null");
         checkNotNull(managedService, "managedService should not be null");
         checkNotNull(migrationAwareService, "migrationAwareService should not be null");

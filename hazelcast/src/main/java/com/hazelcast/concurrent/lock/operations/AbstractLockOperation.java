@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,15 +23,24 @@ import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+import com.hazelcast.nio.serialization.impl.Versioned;
+import com.hazelcast.spi.LockInterceptorService;
+import com.hazelcast.spi.NamedOperation;
 import com.hazelcast.spi.ObjectNamespace;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.PartitionAwareOperation;
+import com.hazelcast.spi.ServiceNamespace;
+import com.hazelcast.spi.ServiceNamespaceAware;
 
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 
+import static com.hazelcast.concurrent.lock.ObjectNamespaceSerializationHelper.readNamespaceCompatibly;
+import static com.hazelcast.concurrent.lock.ObjectNamespaceSerializationHelper.writeNamespaceCompatibly;
+
 public abstract class AbstractLockOperation extends Operation
-        implements PartitionAwareOperation, IdentifiedDataSerializable {
+        implements PartitionAwareOperation, IdentifiedDataSerializable, NamedOperation,
+        ServiceNamespaceAware, Versioned {
 
     public static final int ANY_THREAD = 0;
 
@@ -114,13 +123,31 @@ public abstract class AbstractLockOperation extends Operation
         this.referenceCallId = refCallId;
     }
 
+    protected final void interceptLockOperation() {
+        // if service is a LockInterceptorService, notify it a key is about to be locked
+        Object targetService = getNodeEngine().getService(namespace.getServiceName());
+        if (targetService instanceof LockInterceptorService) {
+            ((LockInterceptorService) targetService).onBeforeLock(namespace.getObjectName(), key);
+        }
+    }
+
     @Override
-    public final String getServiceName() {
+    public String getServiceName() {
         return LockServiceImpl.SERVICE_NAME;
     }
 
     public final Data getKey() {
         return key;
+    }
+
+    @Override
+    public String getName() {
+        return namespace.getObjectName();
+    }
+
+    @Override
+    public ServiceNamespace getServiceNamespace() {
+        return namespace;
     }
 
     @Override
@@ -131,7 +158,7 @@ public abstract class AbstractLockOperation extends Operation
     @Override
     protected void writeInternal(ObjectDataOutput out) throws IOException {
         super.writeInternal(out);
-        out.writeObject(namespace);
+        writeNamespaceCompatibly(namespace, out);
         out.writeData(key);
         out.writeLong(threadId);
         out.writeLong(leaseTime);
@@ -141,7 +168,7 @@ public abstract class AbstractLockOperation extends Operation
     @Override
     protected void readInternal(ObjectDataInput in) throws IOException {
         super.readInternal(in);
-        namespace = in.readObject();
+        namespace = readNamespaceCompatibly(in);
         key = in.readData();
         threadId = in.readLong();
         leaseTime = in.readLong();

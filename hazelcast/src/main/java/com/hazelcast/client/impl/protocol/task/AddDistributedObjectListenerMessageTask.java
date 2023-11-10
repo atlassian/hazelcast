@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -115,7 +115,7 @@ public class AddDistributedObjectListenerMessageTask
         }
 
         ClusterService clusterService = clientEngine.getClusterService();
-        boolean currentMemberIsMaster = clusterService.getMasterAddress().equals(clientEngine.getThisAddress());
+        boolean currentMemberIsMaster = clusterService.isMaster();
         if (parameters.localOnly && !currentMemberIsMaster) {
             //if client registered localOnly, only master is allowed to send request
             return false;

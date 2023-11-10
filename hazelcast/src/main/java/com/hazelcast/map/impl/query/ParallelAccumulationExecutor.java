@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,9 +26,10 @@ import java.util.Collection;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
 
+import static com.hazelcast.query.impl.predicates.PredicateUtils.estimatedSizeOf;
 import static com.hazelcast.util.FutureUtil.RETHROW_EVERYTHING;
 import static com.hazelcast.util.FutureUtil.returnWithDeadline;
-import static java.util.concurrent.TimeUnit.MINUTES;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 
 /**
  * Implementation of the {@link AccumulationExecutor} that runs the accumulation in a multi-threaded way.
@@ -38,16 +39,19 @@ import static java.util.concurrent.TimeUnit.MINUTES;
 public class ParallelAccumulationExecutor implements AccumulationExecutor {
 
     private static final int THREAD_SPLIT_COUNT = 8;
-    private static final int ACCUMULATION_EXECUTION_TIMEOUT_MINUTES = 5;
 
     private final ManagedExecutorService executor;
     private final SerializationService serializationService;
+    private final int callTimeoutInMillis;
 
-    public ParallelAccumulationExecutor(ManagedExecutorService executor, SerializationService serializationService) {
+    public ParallelAccumulationExecutor(ManagedExecutorService executor, SerializationService serializationService,
+                                        int callTimeoutInMillis) {
         this.executor = executor;
         this.serializationService = serializationService;
+        this.callTimeoutInMillis = callTimeoutInMillis;
     }
 
+    @Override
     @SuppressWarnings("unchecked")
     public AggregationResult execute(
             Aggregator aggregator, Collection<QueryableEntry> entries, Collection<Integer> partitionIds) {
@@ -62,7 +66,7 @@ public class ParallelAccumulationExecutor implements AccumulationExecutor {
             resultAggregator.onCombinationFinished();
         }
 
-        AggregationResult result = new AggregationResult(resultAggregator);
+        AggregationResult result = new AggregationResult(resultAggregator, serializationService);
         result.setPartitionIds(partitionIds);
         return result;
     }
@@ -81,16 +85,17 @@ public class ParallelAccumulationExecutor implements AccumulationExecutor {
                 futures.add(executor.submit(task));
             }
         }
-        return returnWithDeadline(futures, ACCUMULATION_EXECUTION_TIMEOUT_MINUTES, MINUTES, RETHROW_EVERYTHING);
+        return returnWithDeadline(futures, callTimeoutInMillis, MILLISECONDS, RETHROW_EVERYTHING);
     }
 
     private Collection<QueryableEntry>[] split(Collection<QueryableEntry> entries, int chunkCount) {
-        if (entries.size() < chunkCount * 2) {
+        int estimatedSize = estimatedSizeOf(entries);
+        if (estimatedSize < chunkCount * 2) {
             return null;
         }
         int counter = 0;
         Collection<QueryableEntry>[] entriesSplit = new Collection[chunkCount];
-        int entriesPerChunk = entries.size() / chunkCount;
+        int entriesPerChunk = estimatedSize / chunkCount;
         for (int i = 0; i < chunkCount; i++) {
             entriesSplit[i] = new ArrayList<QueryableEntry>(entriesPerChunk);
         }
@@ -125,5 +130,4 @@ public class ParallelAccumulationExecutor implements AccumulationExecutor {
             return aggregator;
         }
     }
-
 }

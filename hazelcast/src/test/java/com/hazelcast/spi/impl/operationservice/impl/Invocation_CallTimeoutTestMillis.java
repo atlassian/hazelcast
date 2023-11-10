@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.spi.impl.operationservice.impl;
 
 import com.hazelcast.config.Config;
@@ -24,7 +40,7 @@ import static org.junit.Assert.assertEquals;
 @Category({QuickTest.class, ParallelTest.class})
 public class Invocation_CallTimeoutTestMillis extends HazelcastTestSupport {
 
-    private final static long callTimeout = 12345;
+    private static final long CALL_TIMEOUT = 12345;
 
     private HazelcastInstance hz;
     private InternalOperationService opService;
@@ -33,7 +49,7 @@ public class Invocation_CallTimeoutTestMillis extends HazelcastTestSupport {
     @Before
     public void setup() {
         Config config = new Config();
-        config.setProperty(GroupProperty.OPERATION_CALL_TIMEOUT_MILLIS.getName(), "" + callTimeout);
+        config.setProperty(GroupProperty.OPERATION_CALL_TIMEOUT_MILLIS.getName(), "" + CALL_TIMEOUT);
 
         hz = createHazelcastInstance(config);
         opService = getOperationService(hz);
@@ -45,8 +61,8 @@ public class Invocation_CallTimeoutTestMillis extends HazelcastTestSupport {
         Operation op = new DummyOperation();
         InvocationFuture future = (InvocationFuture) opService.invokeOnTarget(null, op, thisAddress);
 
-        assertEquals(callTimeout, future.invocation.callTimeoutMillis);
-        assertEquals(callTimeout, future.invocation.op.getCallTimeout());
+        assertEquals(CALL_TIMEOUT, future.invocation.callTimeoutMillis);
+        assertEquals(CALL_TIMEOUT, future.invocation.op.getCallTimeout());
     }
 
     @Ignore

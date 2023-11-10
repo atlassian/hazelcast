@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,12 @@ import com.hazelcast.core.MessageListener;
 import com.hazelcast.monitor.LocalTopicStats;
 import com.hazelcast.spi.NodeEngine;
 
+/**
+ * Topic proxy used when global ordering is disabled (nodes get
+ * the messages in the order that the messages are published).
+ *
+ * @param <E> the type of message in this topic
+ */
 public class TopicProxy<E> extends TopicProxySupport implements ITopic<E> {
 
     public TopicProxy(String name, NodeEngine nodeEngine, TopicService service) {

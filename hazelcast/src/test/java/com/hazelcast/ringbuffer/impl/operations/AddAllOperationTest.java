@@ -1,10 +1,28 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.ringbuffer.impl.operations;
 
 import com.hazelcast.config.Config;
 import com.hazelcast.config.RingbufferConfig;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.ringbuffer.OverflowPolicy;
 import com.hazelcast.ringbuffer.Ringbuffer;
+import com.hazelcast.ringbuffer.impl.RingbufferService;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.test.HazelcastSerialClassRunner;
@@ -25,10 +43,10 @@ import static org.junit.Assert.assertTrue;
 @Category(QuickTest.class)
 public class AddAllOperationTest extends HazelcastTestSupport {
 
-    private HazelcastInstance hz;
     private NodeEngineImpl nodeEngine;
     private SerializationService serializationService;
     private Ringbuffer<Object> ringbuffer;
+    private RingbufferService ringbufferService;
 
     @Before
     public void setup() {
@@ -36,10 +54,11 @@ public class AddAllOperationTest extends HazelcastTestSupport {
 
         Config config = new Config().addRingBufferConfig(rbConfig);
 
-        hz = createHazelcastInstance(config);
+        HazelcastInstance hz = createHazelcastInstance(config);
         nodeEngine = getNodeEngineImpl(hz);
         serializationService = getSerializationService(hz);
         ringbuffer = hz.getRingbuffer(rbConfig.getName());
+        ringbufferService = nodeEngine.getService(RingbufferService.SERVICE_NAME);
     }
 
     @Test
@@ -50,13 +69,12 @@ public class AddAllOperationTest extends HazelcastTestSupport {
 
         Data item = serializationService.toData("newItem");
 
-        AddAllOperation addOperation = new AddAllOperation(ringbuffer.getName(), new Data[]{item}, FAIL);
-        addOperation.setNodeEngine(nodeEngine);
+        AddAllOperation addOperation = getAddAllOperation(new Data[]{item}, FAIL);
         addOperation.run();
 
         assertFalse(addOperation.shouldNotify());
         assertFalse(addOperation.shouldBackup());
-        assertEquals(-1l, addOperation.getResponse());
+        assertEquals(-1L, addOperation.getResponse());
     }
 
     @Test
@@ -67,8 +85,7 @@ public class AddAllOperationTest extends HazelcastTestSupport {
 
         Data item = serializationService.toData("newItem");
 
-        AddAllOperation addOperation = new AddAllOperation(ringbuffer.getName(), new Data[]{item}, FAIL);
-        addOperation.setNodeEngine(nodeEngine);
+        AddAllOperation addOperation = getAddAllOperation(new Data[]{item}, FAIL);
         addOperation.run();
 
         assertTrue(addOperation.shouldNotify());
@@ -84,8 +101,7 @@ public class AddAllOperationTest extends HazelcastTestSupport {
 
         Data item = serializationService.toData("newItem");
 
-        AddAllOperation addOperation = new AddAllOperation(ringbuffer.getName(), new Data[]{item}, OVERWRITE);
-        addOperation.setNodeEngine(nodeEngine);
+        AddAllOperation addOperation = getAddAllOperation(new Data[]{item}, OVERWRITE);
         addOperation.run();
 
         assertTrue(addOperation.shouldNotify());
@@ -101,12 +117,18 @@ public class AddAllOperationTest extends HazelcastTestSupport {
 
         Data item = serializationService.toData("newItem");
 
-        AddAllOperation addOperation = new AddAllOperation(ringbuffer.getName(), new Data[]{item}, OVERWRITE);
-        addOperation.setNodeEngine(nodeEngine);
+        AddAllOperation addOperation = getAddAllOperation(new Data[]{item}, OVERWRITE);
         addOperation.run();
 
         assertTrue(addOperation.shouldNotify());
         assertTrue(addOperation.shouldBackup());
         assertEquals(ringbuffer.tailSequence(), addOperation.getResponse());
+    }
+
+    private AddAllOperation getAddAllOperation(Data[] items, OverflowPolicy policy) {
+        AddAllOperation op = new AddAllOperation(ringbuffer.getName(), items, policy);
+        op.setPartitionId(ringbufferService.getRingbufferPartitionId(ringbuffer.getName()));
+        op.setNodeEngine(nodeEngine);
+        return op;
     }
 }

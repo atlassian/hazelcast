@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,8 +25,7 @@ import com.hazelcast.map.impl.proxy.MapProxyImpl;
 import com.hazelcast.map.impl.recordstore.DefaultRecordStore;
 import com.hazelcast.map.impl.recordstore.RecordStore;
 import com.hazelcast.query.Predicates;
-import com.hazelcast.query.SampleObjects;
-import com.hazelcast.query.impl.Indexes;
+import com.hazelcast.query.SampleTestObjects;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.partition.IPartitionService;
 import com.hazelcast.test.HazelcastParallelClassRunner;
@@ -39,9 +38,9 @@ import org.junit.runner.RunWith;
 
 import java.util.Collection;
 
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertFalse;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
@@ -50,10 +49,17 @@ public class RecordStoreTest extends HazelcastTestSupport {
     @Test
     public void testRecordStoreResetWithClearingIndexes() {
         IMap<Object, Object> map = testRecordStoreReset();
-        Indexes indexes = getIndexService(map);
-        indexes.clearIndexes();
+        clearIndexes(map);
         Collection<Object> values = map.values(Predicates.equal("name", "tom"));
         assertTrue(values.isEmpty());
+    }
+
+    private void clearIndexes(IMap<Object, Object> map) {
+        MapServiceContext mapServiceContext = getMapServiceContext((MapProxyImpl) map);
+        MapContainer mapContainer = mapServiceContext.getMapContainer(map.getName());
+        for (int partitionId : mapServiceContext.getOwnedPartitions()) {
+            mapContainer.getIndexes(partitionId).destroyIndexes();
+        }
     }
 
     @Test
@@ -72,7 +78,7 @@ public class RecordStoreTest extends HazelcastTestSupport {
         HazelcastInstance hazelcastInstance = createHazelcastInstance(config);
         IMap<Object, Object> map = hazelcastInstance.getMap(mapName);
         int key = 1;
-        map.put(key, new SampleObjects.Employee("tom", 24, true, 10));
+        map.put(key, new SampleTestObjects.Employee("tom", 24, true, 10));
         DefaultRecordStore defaultRecordStore = getRecordStore(map, key);
         defaultRecordStore.reset();
         assertNull(map.get(key));
@@ -87,12 +93,6 @@ public class RecordStoreTest extends HazelcastTestSupport {
         PartitionContainer container = mapServiceContext.getPartitionContainer(partitionId);
         RecordStore recordStore = container.getRecordStore(map.getName());
         return (DefaultRecordStore) recordStore;
-    }
-
-    private Indexes getIndexService(IMap<Object, Object> map) {
-        MapServiceContext mapServiceContext = getMapServiceContext((MapProxyImpl) map);
-        MapContainer mapContainer = mapServiceContext.getMapContainer(map.getName());
-        return mapContainer.getIndexes();
     }
 
     private MapServiceContext getMapServiceContext(MapProxyImpl map) {

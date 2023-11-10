@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,24 +18,25 @@ package com.hazelcast.cache.merge;
 
 import com.hazelcast.cache.CacheEntryView;
 import com.hazelcast.cache.StorageTypeAwareCacheMergePolicy;
+import com.hazelcast.nio.serialization.BinaryInterface;
 
 /**
- * `LatestAccessCacheMergePolicy` merges cache entry from source to destination cache
- * if source entry has been accessed more recently than the destination entry.
+ * Merges cache entries from source to destination cache if the source entry
+ * has been accessed more recently than the destination entry.
+ * <p>
+ * <b>Note:</b> This policy can only be used if the clocks of the nodes are in sync.
  */
-public class LatestAccessCacheMergePolicy
-        implements StorageTypeAwareCacheMergePolicy {
+@BinaryInterface
+public class LatestAccessCacheMergePolicy implements StorageTypeAwareCacheMergePolicy {
 
     public LatestAccessCacheMergePolicy() {
-
     }
 
     @Override
     public Object merge(String cacheName, CacheEntryView mergingEntry, CacheEntryView existingEntry) {
-        if (existingEntry == null ||  mergingEntry.getLastAccessTime() >= existingEntry.getLastAccessTime()) {
+        if (existingEntry == null || mergingEntry.getLastAccessTime() >= existingEntry.getLastAccessTime()) {
             return mergingEntry.getValue();
         }
         return existingEntry.getValue();
     }
-
 }

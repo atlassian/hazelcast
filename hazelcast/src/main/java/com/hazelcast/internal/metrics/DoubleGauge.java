@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,19 +17,21 @@
 package com.hazelcast.internal.metrics;
 
 /**
- * A DoubleGauge is {link Metric} where a particular double value is read instantaneous. E.g. the current os load.
+ * A DoubleGauge is a {@link Gauge} where a particular double value is read
+ * instantaneously. E.g. the current OS load.
  *
  * {@link LongGauge}
  */
-public interface DoubleGauge extends Metric {
+public interface DoubleGauge extends Gauge {
 
     /**
      * Reads the current available value as a double.
      *
-     * If the underlying probe provides a long value, then the value will be converted to
-     * a floating point value.
+     * If the underlying probe provides a long value, then the value will
+     * be converted to a floating point value.
      *
-     * If no probe is available, or there are problems obtaining a value from the probe, 0 is returned.
+     * If no probe is available, or there are problems obtaining a value
+     * from the probe, 0 is returned.
      *
      * @return the current value.
      */

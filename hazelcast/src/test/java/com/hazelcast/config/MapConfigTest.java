@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,18 @@
 
 package com.hazelcast.config;
 
+import com.hazelcast.internal.serialization.InternalSerializationService;
+import com.hazelcast.internal.serialization.impl.DefaultSerializationServiceBuilder;
 import com.hazelcast.map.listener.MapPartitionLostListener;
+import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.spi.merge.DiscardMergePolicy;
+import com.hazelcast.spi.merge.PassThroughMergePolicy;
+import com.hazelcast.spi.merge.PutIfAbsentMergePolicy;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
+import nl.jqno.equalsverifier.EqualsVerifier;
+import nl.jqno.equalsverifier.Warning;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -28,6 +36,7 @@ import org.junit.runner.RunWith;
 import java.util.EventListener;
 import java.util.List;
 
+import static com.hazelcast.test.HazelcastTestSupport.assumeDifferentHashCodes;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
@@ -74,7 +83,7 @@ public class MapConfigTest {
     }
 
     @Test
-    public void testMinEvictionCheckMillis() throws Exception {
+    public void testMinEvictionCheckMillis() {
         assertEquals(MapConfig.DEFAULT_MIN_EVICTION_CHECK_MILLIS, new MapConfig().getMinEvictionCheckMillis());
     }
 
@@ -173,6 +182,7 @@ public class MapConfigTest {
         config.getMapConfig("test").setMapStoreConfig(mapStoreConfig);
         config.getMapConfig("default").setMapStoreConfig(null);
         assertNotNull(config.getMapConfig("test").getMapStoreConfig());
+        assertNull(config.getMapConfig("default").getMapStoreConfig());
     }
 
     @Test(expected = IllegalArgumentException.class)
@@ -302,6 +312,46 @@ public class MapConfigTest {
         mapConfig.setOptimizeQueries(false);
     }
 
+    @Test
+    public void givenCacheDeserializedValuesSetToALWAYS_whenSetOptimizeQueriesToTrue_thenNoException() {
+        // given
+        MapConfig mapConfig = new MapConfig();
+        mapConfig.setCacheDeserializedValues(CacheDeserializedValues.ALWAYS);
+
+        // when
+        mapConfig.setOptimizeQueries(true);
+    }
+
+    @Test
+    public void givenCacheDeserializedValuesSetToINDEX_ONLY_whenSetOptimizeQueriesToFalse_thenNoException() {
+        // given
+        MapConfig mapConfig = new MapConfig();
+        mapConfig.setCacheDeserializedValues(CacheDeserializedValues.INDEX_ONLY);
+
+        // when
+        mapConfig.setOptimizeQueries(false);
+    }
+
+    @Test(expected = ConfigurationException.class)
+    public void givenCacheDeserializedValuesSetToINDEX_ONLY_whenSetOptimizeQueriesToTrue_thenThrowConfigurationException() {
+        // given
+        MapConfig mapConfig = new MapConfig();
+        mapConfig.setCacheDeserializedValues(CacheDeserializedValues.INDEX_ONLY);
+
+        // when
+        mapConfig.setOptimizeQueries(true);
+    }
+
+    @Test
+    public void givenCacheDeserializedValuesSetToNEVER_whenSetOptimizeQueriesToFalse_thenNoException() {
+        // given
+        MapConfig mapConfig = new MapConfig();
+        mapConfig.setCacheDeserializedValues(CacheDeserializedValues.NEVER);
+
+        // when
+        mapConfig.setOptimizeQueries(false);
+    }
+
     @Test(expected = ConfigurationException.class)
     public void givenCacheDeserializedValuesSetToNEVER_whenSetOptimizeQueriesToTrue_thenThrowConfigurationException() {
         // given
@@ -361,14 +411,24 @@ public class MapConfigTest {
         assertFalse(optimizeQueries);
     }
 
-    @Test(expected = ConfigurationException.class)
-    public void givenSetOptimizeQueryIsTrue_whenSetCacheDeserializedValuesToNEVER_thenThrowConfigurationException() {
+    @Test
+    public void givenSetOptimizeQueryIsFalse_whenSetCacheDeserializedValuesToNEVER_thenNoException() {
         // given
         MapConfig mapConfig = new MapConfig();
-        mapConfig.setOptimizeQueries(true);
+        mapConfig.setOptimizeQueries(false);
 
         // when
         mapConfig.setCacheDeserializedValues(CacheDeserializedValues.NEVER);
+    }
+
+    @Test
+    public void givenSetOptimizeQueryIsFalse_whenSetCacheDeserializedValuesToINDEX_ONLY_thenThrowNoException() {
+        // given
+        MapConfig mapConfig = new MapConfig();
+        mapConfig.setOptimizeQueries(false);
+
+        // when
+        mapConfig.setCacheDeserializedValues(CacheDeserializedValues.INDEX_ONLY);
     }
 
     @Test(expected = ConfigurationException.class)
@@ -382,6 +442,16 @@ public class MapConfigTest {
     }
 
     @Test(expected = ConfigurationException.class)
+    public void givenSetOptimizeQueryIsTrue_whenSetCacheDeserializedValuesToNEVER_thenThrowConfigurationException() {
+        // given
+        MapConfig mapConfig = new MapConfig();
+        mapConfig.setOptimizeQueries(true);
+
+        // when
+        mapConfig.setCacheDeserializedValues(CacheDeserializedValues.NEVER);
+    }
+
+    @Test(expected = ConfigurationException.class)
     public void givenSetOptimizeQueryIsTrue_whenSetCacheDeserializedValuesToINDEX_ONLY_thenThrowConfigurationException() {
         // given
         MapConfig mapConfig = new MapConfig();
@@ -389,6 +459,16 @@ public class MapConfigTest {
 
         // when
         mapConfig.setCacheDeserializedValues(CacheDeserializedValues.INDEX_ONLY);
+    }
+
+    @Test
+    public void givenSetOptimizeQueryIsTrue_whenSetCacheDeserializedValuesToALWAYS_thenNoException() {
+        // given
+        MapConfig mapConfig = new MapConfig();
+        mapConfig.setOptimizeQueries(true);
+
+        // when
+        mapConfig.setCacheDeserializedValues(CacheDeserializedValues.ALWAYS);
     }
 
     @Test
@@ -404,5 +484,64 @@ public class MapConfigTest {
 
         // then
         assertEquals(mapConfig, otherMapConfig);
+    }
+
+    @Test
+    public void givenDefaultConfig_whenSerializedAndDeserialized_noExceptionIsThrown() {
+        MapConfig mapConfig = new MapConfig();
+        InternalSerializationService serializationService = new DefaultSerializationServiceBuilder().build();
+
+        Data data = serializationService.toData(mapConfig);
+        serializationService.toObject(data);
+    }
+
+    @Test
+    public void testSetMergePolicyConfig() {
+        MergePolicyConfig mergePolicyConfig = new MergePolicyConfig()
+                .setPolicy(PassThroughMergePolicy.class.getName())
+                .setBatchSize(2342);
+
+        MapConfig config = new MapConfig();
+        config.setMergePolicyConfig(mergePolicyConfig);
+
+        assertEquals(PassThroughMergePolicy.class.getName(), config.getMergePolicyConfig().getPolicy());
+        assertEquals(2342, config.getMergePolicyConfig().getBatchSize());
+    }
+
+    @Test
+    public void testEqualsAndHashCode() {
+        assumeDifferentHashCodes();
+        EqualsVerifier.forClass(MapConfig.class)
+                .allFieldsShouldBeUsedExcept("readOnly")
+                .suppress(Warning.NULL_FIELDS, Warning.NONFINAL_FIELDS)
+                .withPrefabValues(MaxSizeConfig.class,
+                        new MaxSizeConfig(300, MaxSizeConfig.MaxSizePolicy.PER_PARTITION),
+                        new MaxSizeConfig(100, MaxSizeConfig.MaxSizePolicy.PER_NODE))
+                .withPrefabValues(MapStoreConfig.class,
+                        new MapStoreConfig().setEnabled(true).setClassName("red"),
+                        new MapStoreConfig().setEnabled(true).setClassName("black"))
+                .withPrefabValues(NearCacheConfig.class,
+                        new NearCacheConfig(10, 20, false, InMemoryFormat.BINARY),
+                        new NearCacheConfig(15, 25, true, InMemoryFormat.OBJECT))
+                .withPrefabValues(WanReplicationRef.class,
+                        new WanReplicationRef().setName("red"),
+                        new WanReplicationRef().setName("black"))
+                .withPrefabValues(PartitioningStrategyConfig.class,
+                        new PartitioningStrategyConfig("red"),
+                        new PartitioningStrategyConfig("black"))
+                .withPrefabValues(MapConfigReadOnly.class,
+                        new MapConfigReadOnly(new MapConfig("red")),
+                        new MapConfigReadOnly(new MapConfig("black")))
+                .withPrefabValues(MergePolicyConfig.class,
+                        new MergePolicyConfig(PutIfAbsentMergePolicy.class.getName(), 100),
+                        new MergePolicyConfig(DiscardMergePolicy.class.getName(), 200))
+                .verify();
+    }
+
+    @Test
+    @SuppressWarnings("ResultOfMethodCallIgnored")
+    public void testDefaultHashCode() {
+        MapConfig mapConfig = new MapConfig();
+        mapConfig.hashCode();
     }
 }

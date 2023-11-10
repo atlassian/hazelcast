@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import com.hazelcast.util.executor.ManagedExecutorService;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -53,6 +54,21 @@ public interface ExecutionService {
     String CLIENT_EXECUTOR = "hz:client";
 
     /**
+     * Name of the client executor.
+     */
+    String CLIENT_QUERY_EXECUTOR = "hz:client-query";
+
+    /**
+     * Name of the client management executor.
+     */
+    String CLIENT_MANAGEMENT_EXECUTOR = "hz:client-management";
+
+    /**
+     * Name of the client transaction executor.
+     */
+    String CLIENT_BLOCKING_EXECUTOR = "hz:client-blocking-tasks";
+
+    /**
      * Name of the query executor.
      */
     String QUERY_EXECUTOR = "hz:query";
@@ -63,18 +79,50 @@ public interface ExecutionService {
     String IO_EXECUTOR = "hz:io";
 
     /**
-     * Name of the map-loader executor that loads the {@link com.hazelcast.core.MapLoader#loadAll(java.util.Collection)}.
+     * Name of the offloadable executor.
+     */
+    String OFFLOADABLE_EXECUTOR = "hz:offloadable";
+
+    /**
+     * Name of the map-loader executor that loads the entry values
+     * for a given key set locally on the member owning the partition
+     * which contains the keys. This is the executor you want to
+     * configure when you want to load more data from the database
+     * in parallel.
      *
-     * This is the executor you want to configure when you want to load more data from the database in parallel.
+     * @see com.hazelcast.core.MapLoader#loadAll(java.util.Collection)
      */
     String MAP_LOADER_EXECUTOR = "hz:map-load";
 
     /**
-     * The name of the executor that loads the {@link com.hazelcast.core.MapLoader#loadAllKeys()}
+     * The name of the executor that loads the entry keys and dispatches
+     * the keys to the partition owners for value loading.
+     *
+     * @see com.hazelcast.core.MapLoader#loadAllKeys()
      */
     String MAP_LOAD_ALL_KEYS_EXECUTOR = "hz:map-loadAllKeys";
 
+    /**
+     * @param name          for the executor service
+     * @param poolSize      the maximum number of threads to allow in the pool
+     * @param queueCapacity the queue to use for holding tasks before they are executed.
+     * @param type          @{@link ExecutorType#CACHED} or @{@link ExecutorType#CONCRETE}
+     * @return the created managed executor service
+     */
     ManagedExecutorService register(String name, int poolSize, int queueCapacity, ExecutorType type);
+
+    /**
+     * This register method creates the executor only on @{@link ExecutorType#CONCRETE} type.
+     * The executors with @{@link ExecutorType#CACHED} types can not have custom thread factory since they will share the
+     * threads with other @{@link ExecutorType#CACHED} executors.
+     *
+     * @param name          for the executor service
+     * @param poolSize      the maximum number of threads to allow in the pool
+     * @param queueCapacity the queue to use for holding tasks before they are executed.
+     * @param threadFactory custom thread factory for the managed executor service.
+     * @return managed executor service
+     */
+    ManagedExecutorService register(String name, int poolSize, int queueCapacity, ThreadFactory threadFactory);
 
     ManagedExecutorService getExecutor(String name);
 

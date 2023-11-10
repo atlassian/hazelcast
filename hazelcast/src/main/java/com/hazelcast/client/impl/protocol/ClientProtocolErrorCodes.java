@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -103,6 +103,37 @@ public final class ClientProtocolErrorCodes {
     public static final int NATIVE_OUT_OF_MEMORY_ERROR = 78;
     public static final int SERVICE_NOT_FOUND = 79;
     public static final int STALE_TASK_ID = 80;
+    public static final int DUPLICATE_TASK = 81;
+    public static final int STALE_TASK = 82;
+    public static final int LOCAL_MEMBER_RESET = 83;
+    public static final int INDETERMINATE_OPERATION_STATE = 84;
+    public static final int FLAKE_ID_NODE_ID_OUT_OF_RANGE_EXCEPTION = 85;
+    public static final int TARGET_NOT_REPLICA_EXCEPTION = 86;
+    public static final int MUTATION_DISALLOWED_EXCEPTION = 87;
+    public static final int CONSISTENCY_LOST_EXCEPTION = 88;
+    public static final int SESSION_EXPIRED_EXCEPTION = 89;
+    public static final int WAIT_KEY_CANCELLED_EXCEPTION = 90;
+    public static final int LOCK_ACQUIRE_LIMIT_REACHED_EXCEPTION = 91;
+    public static final int LOCK_OWNERSHIP_LOST_EXCEPTION = 92;
+    public static final int CP_GROUP_DESTROYED_EXCEPTION = 93;
+    public static final int CANNOT_REPLICATE_EXCEPTION = 94;
+    public static final int LEADER_DEMOTED_EXCEPTION = 95;
+    public static final int STALE_APPEND_REQUEST_EXCEPTION = 96;
+    public static final int NOT_LEADER_EXCEPTION = 97;
+    public static final int NO_SUCH_METHOD_ERROR = 98;
+    public static final int NO_SUCH_METHOD_EXCEPTION = 99;
+    public static final int NO_SUCH_FIELD_ERROR = 100;
+    public static final int NO_SUCH_FIELD_EXCEPTION = 101;
+    public static final int NO_CLASS_DEF_FOUND_ERROR = 102;
+
+    // These exception codes are reserved to by used by hazelcast-jet project
+    public static final int JET_EXCEPTIONS_RANGE_START = 500;
+    public static final int JET_EXCEPTIONS_RANGE_END = 600;
+
+    /**
+     * These codes onwards are reserved to be used by the end-user
+     */
+    public static final int USER_EXCEPTIONS_RANGE_START = 1000;
 
     private ClientProtocolErrorCodes() {
     }

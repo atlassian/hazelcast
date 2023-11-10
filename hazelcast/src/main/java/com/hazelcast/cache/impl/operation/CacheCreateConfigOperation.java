@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,16 +35,28 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Used to create cluster wide cache configuration.
- * <p>This configuration is created using the following algorithm;
+ * <p>
+ * This configuration is created using the following algorithm;
  * <ul>
- * <li>Find partition id using the distributed object name of cache as a key.</li>
+ * <li>Find partition ID using the distributed object name of cache as a key.</li>
  * <li>Send the <code>CacheCreateConfigOperation</code> operation to the calculated partition which will force all
  * clusters to be single threaded.</li>
  * <li>{@link ICacheService#putCacheConfigIfAbsent(com.hazelcast.config.CacheConfig)} is called.</li>
- * </ul></p>
- * <p>This operation's purpose is to pass the required parameters into
- * {@link ICacheService#putCacheConfigIfAbsent(com.hazelcast.config.CacheConfig)}.</p>
+ * </ul>
+ * <p>
+ * This operation's purpose is to pass the required parameters into
+ * {@link ICacheService#putCacheConfigIfAbsent(com.hazelcast.config.CacheConfig)}.
+ * <p/>
+ * Caveat: This operation does not return a response when {@code createAlsoOnOthers} is {@code true} and there are at least one
+ * remote members on which the new {@code CacheConfig} needs to be created. When this operation returns {@code null} with {@code
+ * createAlsoOnOthers == true}, it is impossible to tell whether it is because the {@code CacheConfig} was not already registered
+ * or due to sending out the operation to other remote members.
+ *
+ * @deprecated as of 3.10 replaced by {@link AddCacheConfigOperation}, which is used in conjunction with
+ * {@link com.hazelcast.internal.util.InvocationUtil#invokeOnStableClusterSerial(NodeEngine,
+ * com.hazelcast.util.function.Supplier, int)} to reliably broadcast the {@code CacheConfig} to all members of the cluster.
  */
+@Deprecated
 public class CacheCreateConfigOperation
         extends AbstractNamedOperation
         implements IdentifiedDataSerializable {
@@ -57,10 +69,6 @@ public class CacheCreateConfigOperation
     private transient Object response;
 
     public CacheCreateConfigOperation() {
-    }
-
-    public CacheCreateConfigOperation(CacheConfig config) {
-        this(config, true);
     }
 
     public CacheCreateConfigOperation(CacheConfig config, boolean createAlsoOnOthers) {
@@ -150,8 +158,7 @@ public class CacheCreateConfigOperation
     }
 
     @Override
-    protected void writeInternal(ObjectDataOutput out)
-            throws IOException {
+    protected void writeInternal(ObjectDataOutput out) throws IOException {
         super.writeInternal(out);
         out.writeObject(config);
         out.writeBoolean(createAlsoOnOthers);
@@ -159,8 +166,7 @@ public class CacheCreateConfigOperation
     }
 
     @Override
-    protected void readInternal(ObjectDataInput in)
-            throws IOException {
+    protected void readInternal(ObjectDataInput in) throws IOException {
         super.readInternal(in);
         config = in.readObject();
         createAlsoOnOthers = in.readBoolean();
@@ -176,5 +182,4 @@ public class CacheCreateConfigOperation
     public int getFactoryId() {
         return CacheDataSerializerHook.F_ID;
     }
-
 }

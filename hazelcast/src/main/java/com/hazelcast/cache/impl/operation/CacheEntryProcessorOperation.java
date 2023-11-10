@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,7 @@
 package com.hazelcast.cache.impl.operation;
 
 import com.hazelcast.cache.BackupAwareEntryProcessor;
-import com.hazelcast.cache.CacheEntryView;
 import com.hazelcast.cache.impl.CacheDataSerializerHook;
-import com.hazelcast.cache.impl.CacheEntryViews;
 import com.hazelcast.cache.impl.record.CacheRecord;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
@@ -36,7 +34,7 @@ import java.io.IOException;
  * operation is responsible for parameter passing and handling the backup at the end.</p>
  */
 public class CacheEntryProcessorOperation
-        extends AbstractMutatingCacheOperation {
+        extends MutatingCacheOperation {
 
     private EntryProcessor entryProcessor;
     private Object[] arguments;
@@ -47,9 +45,9 @@ public class CacheEntryProcessorOperation
     public CacheEntryProcessorOperation() {
     }
 
-    public CacheEntryProcessorOperation(String name, Data key, int completionId,
+    public CacheEntryProcessorOperation(String cacheNameWithPrefix, Data key, int completionId,
                                         javax.cache.processor.EntryProcessor entryProcessor, Object... arguments) {
-        super(name, key, completionId);
+        super(cacheNameWithPrefix, key, completionId);
         this.entryProcessor = entryProcessor;
         this.arguments = arguments;
         this.completionId = completionId;
@@ -86,28 +84,27 @@ public class CacheEntryProcessorOperation
     @Override
     public void run()
             throws Exception {
-        response = cache.invoke(key, entryProcessor, arguments, completionId);
+        response = recordStore.invoke(key, entryProcessor, arguments, completionId);
         if (entryProcessor instanceof BackupAwareEntryProcessor) {
             BackupAwareEntryProcessor processor = (BackupAwareEntryProcessor) entryProcessor;
             backupEntryProcessor = processor.createBackupEntryProcessor();
         }
         if (backupEntryProcessor == null) {
-            backupRecord = cache.getRecord(key);
+            backupRecord = recordStore.getRecord(key);
         }
     }
 
     @Override
     public void afterRun() throws Exception {
-        if (cache.isWanReplicationEnabled()) {
-            CacheRecord record = cache.getRecord(key);
+        if (recordStore.isWanReplicationEnabled()) {
+            CacheRecord record = recordStore.getRecord(key);
             if (record != null) {
-                CacheEntryView<Data, Data> entryView = CacheEntryViews.createDefaultEntryView(key,
-                        getNodeEngine().getSerializationService().toData(backupRecord.getValue()), backupRecord);
-                wanEventPublisher.publishWanReplicationUpdate(name, entryView);
+                publishWanUpdate(key, record);
             } else {
-                wanEventPublisher.publishWanReplicationRemove(name, key);
+                publishWanRemove(key);
             }
         }
+        super.afterRun();
     }
 
     @Override

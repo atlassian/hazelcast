@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,8 @@ import javax.transaction.xa.XAResource;
 /**
  * Provides a context to perform transactional operations: beginning/committing transactions, but also retrieving
  * transactional data-structures like the {@link com.hazelcast.core.TransactionalMap}.
+ * Any method accessed through TransactionContext interface can throw TransactionException if transaction is
+ * no longer valid and rolled back.
  */
 public interface TransactionContext extends TransactionalTaskContext {
 
@@ -46,9 +48,9 @@ public interface TransactionContext extends TransactionalTaskContext {
     void rollbackTransaction();
 
     /**
-     * Gets the id that uniquely identifies the transaction.
+     * Gets the ID that uniquely identifies the transaction.
      *
-     * @return the transaction id.
+     * @return the transaction ID
      */
     String getTxnId();
 
@@ -60,5 +62,4 @@ public interface TransactionContext extends TransactionalTaskContext {
      */
     @Deprecated
     XAResource getXaResource();
-
 }

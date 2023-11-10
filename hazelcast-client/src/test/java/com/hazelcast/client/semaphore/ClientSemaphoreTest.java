@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -120,7 +120,40 @@ public class ClientSemaphoreTest {
         final ISemaphore semaphore = client.getSemaphore(randomString());
         semaphore.init(0);
         semaphore.reducePermits(1);
-        assertEquals(0, semaphore.availablePermits());
+        assertEquals(-1, semaphore.availablePermits());
+    }
+
+    @Test
+    public void testAvailableIncreasePermits() throws Exception {
+        final ISemaphore semaphore = client.getSemaphore(randomString());
+        semaphore.init(10);
+        semaphore.drainPermits();
+        semaphore.increasePermits(5);
+        assertEquals(5, semaphore.availablePermits());
+    }
+
+    @Test
+    public void testAvailableIncreasePermits_WhenIncreasedFromZero() throws Exception {
+        final ISemaphore semaphore = client.getSemaphore(randomString());
+        semaphore.init(0);
+        semaphore.increasePermits(1);
+        assertEquals(1, semaphore.availablePermits());
+    }
+
+    @Test
+    public void testNegativePermitsJucCompatibility() throws Exception {
+        final ISemaphore semaphore = client.getSemaphore(randomString());
+        semaphore.init(0);
+        semaphore.reducePermits(100);
+        semaphore.release(10);
+
+        assertEquals(-90, semaphore.availablePermits());
+        assertEquals(-90, semaphore.drainPermits());
+
+        semaphore.release(10);
+
+        assertEquals(10, semaphore.availablePermits());
+        assertEquals(10, semaphore.drainPermits());
     }
 
     @Test

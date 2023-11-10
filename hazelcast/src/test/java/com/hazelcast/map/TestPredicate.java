@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,8 +52,8 @@ class TestPredicate implements IndexAwarePredicate<String, TestData> {
         return queryContext.getIndex("attr1") != null;
     }
 
-    boolean isFilteredAndAppliedOnlyOnce() {
-        return filtered && applied == 1;
+    boolean isFilteredAndApplied(int times) {
+        return filtered && applied == times;
     }
 
     int getApplied() {

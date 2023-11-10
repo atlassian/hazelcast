@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,7 +46,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
-import static com.hazelcast.test.TestPartitionUtils.getReplicaVersions;
+import static com.hazelcast.internal.partition.TestPartitionUtils.getDefaultReplicaVersions;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -83,20 +83,20 @@ public class OperationOutOfOrderBackupTest extends HazelcastTestSupport {
         int oldValue = 111;
         setValue(nodeEngine1, partitionId, oldValue);
 
-        long[] initialReplicaVersions = getReplicaVersions(nodeEngine1.getNode(), partitionId);
+        long[] initialReplicaVersions = getDefaultReplicaVersions(nodeEngine1.getNode(), partitionId);
         assertBackupReplicaVersions(nodeEngine2.getNode(), partitionId, initialReplicaVersions);
 
         // set 2nd value
         int newValue = 222;
         setValue(nodeEngine1, partitionId, newValue);
 
-        long[] lastReplicaVersions = getReplicaVersions(nodeEngine1.getNode(), partitionId);
+        long[] lastReplicaVersions = getDefaultReplicaVersions(nodeEngine1.getNode(), partitionId);
         assertBackupReplicaVersions(nodeEngine2.getNode(), partitionId, lastReplicaVersions);
 
         // run a stale backup
         runBackup(nodeEngine2, oldValue, initialReplicaVersions, nodeEngine1.getThisAddress());
 
-        long[] backupReplicaVersions = getReplicaVersions(nodeEngine2.getNode(), partitionId);
+        long[] backupReplicaVersions = getDefaultReplicaVersions(nodeEngine2.getNode(), partitionId);
         assertArrayEquals(lastReplicaVersions, backupReplicaVersions);
 
         assertEquals(newValue, service.value.get());
@@ -119,7 +119,7 @@ public class OperationOutOfOrderBackupTest extends HazelcastTestSupport {
         assertTrueEventually(new AssertTask() {
             @Override
             public void run() throws Exception {
-                long[] backupReplicaVersions = getReplicaVersions(node, partitionId);
+                long[] backupReplicaVersions = getDefaultReplicaVersions(node, partitionId);
                 assertArrayEquals(expectedReplicaVersions, backupReplicaVersions);
             }
         });

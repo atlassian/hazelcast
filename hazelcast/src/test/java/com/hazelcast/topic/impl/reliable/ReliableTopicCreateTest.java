@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.topic.impl.reliable;
 
 import com.hazelcast.config.Config;
@@ -11,6 +27,7 @@ import com.hazelcast.core.ITopic;
 import com.hazelcast.ringbuffer.Ringbuffer;
 import com.hazelcast.ringbuffer.impl.RingbufferContainer;
 import com.hazelcast.ringbuffer.impl.RingbufferService;
+import com.hazelcast.spi.ObjectNamespace;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
@@ -21,6 +38,7 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
+import java.util.Map;
 import java.util.concurrent.ConcurrentMap;
 
 import static com.hazelcast.topic.TopicOverloadPolicy.DISCARD_NEWEST;
@@ -41,7 +59,8 @@ public class ReliableTopicCreateTest extends HazelcastTestSupport {
 
         ReliableTopicProxy<String> topic = (ReliableTopicProxy<String>) hz.<String>getReliableTopic("foo");
 
-        Ringbuffer ringbuffer = hz.getRingbuffer(RingbufferService.TOPIC_RB_PREFIX + "foo");
+        final String name = RingbufferService.TOPIC_RB_PREFIX + "foo";
+        Ringbuffer ringbuffer = hz.getRingbuffer(name);
         assertSame(ringbuffer, topic.ringbuffer);
 
         // make sure the ringbuffer and topic are hooked up correctly
@@ -50,9 +69,11 @@ public class ReliableTopicCreateTest extends HazelcastTestSupport {
 
         assertEquals(0, ringbuffer.headSequence());
         assertEquals(1, ringbuffer.tailSequence());
-        ConcurrentMap<String, RingbufferContainer> containers = ringbufferService.getContainers();
+        final Map<ObjectNamespace, RingbufferContainer> containers =
+                ringbufferService.getContainers().get(ringbufferService.getRingbufferPartitionId(name));
+        final ObjectNamespace ns = RingbufferService.getRingbufferNamespace(ringbuffer.getName());
         assertEquals(1, containers.size());
-        assertTrue(containers.containsKey(ringbuffer.getName()));
+        assertTrue(containers.containsKey(ns));
     }
 
     @Test
@@ -73,11 +94,13 @@ public class ReliableTopicCreateTest extends HazelcastTestSupport {
         // triggers the creation
         ringbuffer.size();
 
-        ConcurrentMap<String, RingbufferContainer> containers = ringbufferService.getContainers();
+        final Map<ObjectNamespace, RingbufferContainer> containers =
+                ringbufferService.getContainers().get(ringbufferService.getRingbufferPartitionId(ringbuffer.getName()));
+        final ObjectNamespace ns = RingbufferService.getRingbufferNamespace(ringbuffer.getName());
         assertEquals(1, containers.size());
-        assertTrue(containers.containsKey(ringbuffer.getName()));
+        assertTrue(containers.containsKey(ns));
 
-        RingbufferContainer container = containers.get(ringbuffer.getName());
+        RingbufferContainer container = containers.get(ns);
         assertEquals(rbConfig.getCapacity(), container.getConfig().getCapacity());
     }
 
@@ -97,8 +120,14 @@ public class ReliableTopicCreateTest extends HazelcastTestSupport {
 
         ReliableTopicProxy proxy = assertInstanceOf(ReliableTopicProxy.class, topic);
         assertEquals(proxy.overloadPolicy, TopicOverloadPolicy.DISCARD_NEWEST);
-        assertEquals(1, ringbufferService.getContainers().size());
-        assertTrue(ringbufferService.getContainers().containsKey(ringbuffer.getName()));
+
+        final ConcurrentMap<Integer, Map<ObjectNamespace, RingbufferContainer>> containers = ringbufferService.getContainers();
+        assertEquals(1, containers.size());
+        final Map<ObjectNamespace, RingbufferContainer> partitionContainers =
+                containers.get(ringbufferService.getRingbufferPartitionId(ringbuffer.getName()));
+        final ObjectNamespace ns = RingbufferService.getRingbufferNamespace(ringbuffer.getName());
+
+        assertTrue(partitionContainers.containsKey(ns));
         assertEquals(0, ringbuffer.headSequence());
         assertEquals(0, ringbuffer.tailSequence());
         assertEquals(10, ringbuffer.capacity());
@@ -123,7 +152,7 @@ public class ReliableTopicCreateTest extends HazelcastTestSupport {
         assertTrueEventually(new AssertTask() {
             @Override
             public void run() throws Exception {
-                assertTrue(messageListener.objects.contains("item"));
+                assertContains(messageListener.objects, "item");
             }
         });
     }
@@ -147,7 +176,7 @@ public class ReliableTopicCreateTest extends HazelcastTestSupport {
         assertTrueEventually(new AssertTask() {
             @Override
             public void run() throws Exception {
-                assertTrue(messageListener.objects.contains("item"));
+                assertContains(messageListener.objects, "item");
             }
         });
     }
@@ -177,7 +206,7 @@ public class ReliableTopicCreateTest extends HazelcastTestSupport {
         assertEquals(1, proxy.runnersMap.size());
 
         // check that the listener is of the right class.
-        ReliableMessageListenerRunner runner = (ReliableMessageListenerRunner) proxy.runnersMap.values().iterator().next();
+        MessageRunner runner = (MessageRunner) proxy.runnersMap.values().iterator().next();
         assertInstanceOf(ReliableMessageListenerMock.class, runner.listener);
     }
 
@@ -223,8 +252,9 @@ public class ReliableTopicCreateTest extends HazelcastTestSupport {
         assertEquals(1, proxy.runnersMap.size());
 
         // check that the listener is of the right class.
-        ReliableMessageListenerRunner runner = (ReliableMessageListenerRunner) proxy.runnersMap.values().iterator().next();
-        InstanceAwareReliableMessageListenerMock mock = assertInstanceOf(InstanceAwareReliableMessageListenerMock.class, runner.listener);
+        MessageRunner runner = (MessageRunner) proxy.runnersMap.values().iterator().next();
+        InstanceAwareReliableMessageListenerMock mock
+                = assertInstanceOf(InstanceAwareReliableMessageListenerMock.class, runner.listener);
         assertNotNull(mock.hz);
     }
 }

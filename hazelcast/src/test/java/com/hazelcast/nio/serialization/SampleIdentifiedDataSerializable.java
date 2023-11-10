@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import com.hazelcast.nio.ObjectDataOutput;
 import java.io.IOException;
 
 public class SampleIdentifiedDataSerializable implements IdentifiedDataSerializable {
+
     private char c;
     private int i;
 
@@ -57,14 +58,19 @@ public class SampleIdentifiedDataSerializable implements IdentifiedDataSerializa
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
 
         SampleIdentifiedDataSerializable that = (SampleIdentifiedDataSerializable) o;
 
-        if (c != that.c) return false;
+        if (c != that.c) {
+            return false;
+        }
         return i == that.i;
-
     }
 
     @Override

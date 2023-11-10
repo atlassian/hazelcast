@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,18 @@
 
 package com.hazelcast.internal.management.dto;
 
-import com.eclipsesource.json.JsonArray;
-import com.eclipsesource.json.JsonObject;
-import com.eclipsesource.json.JsonValue;
 import com.hazelcast.config.HotRestartClusterDataRecoveryPolicy;
 import com.hazelcast.internal.management.JsonSerializable;
+import com.hazelcast.internal.json.JsonArray;
+import com.hazelcast.internal.json.JsonObject;
+import com.hazelcast.internal.json.JsonValue;
 
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.Map;
 
 import static com.hazelcast.config.HotRestartClusterDataRecoveryPolicy.FULL_RECOVERY_ONLY;
+import static com.hazelcast.util.MapUtil.createHashMap;
+import static com.hazelcast.util.Preconditions.isNotNull;
 
 /**
  * A DTO for Hot Restart status of cluster and all members.
@@ -53,8 +54,13 @@ public class ClusterHotRestartStatusDTO implements JsonSerializable {
     }
 
     public ClusterHotRestartStatusDTO(HotRestartClusterDataRecoveryPolicy dataRecoveryPolicy,
-            ClusterHotRestartStatus hotRestartStatus, long remainingValidationTimeMillis,
-            long remainingDataLoadTimeMillis, Map<String, MemberHotRestartStatus> memberHotRestartStatusMap) {
+                                      ClusterHotRestartStatus hotRestartStatus,
+                                      long remainingValidationTimeMillis,
+                                      long remainingDataLoadTimeMillis,
+                                      Map<String, MemberHotRestartStatus> memberHotRestartStatusMap) {
+        isNotNull(dataRecoveryPolicy, "dataRecoveryPolicy");
+        isNotNull(hotRestartStatus, "hotRestartStatus");
+        isNotNull(memberHotRestartStatusMap, "memberHotRestartStatusMap");
         this.dataRecoveryPolicy = dataRecoveryPolicy;
         this.hotRestartStatus = hotRestartStatus;
         this.remainingValidationTimeMillis = remainingValidationTimeMillis;
@@ -116,7 +122,7 @@ public class ClusterHotRestartStatusDTO implements JsonSerializable {
         remainingDataLoadTimeMillis = root.getLong("remainingDataLoadTimeMillis", -1);
 
         JsonArray memberStatuses = (JsonArray) root.get("memberHotRestartStatuses");
-        memberHotRestartStatusMap = new HashMap<String, MemberHotRestartStatus>(memberStatuses.size());
+        memberHotRestartStatusMap = createHashMap(memberStatuses.size());
         for (JsonValue value : memberStatuses) {
             JsonObject memberStatus = (JsonObject) value;
             String member = memberStatus.getString("member", "<unknown>");

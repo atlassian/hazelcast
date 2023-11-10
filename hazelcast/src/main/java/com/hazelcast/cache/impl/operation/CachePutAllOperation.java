@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,45 +17,44 @@
 package com.hazelcast.cache.impl.operation;
 
 import com.hazelcast.cache.impl.CacheDataSerializerHook;
-import com.hazelcast.cache.impl.ICacheRecordStore;
-import com.hazelcast.cache.impl.ICacheService;
 import com.hazelcast.cache.impl.record.CacheRecord;
+import com.hazelcast.core.Member;
+import com.hazelcast.internal.cluster.Versions;
+import com.hazelcast.nio.Address;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.spi.BackupAwareOperation;
 import com.hazelcast.spi.Operation;
-import com.hazelcast.spi.PartitionAwareOperation;
-import com.hazelcast.spi.impl.AbstractNamedOperation;
 import com.hazelcast.spi.impl.MutatingOperation;
+import com.hazelcast.spi.impl.operationservice.TargetAware;
+import com.hazelcast.version.Version;
 
 import javax.cache.expiry.ExpiryPolicy;
 import java.io.IOException;
 import java.util.AbstractMap;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class CachePutAllOperation
-        extends AbstractNamedOperation
-        implements PartitionAwareOperation, IdentifiedDataSerializable, BackupAwareOperation,
-                   MutableOperation, MutatingOperation {
+import static com.hazelcast.util.MapUtil.createHashMap;
+
+public class CachePutAllOperation extends CacheOperation
+        implements BackupAwareOperation, MutableOperation, MutatingOperation, TargetAware {
 
     private List<Map.Entry<Data, Data>> entries;
     private ExpiryPolicy expiryPolicy;
     private int completionId;
 
-    private transient ICacheRecordStore cache;
     private transient Map<Data, CacheRecord> backupRecords;
+    private transient Address target;
 
     public CachePutAllOperation() {
     }
 
-    public CachePutAllOperation(String name, List<Map.Entry<Data, Data>> entries,
-                                ExpiryPolicy expiryPolicy, int completionId) {
-        super(name);
+    public CachePutAllOperation(String cacheNameWithPrefix, List<Map.Entry<Data, Data>> entries, ExpiryPolicy expiryPolicy,
+                                int completionId) {
+        super(cacheNameWithPrefix);
         this.entries = entries;
         this.expiryPolicy = expiryPolicy;
         this.completionId = completionId;
@@ -72,18 +71,21 @@ public class CachePutAllOperation
     }
 
     @Override
-    public void run()
-            throws Exception {
-        int partitionId = getPartitionId();
+    public void run() throws Exception {
         String callerUuid = getCallerUuid();
-        ICacheService service = getService();
-        cache = service.getOrCreateRecordStore(name, partitionId);
-        backupRecords = new HashMap<Data, CacheRecord>(entries.size());
+        backupRecords = createHashMap(entries.size());
+
         for (Map.Entry<Data, Data> entry : entries) {
             Data key = entry.getKey();
             Data value = entry.getValue();
-            CacheRecord backupRecord = cache.put(key, value, expiryPolicy, callerUuid, completionId);
-            backupRecords.put(key, backupRecord);
+
+            CacheRecord backupRecord = recordStore.put(key, value, expiryPolicy, callerUuid, completionId);
+
+            // backupRecord may be null (eg expired on put)
+            if (backupRecord != null) {
+                backupRecords.put(key, backupRecord);
+                publishWanUpdate(key, backupRecord);
+            }
         }
     }
 
@@ -103,18 +105,19 @@ public class CachePutAllOperation
     }
 
     @Override
-    public int getFactoryId() {
-        return CacheDataSerializerHook.F_ID;
+    public void setTarget(Address address) {
+        this.target = address;
     }
 
     @Override
-    public final int getSyncBackupCount() {
-        return cache != null ? cache.getConfig().getBackupCount() : 0;
-    }
-
-    @Override
-    public final int getAsyncBackupCount() {
-        return cache != null ? cache.getConfig().getAsyncBackupCount() : 0;
+    protected boolean requiresExplicitServiceName() {
+        // RU_COMPAT_3_10
+        Member member = getNodeEngine().getClusterService().getMember(target);
+        if (member == null) {
+            return false;
+        }
+        Version memberVersion = member.getVersion().asVersion();
+        return memberVersion.isLessThan(Versions.V3_11);
     }
 
     @Override

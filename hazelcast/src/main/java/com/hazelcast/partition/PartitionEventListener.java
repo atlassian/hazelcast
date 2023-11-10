@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,16 +22,14 @@ import com.hazelcast.spi.annotation.PrivateApi;
 import java.util.EventListener;
 
 /**
- * PartitionEventListener is a base interface for partition-related event listeners
+ * PartitionEventListener is a base interface for partition-related event listeners.
  *
  * @param <T> A partition-related event class
  * @see MigrationListener
  * @see PartitionLostListener
  */
 @PrivateApi
-public interface PartitionEventListener<T extends PartitionEvent>
-        extends EventListener {
+public interface PartitionEventListener<T extends PartitionEvent> extends EventListener {
 
     void onEvent(T event);
-
 }

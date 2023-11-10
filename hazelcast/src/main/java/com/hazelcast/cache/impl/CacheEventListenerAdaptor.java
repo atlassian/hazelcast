@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,17 @@
 
 package com.hazelcast.cache.impl;
 
+import com.hazelcast.cache.CacheEventType;
 import com.hazelcast.cache.ICache;
-import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.core.HazelcastInstanceAware;
+import com.hazelcast.core.ManagedContext;
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.spi.EventRegistration;
 import com.hazelcast.spi.ListenerWrapperEventFilter;
 import com.hazelcast.spi.NotifiableEventListener;
 import com.hazelcast.spi.serialization.SerializationService;
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import javax.cache.configuration.CacheEntryListenerConfiguration;
 import javax.cache.configuration.Factory;
@@ -36,7 +38,7 @@ import javax.cache.event.CacheEntryListener;
 import javax.cache.event.CacheEntryRemovedListener;
 import javax.cache.event.CacheEntryUpdatedListener;
 import javax.cache.event.EventType;
-import java.io.Serializable;
+import java.io.IOException;
 import java.util.Collection;
 import java.util.HashSet;
 
@@ -57,34 +59,35 @@ import java.util.HashSet;
  * @see javax.cache.event.CacheEntryExpiredListener
  * @see javax.cache.event.CacheEntryEventFilter
  */
-@SuppressFBWarnings(value = "SE_NO_SERIALVERSIONID",
-        justification = "Class is Serializable, but doesn't define serialVersionUID")
 public class CacheEventListenerAdaptor<K, V>
         implements CacheEventListener,
                    CacheEntryListenerProvider<K, V>,
                    NotifiableEventListener<CacheService>,
                    ListenerWrapperEventFilter,
-                   Serializable {
+                   IdentifiedDataSerializable {
 
-    private final transient CacheEntryListener<K, V> cacheEntryListener;
-    private final transient CacheEntryCreatedListener cacheEntryCreatedListener;
-    private final transient CacheEntryRemovedListener cacheEntryRemovedListener;
-    private final transient CacheEntryUpdatedListener cacheEntryUpdatedListener;
-    private final transient CacheEntryExpiredListener cacheEntryExpiredListener;
-    private final transient CacheEntryEventFilter<? super K, ? super V> filter;
-    private final boolean isOldValueRequired;
+    // all fields are effectively final
+    private transient CacheEntryListener<K, V> cacheEntryListener;
+    private transient CacheEntryCreatedListener cacheEntryCreatedListener;
+    private transient CacheEntryRemovedListener cacheEntryRemovedListener;
+    private transient CacheEntryUpdatedListener cacheEntryUpdatedListener;
+    private transient CacheEntryExpiredListener cacheEntryExpiredListener;
+    private transient CacheEntryEventFilter<? super K, ? super V> filter;
+    private boolean isOldValueRequired;
 
     private transient SerializationService serializationService;
     private transient ICache<K, V> source;
 
+    public CacheEventListenerAdaptor() {
+    }
+
     public CacheEventListenerAdaptor(ICache<K, V> source,
                                      CacheEntryListenerConfiguration<K, V> cacheEntryListenerConfiguration,
-                                     SerializationService serializationService,
-                                     HazelcastInstance hazelcastInstance) {
+                                     SerializationService serializationService) {
         this.source = source;
         this.serializationService = serializationService;
 
-        this.cacheEntryListener = createCacheEntryListener(cacheEntryListenerConfiguration, hazelcastInstance);
+        this.cacheEntryListener = createCacheEntryListener(cacheEntryListenerConfiguration);
         if (cacheEntryListener instanceof CacheEntryCreatedListener) {
             this.cacheEntryCreatedListener = (CacheEntryCreatedListener) cacheEntryListener;
         } else {
@@ -105,7 +108,7 @@ public class CacheEventListenerAdaptor<K, V>
         } else {
             this.cacheEntryExpiredListener = null;
         }
-        injectDependencies(cacheEntryListener, hazelcastInstance);
+        injectDependencies(cacheEntryListener);
 
         Factory<CacheEntryEventFilter<? super K, ? super V>> filterFactory =
                 cacheEntryListenerConfiguration.getCacheEntryEventFilterFactory();
@@ -114,25 +117,23 @@ public class CacheEventListenerAdaptor<K, V>
         } else {
             this.filter = null;
         }
-        injectDependencies(filter, hazelcastInstance);
+        injectDependencies(filter);
 
         this.isOldValueRequired = cacheEntryListenerConfiguration.isOldValueRequired();
     }
 
     private CacheEntryListener<K, V> createCacheEntryListener(
-            CacheEntryListenerConfiguration<K, V> cacheEntryListenerConfiguration,
-            HazelcastInstance hazelcastInstance) {
+            CacheEntryListenerConfiguration<K, V> cacheEntryListenerConfiguration) {
         Factory<CacheEntryListener<? super K, ? super V>> cacheEntryListenerFactory =
                 cacheEntryListenerConfiguration.getCacheEntryListenerFactory();
-        injectDependencies(cacheEntryListenerFactory, hazelcastInstance);
+        injectDependencies(cacheEntryListenerFactory);
 
         return (CacheEntryListener<K, V>) cacheEntryListenerFactory.create();
     }
 
-    private void injectDependencies(Object obj, HazelcastInstance hazelcastInstance) {
-        if (obj instanceof HazelcastInstanceAware) {
-            ((HazelcastInstanceAware) obj).setHazelcastInstance(hazelcastInstance);
-        }
+    private void injectDependencies(Object obj) {
+        ManagedContext managedContext = serializationService.getManagedContext();
+        managedContext.initialize(obj);
     }
 
     @Override
@@ -186,14 +187,28 @@ public class CacheEventListenerAdaptor<K, V>
     private Iterable<CacheEntryEvent<? extends K, ? extends V>> createCacheEntryEvent(Collection<CacheEventData> keys) {
         HashSet<CacheEntryEvent<? extends K, ? extends V>> evt = new HashSet<CacheEntryEvent<? extends K, ? extends V>>();
         for (CacheEventData cacheEventData : keys) {
-            final EventType eventType = CacheEventType.convertToEventType(cacheEventData.getCacheEventType());
-            final K key = toObject(cacheEventData.getDataKey());
-            final V newValue = toObject(cacheEventData.getDataValue());
+            EventType eventType = CacheEventType.convertToEventType(cacheEventData.getCacheEventType());
+            K key = toObject(cacheEventData.getDataKey());
+            boolean hasNewValue = !(eventType == EventType.REMOVED || eventType == EventType.EXPIRED);
+            final V newValue;
             final V oldValue;
             if (isOldValueRequired) {
-                oldValue = toObject(cacheEventData.getDataOldValue());
+                if (hasNewValue) {
+                    newValue = toObject(cacheEventData.getDataValue());
+                    oldValue = toObject(cacheEventData.getDataOldValue());
+                } else {
+                    // according to contract of CacheEntryEvent#getValue
+                    oldValue = toObject(cacheEventData.getDataValue());
+                    newValue = oldValue;
+                }
             } else {
-                oldValue = null;
+                if (hasNewValue) {
+                    newValue = toObject(cacheEventData.getDataValue());
+                    oldValue = null;
+                } else {
+                    newValue = null;
+                    oldValue = null;
+                }
             }
             final CacheEntryEventImpl<K, V> event =
                     new CacheEntryEventImpl<K, V>(source, eventType, key, newValue, oldValue);
@@ -242,4 +257,25 @@ public class CacheEventListenerAdaptor<K, V>
         return this;
     }
 
+    @Override
+    public int getFactoryId() {
+        return CacheDataSerializerHook.F_ID;
+    }
+
+    @Override
+    public int getId() {
+        return CacheDataSerializerHook.CACHE_EVENT_LISTENER_ADAPTOR;
+    }
+
+    @Override
+    public void writeData(ObjectDataOutput out)
+            throws IOException {
+
+    }
+
+    @Override
+    public void readData(ObjectDataInput in)
+            throws IOException {
+
+    }
 }

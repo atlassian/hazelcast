@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,13 +27,15 @@ import com.hazelcast.query.Predicate;
 import com.hazelcast.query.SqlPredicate;
 import com.hazelcast.test.HazelcastTestSupport;
 import org.junit.Test;
-import org.junit.runners.Parameterized;
 
 import java.io.Serializable;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import static java.util.Arrays.asList;
+import static org.junit.runners.Parameterized.Parameter;
+import static org.junit.runners.Parameterized.Parameters;
 
 /**
  * Common superclass to test types of events published with different filtering strategies (default & query cache natural event
@@ -41,17 +43,19 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public abstract class AbstractEntryEventTypesTest extends HazelcastTestSupport {
 
-    @Parameterized.Parameters(name = "includeValues: {0}")
+    @Parameters(name = "includeValues: {0}")
     public static Collection<Object[]> data() {
-        return Arrays.asList(new Object[][] {
-                {true}, {false}
+        return asList(new Object[][]{
+                {true},
+                {false},
         });
     }
 
-    @Parameterized.Parameter
+    @Parameter
     public boolean includeValue;
 
-    final Predicate predicate = new SqlPredicate("age > 50");
+    @SuppressWarnings("unchecked")
+    final Predicate<Integer, Person> predicate = new SqlPredicate("age > 50");
 
     final AtomicInteger eventCounter = new AtomicInteger();
     HazelcastInstance instance;
@@ -65,9 +69,10 @@ public abstract class AbstractEntryEventTypesTest extends HazelcastTestSupport {
     abstract Integer expectedCountFor_entryUpdatedEvent_whenOldValueMatches_newValueOutsidePredicate();
 
     public static class CountEntryAddedListener implements EntryAddedListener<Integer, Person> {
+
         private final AtomicInteger counter;
 
-        public CountEntryAddedListener(AtomicInteger counter) {
+        CountEntryAddedListener(AtomicInteger counter) {
             this.counter = counter;
         }
 
@@ -78,9 +83,10 @@ public abstract class AbstractEntryEventTypesTest extends HazelcastTestSupport {
     }
 
     public static class CountEntryRemovedListener implements EntryRemovedListener<Integer, Person> {
+
         private final AtomicInteger counter;
 
-        public CountEntryRemovedListener(AtomicInteger counter) {
+        CountEntryRemovedListener(AtomicInteger counter) {
             this.counter = counter;
         }
 
@@ -91,9 +97,10 @@ public abstract class AbstractEntryEventTypesTest extends HazelcastTestSupport {
     }
 
     public static class CountEntryUpdatedListener implements EntryUpdatedListener<Integer, Person> {
+
         private final AtomicInteger counter;
 
-        public CountEntryUpdatedListener(AtomicInteger counter) {
+        CountEntryUpdatedListener(AtomicInteger counter) {
             this.counter = counter;
         }
 
@@ -104,6 +111,7 @@ public abstract class AbstractEntryEventTypesTest extends HazelcastTestSupport {
     }
 
     public static class Person implements Serializable {
+
         String name;
         int age;
 
@@ -119,7 +127,7 @@ public abstract class AbstractEntryEventTypesTest extends HazelcastTestSupport {
     @Test
     public void entryAddedEvent_whenNoPredicateConfigured() {
         map.addEntryListener(new CountEntryAddedListener(eventCounter), includeValue);
-        map.put(1,  new Person("a", 40));
+        map.put(1, new Person("a", 40));
         assertEqualsEventually(new Callable<Integer>() {
             @Override
             public Integer call()
@@ -132,7 +140,7 @@ public abstract class AbstractEntryEventTypesTest extends HazelcastTestSupport {
     @Test
     public void entryAddedEvent_whenValueMatchesPredicate() {
         map.addEntryListener(new CountEntryAddedListener(eventCounter), predicate, includeValue);
-        map.put(1,  new Person("a", 75));
+        map.put(1, new Person("a", 75));
         assertEqualsEventually(new Callable<Integer>() {
             @Override
             public Integer call()
@@ -145,7 +153,7 @@ public abstract class AbstractEntryEventTypesTest extends HazelcastTestSupport {
     @Test
     public void entryAddedEvent_whenValueOutsidePredicate() {
         map.addEntryListener(new CountEntryAddedListener(eventCounter), predicate, includeValue);
-        map.put(1,  new Person("a", 35));
+        map.put(1, new Person("a", 35));
         assertEqualsEventually(new Callable<Integer>() {
             @Override
             public Integer call()

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,13 +17,19 @@
 package com.hazelcast.instance;
 
 import com.hazelcast.cluster.ClusterState;
-import com.hazelcast.config.HotRestartPersistenceConfig;
+import com.hazelcast.hotrestart.HotRestartService;
+import com.hazelcast.hotrestart.InternalHotRestartService;
+import com.hazelcast.internal.ascii.TextCommandService;
 import com.hazelcast.internal.cluster.impl.JoinMessage;
 import com.hazelcast.internal.cluster.impl.JoinRequest;
-import com.hazelcast.internal.management.dto.ClusterHotRestartStatusDTO;
-import com.hazelcast.internal.networking.ReadHandler;
-import com.hazelcast.internal.networking.SocketChannelWrapperFactory;
-import com.hazelcast.internal.networking.WriteHandler;
+import com.hazelcast.internal.diagnostics.Diagnostics;
+import com.hazelcast.internal.dynamicconfig.DynamicConfigListener;
+import com.hazelcast.internal.jmx.ManagementService;
+import com.hazelcast.internal.management.ManagementCenterConnectionFactory;
+import com.hazelcast.internal.management.TimedMemberStateFactory;
+import com.hazelcast.internal.networking.ChannelInitializerProvider;
+import com.hazelcast.internal.networking.InboundHandler;
+import com.hazelcast.internal.networking.OutboundHandler;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.memory.MemoryStats;
 import com.hazelcast.nio.Address;
@@ -32,15 +38,16 @@ import com.hazelcast.nio.IOService;
 import com.hazelcast.nio.MemberSocketInterceptor;
 import com.hazelcast.nio.tcp.TcpIpConnection;
 import com.hazelcast.security.SecurityContext;
+import com.hazelcast.security.SecurityService;
 import com.hazelcast.spi.annotation.PrivateApi;
-import com.hazelcast.version.ClusterVersion;
+import com.hazelcast.util.ByteArrayProcessor;
+import com.hazelcast.version.Version;
 
 import java.util.Map;
-import java.util.Set;
 
 /**
  * NodeExtension is a <tt>Node</tt> extension mechanism to be able to plug different implementations of
- * some modules, like; <tt>SerializationService</tt>, <tt>SocketChannelWrapperFactory</tt> etc.
+ * some modules, like; <tt>SerializationService</tt>, <tt>ChannelFactory</tt> etc.
  */
 @PrivateApi
 @SuppressWarnings({"checkstyle:methodcount"})
@@ -88,6 +95,8 @@ public interface NodeExtension {
      */
     InternalSerializationService createSerializationService();
 
+    SecurityService getSecurityService();
+
     /**
      * Returns <tt>SecurityContext</tt> for this <tt>Node</tt> if available, otherwise returns null.
      *
@@ -119,33 +128,39 @@ public interface NodeExtension {
      * otherwise returns null.
      *
      * @return MemberSocketInterceptor
+     * @param endpointQualifier
      */
-    MemberSocketInterceptor getMemberSocketInterceptor();
+    MemberSocketInterceptor getSocketInterceptor(EndpointQualifier endpointQualifier);
 
     /**
-     * Returns <tt>SocketChannelWrapperFactory</tt> instance to be used by this <tt>Node</tt>.
+     * Creates a <tt>InboundHandler</tt> for given <tt>Connection</tt> instance.
      *
-     * @return SocketChannelWrapperFactory
-     */
-    SocketChannelWrapperFactory getSocketChannelWrapperFactory();
-
-    /**
-     * Creates a <tt>ReadHandler</tt> for given <tt>Connection</tt> instance.
+     * For TLS and other enterprise features, instead of returning the regular protocol decoder, a TLS decoder
+     * can be returned. This is the first item in the chain.
      *
      * @param connection tcp-ip connection
      * @param ioService  IOService
-     * @return the created ReadHandler.
+     * @return the created InboundHandler.
      */
-    ReadHandler createReadHandler(TcpIpConnection connection, IOService ioService);
+    InboundHandler[] createInboundHandlers(EndpointQualifier qualifier, TcpIpConnection connection, IOService ioService);
 
     /**
-     * Creates a <tt>WriteHandler</tt> for given <tt>Connection</tt> instance.
+     * Creates a <tt>OutboundHandler</tt> for given <tt>Connection</tt> instance.
      *
      * @param connection tcp-ip connection
      * @param ioService  IOService
-     * @return the created WriteHandler
+     * @return the created OutboundHandler
      */
-    WriteHandler createWriteHandler(TcpIpConnection connection, IOService ioService);
+    OutboundHandler[] createOutboundHandlers(EndpointQualifier qualifier, TcpIpConnection connection, IOService ioService);
+
+
+    /**
+     * Creates the ChannelInitializerProvider.
+     *
+     * @param ioService
+     * @return
+     */
+    ChannelInitializerProvider createChannelInitializerProvider(IOService ioService);
 
     /**
      * Called on thread start to inject/intercept extension specific logic,
@@ -179,32 +194,73 @@ public interface NodeExtension {
     void validateJoinRequest(JoinMessage joinMessage);
 
     /**
-     * Called when cluster state is changed
+     * Called when initial cluster state is received while joining the cluster.
      *
-     * @param newState new state
-     * @param isTransient status of the change. A cluster state change may be transient if it has been done temporarily
-     *                         during system operations such cluster start etc.
+     * @param initialState initial cluster state
+     */
+    void onInitialClusterState(ClusterState initialState);
+
+    /**
+     * Called before starting a cluster state change transaction. Called only
+     * on the member that initiated the state change.
+     *
+     * @param currState the state before the change
+     * @param requestedState the requested cluster state
+     * @param isTransient whether the change will be recorded in persistent storage, affecting the
+     *                    initial state after cluster restart. Transient changes happen during
+     *                    system operations such as an orderly all-cluster shutdown.
+     */
+    void beforeClusterStateChange(ClusterState currState, ClusterState requestedState, boolean isTransient);
+
+    /**
+     * Called during the commit phase of the cluster state change transaction,
+     * just after updating the value of the cluster state on the local member,
+     * while still holding the cluster lock. Called on all cluster members.
+     *
+     * @param newState the new cluster state
+     * @param isTransient whether the change will be recorded in persistent storage, affecting the
+     *                    initial state after cluster restart. Transient changes happen during
+     *                    system operations such as an orderly all-cluster shutdown.
      */
     void onClusterStateChange(ClusterState newState, boolean isTransient);
 
     /**
-     * Called when partition state (partition assignments, version etc) changes
+     * Called after the cluster state change transaction has completed
+     * (successfully or otherwise). Called only on the member that initiated
+     * the state change.
+     *
+     * @param oldState the state before the change
+     * @param newState the new cluster state, can be equal to {@code oldState} if the
+     *                 state change transaction failed
+     * @param isTransient whether the change will be recorded in persistent storage, affecting the
+     *                    initial state after cluster restart. Transient changes happen during
+     *                    system operations such as an orderly all-cluster shutdown.
+     */
+    void afterClusterStateChange(ClusterState oldState, ClusterState newState, boolean isTransient);
+
+    /**
+     * Called synchronously when partition state (partition assignments, version etc) changes
      */
     void onPartitionStateChange();
+
+    /**
+     * Called synchronously when member list changes
+     */
+    void onMemberListChange();
 
     /**
      * Called after cluster version is changed.
      *
      * @param newVersion the new version at which the cluster operates.
      */
-    void onClusterVersionChange(ClusterVersion newVersion);
+    void onClusterVersionChange(Version newVersion);
 
     /**
      * Check if this node's codebase version is compatible with given cluster version.
      * @param clusterVersion the cluster version to check against
      * @return {@code true} if compatible, otherwise false.
      */
-    boolean isNodeVersionCompatibleWith(ClusterVersion clusterVersion);
+    boolean isNodeVersionCompatibleWith(Version clusterVersion);
 
     /**
      * Registers given listener if it's a known type.
@@ -213,64 +269,66 @@ public interface NodeExtension {
      */
     boolean registerListener(Object listener);
 
-    /**
-     * Forces node to start by skipping hot-restart completely and removing all hot-restart data
-     * even if node is still on validation phase or loading hot-restart data.
-     *
-     * @return true if force start is triggered successfully. force start cannot be triggered if hot restart is disabled or
-     * the master is not known yet
-     */
-    boolean triggerForceStart();
+    /** Returns the public hot restart service */
+    HotRestartService getHotRestartService();
 
-    /**
-     * Triggers partial start if the cluster cannot be started with full recovery and
-     * {@link HotRestartPersistenceConfig#clusterDataRecoveryPolicy} is set accordingly.
-     *
-     * @return true if partial start is triggered.
-     */
-    boolean triggerPartialStart();
+    /** Returns the internal hot restart service */
+    InternalHotRestartService getInternalHotRestartService();
 
     /**
      * Creates a UUID for local member
      * @param address address of local member
-     * @return new uuid
+     * @return new UUID
      */
     String createMemberUuid(Address address);
 
     /**
-     * Checks if the given member has been excluded during the cluster start or not.
-     * If returns true, it means that the given member is not allowed to join to the cluster.
+     * Creates a TimedMemberStateFactory for a given Hazelcast instance
+     * @param instance The instance to associate with the timed member state factory
+     * @return {@link TimedMemberStateFactory}
+     */
+    TimedMemberStateFactory createTimedMemberStateFactory(HazelcastInstanceImpl instance);
+
+    ManagementCenterConnectionFactory getManagementCenterConnectionFactory();
+
+    ManagementService createJMXManagementService(HazelcastInstanceImpl instance);
+
+    TextCommandService createTextCommandService();
+
+    /** Returns a byte array processor for incoming data on the Multicast joiner */
+    ByteArrayProcessor createMulticastInputProcessor(IOService ioService);
+
+    /** Returns a byte array processor for outgoing data on the Multicast joiner */
+    ByteArrayProcessor createMulticastOutputProcessor(IOService ioService);
+
+    /**
+     * Creates a listener for changes in dynamic data structure configurations
      *
-     * @param memberAddress address of the member to check
-     * @param memberUuid uuid of the member to check
-     * @return true if the member has been excluded on cluster start.
+     * @return Listener to be notfied about changes in data structure configurations
      */
-    boolean isMemberExcluded(Address memberAddress, String memberUuid);
+    DynamicConfigListener createDynamicConfigListener();
 
     /**
-     * Returns uuids of the members that have been excluded during the cluster start.
+     * Register the node extension specific diagnostics plugins on the provided
+     * {@code diagnostics}.
      *
-     * @return uuids of the members that have been excluded during the cluster start
+     * @param diagnostics the diagnostics on which plugins should be registered
      */
-    Set<String> getExcludedMemberUuids();
+    void registerPlugins(Diagnostics diagnostics);
 
     /**
-     * Handles the uuid set of excluded members only if this member is also excluded, and triggers the member force start process.
-     *
-     * @param sender the member that has sent the excluded members set
-     * @param excludedMemberUuids uuids of the members that have been excluded during the cluster start
+     * Send PhoneHome ping from OS or EE instance to PhoneHome application
      */
-    void handleExcludedMemberUuids(Address sender, Set<String> excludedMemberUuids);
+    void sendPhoneHome();
 
     /**
-     * Returns latest Hot Restart status as Management Center DTO. An empty status object will
-     * be returned if Hot Restart is not available (not EE) or not enabled.
+     * Cluster version auto upgrade is done asynchronously. Every call of this
+     * method creates and schedules a new auto upgrade task.
      */
-    ClusterHotRestartStatusDTO getCurrentClusterHotRestartStatus();
+    void scheduleClusterVersionAutoUpgrade();
 
     /**
-     * Resets local hot restart data and gets a new uuid, if the local node hasn't completed the start process and
-     * it is excluded in cluster start.
+     * @return true if client failover feature is supported
      */
-    void resetHotRestartData();
+    boolean isClientFailoverSupported();
 }

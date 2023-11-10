@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,7 +38,7 @@ import com.hazelcast.client.impl.protocol.codec.QueueRemoveCodec;
 import com.hazelcast.client.impl.protocol.codec.QueueRemoveListenerCodec;
 import com.hazelcast.client.impl.protocol.codec.QueueSizeCodec;
 import com.hazelcast.client.impl.protocol.codec.QueueTakeCodec;
-import com.hazelcast.client.spi.ClientClusterService;
+import com.hazelcast.client.spi.ClientContext;
 import com.hazelcast.client.spi.EventHandler;
 import com.hazelcast.client.spi.impl.ListenerMessageCodec;
 import com.hazelcast.collection.impl.common.DataAwareItemEvent;
@@ -51,16 +51,16 @@ import com.hazelcast.core.ItemListener;
 import com.hazelcast.core.Member;
 import com.hazelcast.monitor.LocalQueueStats;
 import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.spi.serialization.SerializationService;
-import com.hazelcast.util.CollectionUtil;
-import com.hazelcast.util.Preconditions;
 
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 import java.util.concurrent.TimeUnit;
 
+import static com.hazelcast.util.CollectionUtil.objectToDataCollection;
 import static com.hazelcast.util.Preconditions.checkNotNull;
+import static com.hazelcast.util.Preconditions.isNotNull;
+import static java.lang.Thread.currentThread;
 
 /**
  * Proxy implementation of {@link IQueue}.
@@ -69,12 +69,13 @@ import static com.hazelcast.util.Preconditions.checkNotNull;
  */
 public final class ClientQueueProxy<E> extends PartitionSpecificClientProxy implements IQueue<E> {
 
-    public ClientQueueProxy(String serviceName, String name) {
-        super(serviceName, name);
+    public ClientQueueProxy(String serviceName, String name, ClientContext context) {
+        super(serviceName, name, context);
     }
 
     @Override
     public String addItemListener(final ItemListener<E> listener, final boolean includeValue) {
+        isNotNull(listener, "listener");
         EventHandler<ClientMessage> eventHandler = new ItemEventHandler(includeValue, listener);
         return registerListener(createItemListenerCodec(includeValue), eventHandler);
     }
@@ -115,13 +116,10 @@ public final class ClientQueueProxy<E> extends PartitionSpecificClientProxy impl
         }
 
         @Override
-        public void handle(Data dataItem, String uuid, int eventType) {
-            SerializationService serializationService = getContext().getSerializationService();
-            ClientClusterService clusterService = getContext().getClusterService();
-
-            Member member = clusterService.getMember(uuid);
+        public void handleItemEventV10(Data dataItem, String uuid, int eventType) {
+            Member member = getContext().getClusterService().getMember(uuid);
             ItemEvent<E> itemEvent = new DataAwareItemEvent(name, ItemEventType.getByType(eventType),
-                    dataItem, member, serializationService);
+                    dataItem, member, getSerializationService());
             if (eventType == ItemEventType.ADDED.getType()) {
                 listener.itemAdded(itemEvent);
             } else {
@@ -131,12 +129,10 @@ public final class ClientQueueProxy<E> extends PartitionSpecificClientProxy impl
 
         @Override
         public void beforeListenerRegister() {
-
         }
 
         @Override
         public void onListenerRegister() {
-
         }
     }
 
@@ -147,7 +143,7 @@ public final class ClientQueueProxy<E> extends PartitionSpecificClientProxy impl
 
     @Override
     public LocalQueueStats getLocalQueueStats() {
-        throw new UnsupportedOperationException("Locality is ambiguous for client!!!");
+        throw new UnsupportedOperationException("Locality is ambiguous for client!");
     }
 
     @Override
@@ -173,6 +169,7 @@ public final class ClientQueueProxy<E> extends PartitionSpecificClientProxy impl
         try {
             return offer(e, 0, TimeUnit.SECONDS);
         } catch (InterruptedException ex) {
+            currentThread().interrupt();
             return false;
         }
     }
@@ -277,6 +274,7 @@ public final class ClientQueueProxy<E> extends PartitionSpecificClientProxy impl
         try {
             return poll(0, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
+            currentThread().interrupt();
             return null;
         }
     }
@@ -320,7 +318,7 @@ public final class ClientQueueProxy<E> extends PartitionSpecificClientProxy impl
         ClientMessage response = invokeOnPartition(request);
         QueueIteratorCodec.ResponseParameters resultParameters = QueueIteratorCodec.decodeResponse(response);
         Collection<Data> resultCollection = resultParameters.response;
-        return new QueueIterator<E>(resultCollection.iterator(), getContext().getSerializationService(), false);
+        return new QueueIterator<E>(resultCollection.iterator(), getSerializationService(), false);
     }
 
     @Override
@@ -356,8 +354,8 @@ public final class ClientQueueProxy<E> extends PartitionSpecificClientProxy impl
 
     @Override
     public boolean containsAll(Collection<?> c) {
-        Preconditions.checkNotNull(c);
-        Collection<Data> dataCollection = CollectionUtil.objectToDataCollection(c, getSerializationService());
+        checkNotNull(c);
+        Collection<Data> dataCollection = objectToDataCollection(c, getSerializationService());
         ClientMessage request = QueueContainsAllCodec.encodeRequest(name, dataCollection);
         ClientMessage response = invokeOnPartition(request);
         QueueContainsAllCodec.ResponseParameters resultParameters = QueueContainsAllCodec.decodeResponse(response);
@@ -366,8 +364,8 @@ public final class ClientQueueProxy<E> extends PartitionSpecificClientProxy impl
 
     @Override
     public boolean addAll(Collection<? extends E> c) {
-        Preconditions.checkNotNull(c);
-        Collection<Data> dataCollection = CollectionUtil.objectToDataCollection(c, getSerializationService());
+        checkNotNull(c);
+        Collection<Data> dataCollection = objectToDataCollection(c, getSerializationService());
         ClientMessage request = QueueAddAllCodec.encodeRequest(name, dataCollection);
         ClientMessage response = invokeOnPartition(request);
         QueueAddAllCodec.ResponseParameters resultParameters = QueueAddAllCodec.decodeResponse(response);
@@ -376,8 +374,8 @@ public final class ClientQueueProxy<E> extends PartitionSpecificClientProxy impl
 
     @Override
     public boolean removeAll(Collection<?> c) {
-        Preconditions.checkNotNull(c);
-        Collection<Data> dataCollection = CollectionUtil.objectToDataCollection(c, getSerializationService());
+        checkNotNull(c);
+        Collection<Data> dataCollection = objectToDataCollection(c, getSerializationService());
         ClientMessage request = QueueCompareAndRemoveAllCodec.encodeRequest(name, dataCollection);
         ClientMessage response = invokeOnPartition(request);
         QueueCompareAndRemoveAllCodec.ResponseParameters resultParameters =
@@ -387,8 +385,8 @@ public final class ClientQueueProxy<E> extends PartitionSpecificClientProxy impl
 
     @Override
     public boolean retainAll(Collection<?> c) {
-        Preconditions.checkNotNull(c);
-        Collection<Data> dataCollection = CollectionUtil.objectToDataCollection(c, getSerializationService());
+        checkNotNull(c);
+        Collection<Data> dataCollection = objectToDataCollection(c, getSerializationService());
         ClientMessage request = QueueCompareAndRetainAllCodec.encodeRequest(name, dataCollection);
         ClientMessage response = invokeOnPartition(request);
         QueueCompareAndRetainAllCodec.ResponseParameters resultParameters =

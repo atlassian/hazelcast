@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,12 @@
 
 package com.hazelcast.client.cache.impl;
 
+import com.hazelcast.cache.impl.ICacheInternal;
 import com.hazelcast.client.spi.ClientContext;
 
 public class ClientCachePartitionIterator<K, V> extends ClientClusterWideIterator<K, V> {
 
-    public ClientCachePartitionIterator(ClientCacheProxy<K, V> cacheProxy, ClientContext context, int fetchSize,
+    public ClientCachePartitionIterator(ICacheInternal<K, V> cacheProxy, ClientContext context, int fetchSize,
                                         int partitionId, boolean prefetchValues) {
         super(cacheProxy, context, fetchSize, partitionId, prefetchValues);
     }

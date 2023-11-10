@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import com.hazelcast.config.MapConfig;
 import com.hazelcast.core.EntryView;
 import com.hazelcast.core.PartitioningStrategy;
 import com.hazelcast.internal.serialization.impl.DefaultSerializationServiceBuilder;
-import com.hazelcast.map.impl.record.AbstractRecord;
 import com.hazelcast.map.impl.record.DataRecordFactory;
 import com.hazelcast.map.impl.record.Record;
 import com.hazelcast.nio.serialization.Data;
@@ -43,12 +42,11 @@ import static org.mockito.Mockito.mock;
 @Category({QuickTest.class, ParallelTest.class})
 public class LazyEntryViewFromRecordTest {
 
-    private static final int ENTRY_VIEW_COST_IN_BYTES = 97 + 3 * REFERENCE_COST_IN_BYTES;
+    private static final int ENTRY_VIEW_COST_IN_BYTES = 77 + 4 * REFERENCE_COST_IN_BYTES;
 
     private final String key = "key";
     private final String value = "value";
 
-    private SerializationService serializationService;
     private Record<Data> recordInstance;
     private EntryView view;
 
@@ -63,11 +61,10 @@ public class LazyEntryViewFromRecordTest {
     private EntryView createDefaultEntryView() {
         PartitioningStrategy mockPartitioningStrategy = mock(PartitioningStrategy.class);
         MapConfig mapConfig = new MapConfig();
-        serializationService = new DefaultSerializationServiceBuilder().build();
+        SerializationService serializationService = new DefaultSerializationServiceBuilder().build();
         DataRecordFactory dataRecordFactory
                 = new DataRecordFactory(mapConfig, serializationService, mockPartitioningStrategy);
-        recordInstance = dataRecordFactory.newRecord(value);
-        ((AbstractRecord) recordInstance).setKey(serializationService.toData(key));
+        recordInstance = dataRecordFactory.newRecord(serializationService.toData(key), value);
         return new LazyEntryViewFromRecord(recordInstance, serializationService);
     }
 
@@ -172,5 +169,4 @@ public class LazyEntryViewFromRecordTest {
 
         assertEquals(expected, view.toString());
     }
-
 }

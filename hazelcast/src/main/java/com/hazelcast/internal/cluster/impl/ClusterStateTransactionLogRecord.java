@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,12 +17,14 @@
 package com.hazelcast.internal.cluster.impl;
 
 import com.hazelcast.cluster.ClusterState;
-import com.hazelcast.internal.cluster.impl.operations.ChangeClusterStateOperation;
-import com.hazelcast.internal.cluster.impl.operations.LockClusterStateOperation;
-import com.hazelcast.internal.cluster.impl.operations.RollbackClusterStateOperation;
+import com.hazelcast.internal.cluster.Versions;
+import com.hazelcast.internal.cluster.impl.operations.CommitClusterStateOp;
+import com.hazelcast.internal.cluster.impl.operations.LockClusterStateOp;
+import com.hazelcast.internal.cluster.impl.operations.RollbackClusterStateOp;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.impl.Versioned;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.transaction.impl.TargetAwareTransactionLogRecord;
 import com.hazelcast.util.Preconditions;
@@ -35,13 +37,14 @@ import java.io.IOException;
  * @see ClusterState
  * @see com.hazelcast.core.Cluster#changeClusterState(ClusterState, com.hazelcast.transaction.TransactionOptions)
  */
-public class ClusterStateTransactionLogRecord implements TargetAwareTransactionLogRecord {
+public class ClusterStateTransactionLogRecord implements TargetAwareTransactionLogRecord, Versioned {
 
     ClusterStateChange stateChange;
     Address initiator;
     Address target;
     String txnId;
     long leaseTime;
+    int memberListVersion;
     int partitionStateVersion;
     boolean isTransient;
 
@@ -49,7 +52,9 @@ public class ClusterStateTransactionLogRecord implements TargetAwareTransactionL
     }
 
     public ClusterStateTransactionLogRecord(ClusterStateChange stateChange, Address initiator, Address target,
-            String txnId, long leaseTime, int partitionStateVersion, boolean isTransient) {
+                                            String txnId, long leaseTime, int memberListVersion,
+                                            int partitionStateVersion, boolean isTransient) {
+        this.memberListVersion = memberListVersion;
         Preconditions.checkNotNull(stateChange);
         Preconditions.checkNotNull(initiator);
         Preconditions.checkNotNull(target);
@@ -72,17 +77,28 @@ public class ClusterStateTransactionLogRecord implements TargetAwareTransactionL
 
     @Override
     public Operation newPrepareOperation() {
-        return new LockClusterStateOperation(stateChange, initiator, txnId, leaseTime, partitionStateVersion);
+        return new LockClusterStateOp(stateChange, initiator, txnId,
+                leaseTime, memberListVersion, partitionStateVersion);
     }
 
     @Override
     public Operation newCommitOperation() {
-        return new ChangeClusterStateOperation(stateChange, initiator, txnId, isTransient);
+        return new CommitClusterStateOp(stateChange, initiator, txnId, isTransient);
+    }
+
+    @Override
+    public void onCommitSuccess() {
+        // NOP
+    }
+
+    @Override
+    public void onCommitFailure() {
+        // NOP
     }
 
     @Override
     public Operation newRollbackOperation() {
-        return new RollbackClusterStateOperation(initiator, txnId);
+        return new RollbackClusterStateOp(initiator, txnId);
     }
 
     @Override
@@ -99,6 +115,10 @@ public class ClusterStateTransactionLogRecord implements TargetAwareTransactionL
         out.writeLong(leaseTime);
         out.writeInt(partitionStateVersion);
         out.writeBoolean(isTransient);
+        // RU_COMPAT_V3_10
+        if (out.getVersion().isGreaterOrEqual(Versions.V3_11)) {
+            out.writeInt(memberListVersion);
+        }
     }
 
     @Override
@@ -110,6 +130,10 @@ public class ClusterStateTransactionLogRecord implements TargetAwareTransactionL
         leaseTime = in.readLong();
         partitionStateVersion = in.readInt();
         isTransient = in.readBoolean();
+        // RU_COMPAT_V3_10
+        if (in.getVersion().isGreaterOrEqual(Versions.V3_11)) {
+            memberListVersion = in.readInt();
+        }
     }
 
     @Override

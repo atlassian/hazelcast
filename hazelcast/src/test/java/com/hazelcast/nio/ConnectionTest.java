@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,11 +20,15 @@ import com.hazelcast.config.Config;
 import com.hazelcast.config.SocketInterceptorConfig;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.internal.management.ThreadDumpGenerator;
+import com.hazelcast.test.HazelcastSerialClassRunner;
+import com.hazelcast.test.HazelcastTestSupport;
+import com.hazelcast.test.annotation.QuickTest;
 import org.junit.After;
 import org.junit.BeforeClass;
 import org.junit.Ignore;
 import org.junit.Test;
+import org.junit.experimental.categories.Category;
+import org.junit.runner.RunWith;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -43,29 +47,30 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static com.hazelcast.internal.management.ThreadDumpGenerator.dumpAllThreads;
 import static org.junit.Assert.assertTrue;
 
 /**
  * IGNORED THIS TEST COMPLETELY. KEEPING FOR FUTURE REFERENCE.
  * PRONE TO FAIL BECAUSE OF BLOCKING TCP CONNECT-ACCEPT-CLOSE CYCLE.
  */
-
-@Ignore("See testBlockedClientSockets and testBlockedClientSockets2 tests. " +
-        "Currently we couldn't find a way to make them pass...")
-public class ConnectionTest {
+@RunWith(HazelcastSerialClassRunner.class)
+@Category(QuickTest.class)
+@Ignore("See testBlockedClientSockets and testBlockedClientSockets2 tests. Currently we couldn't find a way to make them pass...")
+public class ConnectionTest extends HazelcastTestSupport {
 
     @BeforeClass
-    public static void init() throws Exception {
+    public static void init() {
         Hazelcast.shutdownAll();
     }
 
     @After
-    public void cleanup() throws Exception {
+    public void cleanup() {
         Hazelcast.shutdownAll();
     }
 
     @Test
-    public void testBlockedClientSockets() throws IOException, InterruptedException {
+    public void testBlockedClientSockets() throws Exception {
         final ServerSocket serverSocket = new ServerSocket(13131, 1);
         final int count = 100;
         final CountDownLatch latch = new CountDownLatch(count);
@@ -87,7 +92,6 @@ public class ConnectionTest {
         st.start();
 
         final AtomicBoolean flag = new AtomicBoolean(false);
-
         for (int i = 0; i < count; i++) {
             final Socket clientSocket = new Socket();
             Thread t = new Thread("client-socket-" + i) {
@@ -127,7 +131,7 @@ public class ConnectionTest {
     }
 
     @Test
-    public void testBlockedClientSockets2() throws IOException, InterruptedException {
+    public void testBlockedClientSockets2() throws Exception {
         final ServerSocket serverSocket = new ServerSocket(13131);
         final int count = 100;
         final CountDownLatch latch = new CountDownLatch(count);
@@ -163,7 +167,6 @@ public class ConnectionTest {
         assertTrue(latch.await(1, TimeUnit.MINUTES));
     }
 
-
     @Test
     public void testDanglingSocketsOnTerminate() throws Exception {
         testDanglingSocketsOnTerminate(false);
@@ -175,12 +178,12 @@ public class ConnectionTest {
     }
 
     private void testDanglingSocketsOnTerminate(boolean withSocketInterceptor) throws Exception {
-        Config c = new Config();
         final int port = 5701;
-        c.getNetworkConfig().setPort(port).setPortAutoIncrement(false);
+        Config config = new Config();
+        config.getNetworkConfig().setPort(port).setPortAutoIncrement(false);
 
         if (withSocketInterceptor) {
-            c.getNetworkConfig().setSocketInterceptorConfig(new SocketInterceptorConfig().setEnabled(true)
+            config.getNetworkConfig().setSocketInterceptorConfig(new SocketInterceptorConfig().setEnabled(true)
                     .setImplementation(new MemberSocketInterceptor() {
                         public void init(Properties properties) {
                         }
@@ -193,7 +196,7 @@ public class ConnectionTest {
                     }));
         }
 
-        final HazelcastInstance hz = Hazelcast.newHazelcastInstance(c);
+        final HazelcastInstance hz = Hazelcast.newHazelcastInstance(config);
         final int count = 100;
         final CountDownLatch latch = new CountDownLatch(count);
         final CountDownLatch ll = new CountDownLatch(1);
@@ -247,13 +250,14 @@ public class ConnectionTest {
         try {
             assertTrue(latch.await(1, TimeUnit.MINUTES));
         } catch (AssertionError e) {
-            System.err.println(ThreadDumpGenerator.dumpAllThreads());
+            System.err.println(dumpAllThreads());
             throw e;
         } finally {
             for (Socket socket : sockets) {
                 try {
                     socket.close();
                 } catch (Exception e) {
+                    ignore(e);
                 }
             }
         }

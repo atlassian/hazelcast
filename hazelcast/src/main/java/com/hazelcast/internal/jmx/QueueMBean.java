@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,9 +33,9 @@ public class QueueMBean extends HazelcastMBean<IQueue> {
 
     protected QueueMBean(IQueue managedObject, ManagementService service) {
         super(managedObject, service);
-        objectName = service.createObjectName("IQueue", managedObject.getName());
+        this.objectName = service.createObjectName("IQueue", managedObject.getName());
         StatsSupplier<LocalQueueStats> localQueueStatsSupplier = new LocalQueueStatsSupplier(managedObject);
-        localQueueStatsDelegate = new LocalStatsDelegate<LocalQueueStats>(localQueueStatsSupplier, updateIntervalSec);
+        this.localQueueStatsDelegate = new LocalStatsDelegate<LocalQueueStats>(localQueueStatsSupplier, updateIntervalSec);
     }
 
     @ManagedAnnotation("localOwnedItemCount")

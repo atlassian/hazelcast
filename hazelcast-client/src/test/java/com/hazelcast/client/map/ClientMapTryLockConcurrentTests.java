@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.client.map;
 
 import com.hazelcast.client.test.TestHazelcastFactory;
@@ -57,7 +73,7 @@ public class ClientMapTryLockConcurrentTests {
         map.put(upKey, 0);
         map.put(downKey, 0);
 
-        Thread threads[] = new Thread[maxThreads];
+        Thread[] threads = new Thread[maxThreads];
         for (int i = 0; i < threads.length; i++) {
 
             Thread t;
@@ -124,8 +140,10 @@ public class ClientMapTryLockConcurrentTests {
         }
     }
 
-    static abstract class TestHelper extends Thread {
+    abstract static class TestHelper extends Thread {
+
         protected static final int ITERATIONS = 1000 * 10;
+
         protected final Random random = new Random();
         protected final IMap<String, Integer> map;
         protected final String upKey;

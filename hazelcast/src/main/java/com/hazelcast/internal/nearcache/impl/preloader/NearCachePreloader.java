@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,6 @@ package com.hazelcast.internal.nearcache.impl.preloader;
 
 import com.hazelcast.config.NearCachePreloaderConfig;
 import com.hazelcast.internal.adapter.DataStructureAdapter;
-import com.hazelcast.internal.nearcache.NearCacheRecord;
-import com.hazelcast.internal.nearcache.impl.NearCacheRecordMap;
 import com.hazelcast.internal.serialization.impl.HeapData;
 import com.hazelcast.internal.util.BufferingInputStream;
 import com.hazelcast.logging.ILogger;
@@ -37,13 +35,14 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.util.Set;
+import java.util.Iterator;
 
 import static com.hazelcast.nio.Bits.INT_SIZE_IN_BYTES;
 import static com.hazelcast.nio.Bits.readIntB;
 import static com.hazelcast.nio.Bits.writeIntB;
 import static com.hazelcast.nio.IOUtil.closeResource;
 import static com.hazelcast.nio.IOUtil.deleteQuietly;
+import static com.hazelcast.nio.IOUtil.getPath;
 import static com.hazelcast.nio.IOUtil.readFullyOrNothing;
 import static com.hazelcast.nio.IOUtil.rename;
 import static com.hazelcast.nio.IOUtil.toFileName;
@@ -55,9 +54,9 @@ import static java.util.concurrent.TimeUnit.NANOSECONDS;
 /**
  * Loads and stores the keys from a Near Cache into a file.
  *
- * @param <KS> type of the {@link NearCacheRecord} keys
+ * @param <K> type of the {@link com.hazelcast.internal.nearcache.NearCacheRecord} keys
  */
-public class NearCachePreloader<KS> {
+public class NearCachePreloader<K> {
 
     /**
      * File format for the file header.
@@ -86,16 +85,17 @@ public class NearCachePreloader<KS> {
     private static final int LOAD_BATCH_SIZE = 100;
 
     private final ILogger logger = Logger.getLogger(NearCachePreloader.class);
-    private final ByteBuffer buf = allocate(BUFFER_SIZE);
     private final byte[] tmpBytes = new byte[INT_SIZE_IN_BYTES];
 
     private final String nearCacheName;
     private final NearCacheStatsImpl nearCacheStats;
     private final SerializationService serializationService;
 
+    private final NearCachePreloaderLock lock;
     private final File storeFile;
     private final File tmpStoreFile;
 
+    private ByteBuffer buf;
     private int lastWrittenBytes;
     private int lastKeyCount;
 
@@ -105,9 +105,14 @@ public class NearCachePreloader<KS> {
         this.nearCacheStats = nearCacheStats;
         this.serializationService = serializationService;
 
-        String fileName = getFileName(preloaderConfig.getFileName(), nearCacheName);
-        this.storeFile = new File(fileName);
-        this.tmpStoreFile = new File(fileName + "~");
+        String filename = getFilename(preloaderConfig.getDirectory(), nearCacheName);
+        this.lock = new NearCachePreloaderLock(logger, filename + ".lock");
+        this.storeFile = new File(filename);
+        this.tmpStoreFile = new File(filename + "~");
+    }
+
+    public void destroy() {
+        lock.release();
     }
 
     /**
@@ -115,7 +120,13 @@ public class NearCachePreloader<KS> {
      *
      * @param adapter the {@link DataStructureAdapter} to load the values from
      */
-    public void loadKeys(DataStructureAdapter<Data, ?> adapter) {
+    public void loadKeys(DataStructureAdapter<Object, ?> adapter) {
+        if (!storeFile.exists()) {
+            logger.info(format("Skipped loading keys of Near Cache %s since storage file doesn't exist (%s)", nearCacheName,
+                    storeFile.getAbsolutePath()));
+            return;
+        }
+
         long startedNanos = System.nanoTime();
         BufferingInputStream bis = null;
         try {
@@ -129,8 +140,7 @@ public class NearCachePreloader<KS> {
             long elapsedMillis = getElapsedMillis(startedNanos);
             logger.info(format("Loaded %d keys of Near Cache %s in %d ms", loadedKeys, nearCacheName, elapsedMillis));
         } catch (Exception e) {
-            logger.warning(format("Could not pre-load Near Cache %s (%s): [%s] %s", nearCacheName, storeFile.getAbsolutePath(),
-                    e.getClass().getSimpleName(), e.getMessage()));
+            logger.warning(format("Could not pre-load Near Cache %s (%s)", nearCacheName, storeFile.getAbsolutePath()), e);
         } finally {
             closeResource(bis);
         }
@@ -152,32 +162,24 @@ public class NearCachePreloader<KS> {
     }
 
     /**
-     * Stores the keys from the supplied {@link NearCacheRecordMap} instances.
+     * Stores the Near Cache keys from the supplied iterator.
      *
-     * We need to support multiple records maps here, since Hazelcast Enterprise has a segmented
-     * {@link com.hazelcast.internal.nearcache.NearCacheRecordStore} which contains multiple records maps.
-     *
-     * @param records the {@link NearCacheRecordMap} instances to retrieve the keys from
-     * @param <R>     the {@link NearCacheRecord} type
-     * @param <NCRM>  the {@link NearCacheRecordMap} type
+     * @param iterator {@link Iterator} over the key set of a {@link com.hazelcast.internal.nearcache.NearCacheRecordStore}
      */
-    public <R extends NearCacheRecord, NCRM extends NearCacheRecordMap<KS, R>> void storeKeys(NCRM... records) {
+    public void storeKeys(Iterator<K> iterator) {
         long startedNanos = System.nanoTime();
         FileOutputStream fos = null;
         try {
+            buf = allocate(BUFFER_SIZE);
             lastWrittenBytes = 0;
             lastKeyCount = 0;
 
             fos = new FileOutputStream(tmpStoreFile, false);
 
-            // writer header
+            // write header and keys
             writeInt(fos, MAGIC_BYTES);
             writeInt(fos, FileFormat.INTERLEAVED_LENGTH_FIELD.ordinal());
-
-            // writer keys
-            for (NCRM record : records) {
-                writeKeySet(fos, fos.getChannel(), record.keySet());
-            }
+            writeKeySet(fos, fos.getChannel(), iterator);
 
             // cleanup if no keys have been written
             if (lastKeyCount == 0) {
@@ -187,15 +189,17 @@ public class NearCachePreloader<KS> {
             }
 
             fos.flush();
+            closeResource(fos);
             rename(tmpStoreFile, storeFile);
 
             updatePersistenceStats(startedNanos);
         } catch (Exception e) {
-            logger.warning(format("Could not store keys of Near Cache %s (%s): [%s] %s", nearCacheName,
-                    storeFile.getAbsolutePath(), e.getClass().getSimpleName(), e.getMessage()));
+            logger.warning(format("Could not store keys of Near Cache %s (%s)", nearCacheName, storeFile.getAbsolutePath()), e);
+
+            nearCacheStats.addPersistenceFailure(e);
         } finally {
-            deleteQuietly(tmpStoreFile);
             closeResource(fos);
+            deleteQuietly(tmpStoreFile);
         }
     }
 
@@ -207,17 +211,18 @@ public class NearCachePreloader<KS> {
                 MemoryUnit.BYTES.toKiloBytes(lastWrittenBytes)));
     }
 
-    private int loadKeySet(BufferingInputStream bis, DataStructureAdapter<Data, ?> adapter) throws IOException {
+    private int loadKeySet(BufferingInputStream bis, DataStructureAdapter<Object, ?> adapter) throws IOException {
         int loadedKeys = 0;
 
-        Builder<Data> builder = InflatableSet.newBuilder(LOAD_BATCH_SIZE);
+        Builder<Object> builder = InflatableSet.newBuilder(LOAD_BATCH_SIZE);
         while (readFullyOrNothing(bis, tmpBytes)) {
             int dataSize = readIntB(tmpBytes, 0);
             byte[] payload = new byte[dataSize];
             if (!readFullyOrNothing(bis, payload)) {
                 break;
             }
-            builder.add(new HeapData(payload));
+            Data key = new HeapData(payload);
+            builder.add(serializationService.toObject(key));
             if (builder.size() == LOAD_BATCH_SIZE) {
                 adapter.getAll(builder.build());
                 builder = InflatableSet.newBuilder(LOAD_BATCH_SIZE);
@@ -230,8 +235,9 @@ public class NearCachePreloader<KS> {
         return loadedKeys;
     }
 
-    private void writeKeySet(FileOutputStream fos, FileChannel outChannel, Set<KS> keySet) throws IOException {
-        for (KS key : keySet) {
+    private void writeKeySet(FileOutputStream fos, FileChannel outChannel, Iterator<K> iterator) throws IOException {
+        while (iterator.hasNext()) {
+            K key = iterator.next();
             Data dataKey = serializationService.toData(key);
             if (dataKey != null) {
                 int dataSize = dataKey.totalSize();
@@ -284,11 +290,12 @@ public class NearCachePreloader<KS> {
         buf.clear();
     }
 
-    private static String getFileName(String configFileName, String nearCacheName) {
-        if (!isNullOrEmpty(configFileName)) {
-            return configFileName;
+    private static String getFilename(String directory, String nearCacheName) {
+        String filename = toFileName("nearCache-" + nearCacheName + ".store");
+        if (isNullOrEmpty(directory)) {
+            return filename;
         }
-        return "nearcache-" + toFileName(nearCacheName) + ".store";
+        return getPath(directory, filename);
     }
 
     private static long getElapsedMillis(long startedNanos) {

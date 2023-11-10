@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -82,15 +82,24 @@ public class CacheReadWriteThroughTest extends HazelcastTestSupport {
         return instance;
     }
 
+    /**
+     * Hook for adding additional setup steps in child classes.
+     */
+    protected void onSetup() {
+    }
+
     @Before
     public void setup() {
+        onSetup();
         factory = createInstanceFactory(2);
         hz = getInstance();
         cachingProvider = createCachingProvider(hz);
     }
 
+    /**
+     * Hook for adding additional teardown steps in child classes.
+     */
     protected void onTearDown() {
-
     }
 
     @After
@@ -343,36 +352,29 @@ public class CacheReadWriteThroughTest extends HazelcastTestSupport {
         }
 
         @Override
-        public void write(Cache.Entry<? extends Integer, ? extends Integer> entry)
-                throws CacheWriterException {
-            Integer value = entry.getValue().intValue();
+        public void write(Cache.Entry<? extends Integer, ? extends Integer> entry) throws CacheWriterException {
+            Integer value = entry.getValue();
             if (!isAcceptableValue(value)) {
                 throw new CacheWriterException("Value is invalid: " + value);
             }
         }
 
         @Override
-        public void writeAll(Collection<Cache.Entry<? extends Integer, ? extends Integer>> entries)
-                throws CacheWriterException {
+        public void writeAll(Collection<Cache.Entry<? extends Integer, ? extends Integer>> entries) throws CacheWriterException {
         }
 
         @Override
-        public void delete(Object key)
-                throws CacheWriterException {
+        public void delete(Object key) throws CacheWriterException {
         }
 
         @Override
-        public void deleteAll(Collection<?> keys)
-                throws CacheWriterException {
+        public void deleteAll(Collection<?> keys) throws CacheWriterException {
         }
-
     }
-
 
     public interface ValueChecker extends Serializable {
 
         boolean isAcceptableValue(int value);
-
     }
 
     public static class ModValueChecker implements ValueChecker {
@@ -387,7 +389,6 @@ public class CacheReadWriteThroughTest extends HazelcastTestSupport {
         public boolean isAcceptableValue(int value) {
             return value % mod != 0;
         }
-
     }
 
     public static class MaxValueChecker implements ValueChecker {
@@ -402,7 +403,5 @@ public class CacheReadWriteThroughTest extends HazelcastTestSupport {
         public boolean isAcceptableValue(int value) {
             return value < maxValue;
         }
-
     }
-
 }

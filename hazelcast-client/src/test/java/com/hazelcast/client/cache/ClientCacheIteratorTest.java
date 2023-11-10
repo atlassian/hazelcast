@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package com.hazelcast.client.cache;
 
 import com.hazelcast.cache.CacheIteratorAbstractTest;
+import com.hazelcast.client.HazelcastClient;
 import com.hazelcast.client.cache.impl.HazelcastClientCachingProvider;
 import com.hazelcast.client.test.TestHazelcastFactory;
 import com.hazelcast.core.HazelcastInstance;
@@ -47,7 +48,7 @@ public class ClientCacheIteratorTest extends CacheIteratorAbstractTest {
     @After
     public void tear() {
         factory.shutdownAll();
+        HazelcastClient.shutdownAll();
     }
 
 }
-

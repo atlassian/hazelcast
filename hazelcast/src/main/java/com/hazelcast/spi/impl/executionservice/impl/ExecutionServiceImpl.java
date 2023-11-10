@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,15 +18,17 @@ package com.hazelcast.spi.impl.executionservice.impl;
 
 import com.hazelcast.config.DurableExecutorConfig;
 import com.hazelcast.config.ExecutorConfig;
+import com.hazelcast.config.ScheduledExecutorConfig;
 import com.hazelcast.core.ICompletableFuture;
-import com.hazelcast.instance.HazelcastThreadGroup;
 import com.hazelcast.instance.Node;
 import com.hazelcast.internal.metrics.MetricsRegistry;
+import com.hazelcast.internal.util.RuntimeAvailableProcessors;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.spi.ExecutionService;
 import com.hazelcast.spi.TaskScheduler;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.spi.impl.executionservice.InternalExecutionService;
+import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.util.ConcurrencyUtil;
 import com.hazelcast.util.ConstructorFunction;
 import com.hazelcast.util.executor.CachedExecutorServiceDelegate;
@@ -37,8 +39,6 @@ import com.hazelcast.util.executor.NamedThreadPoolExecutor;
 import com.hazelcast.util.executor.PoolExecutorThreadFactory;
 import com.hazelcast.util.executor.SingleExecutorThreadFactory;
 
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -46,15 +46,16 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionHandler;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-import static com.hazelcast.util.EmptyStatement.ignore;
+import static com.hazelcast.util.ThreadUtil.createThreadPoolName;
+import static java.lang.Thread.currentThread;
 
+@SuppressWarnings({"checkstyle:classfanoutcomplexity", "checkstyle:methodcount"})
 public final class ExecutionServiceImpl implements InternalExecutionService {
 
     private static final int CORE_POOL_SIZE = 3;
@@ -65,10 +66,12 @@ public final class ExecutionServiceImpl implements InternalExecutionService {
     private static final long AWAIT_TIME = 3;
     private static final int POOL_MULTIPLIER = 2;
     private static final int QUEUE_MULTIPLIER = 100000;
+    private static final int ASYNC_QUEUE_CAPACITY = 100000;
+    private static final int OFFLOADABLE_QUEUE_CAPACITY = 100000;
 
     private final NodeEngineImpl nodeEngine;
     private final ExecutorService cachedExecutorService;
-    private final ScheduledExecutorService scheduledExecutorService;
+    private final LoggingScheduledExecutor scheduledExecutorService;
     private final TaskScheduler globalTaskScheduler;
     private final ILogger logger;
     private final CompletableFutureTask completableFutureTask;
@@ -79,13 +82,16 @@ public final class ExecutionServiceImpl implements InternalExecutionService {
     private final ConcurrentMap<String, ManagedExecutorService> durableExecutors
             = new ConcurrentHashMap<String, ManagedExecutorService>();
 
+    private final ConcurrentMap<String, ManagedExecutorService> scheduleDurableExecutors
+            = new ConcurrentHashMap<String, ManagedExecutorService>();
+
     private final ConstructorFunction<String, ManagedExecutorService> constructor =
             new ConstructorFunction<String, ManagedExecutorService>() {
                 @Override
                 public ManagedExecutorService createNew(String name) {
                     ExecutorConfig config = nodeEngine.getConfig().findExecutorConfig(name);
                     int queueCapacity = config.getQueueCapacity() <= 0 ? Integer.MAX_VALUE : config.getQueueCapacity();
-                    return createExecutor(name, config.getPoolSize(), queueCapacity, ExecutorType.CACHED);
+                    return createExecutor(name, config.getPoolSize(), queueCapacity, ExecutorType.CACHED, null);
                 }
             };
 
@@ -94,9 +100,19 @@ public final class ExecutionServiceImpl implements InternalExecutionService {
                 @Override
                 public ManagedExecutorService createNew(String name) {
                     DurableExecutorConfig cfg = nodeEngine.getConfig().findDurableExecutorConfig(name);
-                    return createExecutor(name, cfg.getPoolSize(), Integer.MAX_VALUE, ExecutorType.CACHED);
+                    return createExecutor(name, cfg.getPoolSize(), Integer.MAX_VALUE, ExecutorType.CACHED, null);
                 }
             };
+
+    private final ConstructorFunction<String, ManagedExecutorService> scheduledDurableConstructor =
+            new ConstructorFunction<String, ManagedExecutorService>() {
+                @Override
+                public ManagedExecutorService createNew(String name) {
+                    ScheduledExecutorConfig cfg = nodeEngine.getConfig().findScheduledExecutorConfig(name);
+                    return createExecutor(name, cfg.getPoolSize(), Integer.MAX_VALUE, ExecutorType.CACHED, null);
+                }
+            };
+
 
     private final MetricsRegistry metricsRegistry;
 
@@ -107,8 +123,10 @@ public final class ExecutionServiceImpl implements InternalExecutionService {
         Node node = nodeEngine.getNode();
         this.logger = node.getLogger(ExecutionService.class.getName());
 
-        HazelcastThreadGroup threadGroup = node.getHazelcastThreadGroup();
-        ThreadFactory threadFactory = new PoolExecutorThreadFactory(threadGroup, "cached");
+        String hzName = nodeEngine.getHazelcastInstance().getName();
+        ClassLoader configClassLoader = node.getConfigClassLoader();
+        ThreadFactory threadFactory = new PoolExecutorThreadFactory(createThreadPoolName(hzName, "cached"),
+                configClassLoader);
         this.cachedExecutorService = new ThreadPoolExecutor(
                 CORE_POOL_SIZE, Integer.MAX_VALUE, KEEP_ALIVE_TIME, TimeUnit.SECONDS,
                 new SynchronousQueue<Runnable>(), threadFactory, new RejectedExecutionHandler() {
@@ -120,14 +138,18 @@ public final class ExecutionServiceImpl implements InternalExecutionService {
         }
         );
 
-        ThreadFactory singleExecutorThreadFactory = new SingleExecutorThreadFactory(threadGroup, "scheduled");
-        this.scheduledExecutorService = new LoggingScheduledExecutor(logger, 1, singleExecutorThreadFactory);
-        enableRemoveOnCancelIfAvailable();
+        ThreadFactory singleExecutorThreadFactory = new SingleExecutorThreadFactory(configClassLoader,
+                createThreadPoolName(hzName, "scheduled"));
+        this.scheduledExecutorService = new LoggingScheduledExecutor(logger, 1,
+                singleExecutorThreadFactory,
+                nodeEngine.getProperties().getBoolean(GroupProperty.TASK_SCHEDULER_REMOVE_ON_CANCEL));
 
-        int coreSize = Runtime.getRuntime().availableProcessors();
+        int coreSize = Math.max(RuntimeAvailableProcessors.get(), 2);
         // default executors
         register(SYSTEM_EXECUTOR, coreSize, Integer.MAX_VALUE, ExecutorType.CACHED);
         register(SCHEDULED_EXECUTOR, coreSize * POOL_MULTIPLIER, coreSize * QUEUE_MULTIPLIER, ExecutorType.CACHED);
+        register(ASYNC_EXECUTOR, coreSize, ASYNC_QUEUE_CAPACITY, ExecutorType.CONCRETE);
+        register(OFFLOADABLE_EXECUTOR, coreSize, OFFLOADABLE_QUEUE_CAPACITY, ExecutorType.CACHED);
         this.globalTaskScheduler = getTaskScheduler(SCHEDULED_EXECUTOR);
 
         // register CompletableFuture task
@@ -135,21 +157,25 @@ public final class ExecutionServiceImpl implements InternalExecutionService {
         scheduleWithRepetition(completableFutureTask, INITIAL_DELAY, PERIOD, TimeUnit.MILLISECONDS);
     }
 
-    private void enableRemoveOnCancelIfAvailable() {
-        try {
-            Method method = scheduledExecutorService.getClass().getMethod("setRemoveOnCancelPolicy", boolean.class);
-            method.invoke(scheduledExecutorService, true);
-        } catch (NoSuchMethodException ignored) {
-            ignore(ignored);
-        } catch (InvocationTargetException ignored) {
-            ignore(ignored);
-        } catch (IllegalAccessException ignored) {
-            ignore(ignored);
-        }
+    // only used in tests
+    public LoggingScheduledExecutor getScheduledExecutorService() {
+        return scheduledExecutorService;
     }
 
     @Override
     public ManagedExecutorService register(String name, int defaultPoolSize, int defaultQueueCapacity, ExecutorType type) {
+        return register(name, defaultPoolSize, defaultQueueCapacity, type, null);
+    }
+
+    @Override
+    public ManagedExecutorService register(String name, int defaultPoolSize,
+                                           int defaultQueueCapacity, ThreadFactory threadFactory) {
+        return register(name, defaultPoolSize, defaultQueueCapacity, ExecutorType.CONCRETE, threadFactory);
+    }
+
+    private ManagedExecutorService register(String name, int defaultPoolSize,
+                                            int defaultQueueCapacity, ExecutorType type, ThreadFactory threadFactory) {
+
         ExecutorConfig config = nodeEngine.getConfig().getExecutorConfigs().get(name);
 
         int poolSize = defaultPoolSize;
@@ -163,25 +189,33 @@ public final class ExecutionServiceImpl implements InternalExecutionService {
             }
         }
 
-        ManagedExecutorService executor = createExecutor(name, poolSize, queueCapacity, type);
+        ManagedExecutorService executor = createExecutor(name, poolSize, queueCapacity, type, threadFactory);
         if (executors.putIfAbsent(name, executor) != null) {
             throw new IllegalArgumentException("ExecutorService['" + name + "'] already exists!");
         }
 
-        metricsRegistry.scanAndRegister(executor, "executor.[" + name + "]");
+        metricsRegistry.scanAndRegister(executor, "internal-executor[" + name + "]");
 
         return executor;
     }
 
-    private ManagedExecutorService createExecutor(String name, int poolSize, int queueCapacity, ExecutorType type) {
+    private ManagedExecutorService createExecutor(String name, int poolSize, int queueCapacity,
+                                                  ExecutorType type, ThreadFactory threadFactory) {
         ManagedExecutorService executor;
         if (type == ExecutorType.CACHED) {
+            if (threadFactory != null) {
+                throw new IllegalArgumentException("Cached executor can not be used with external thread factory");
+            }
             executor = new CachedExecutorServiceDelegate(nodeEngine, name, cachedExecutorService, poolSize, queueCapacity);
         } else if (type == ExecutorType.CONCRETE) {
-            Node node = nodeEngine.getNode();
-            String internalName = name.startsWith("hz:") ? name.substring(BEGIN_INDEX) : name;
-            HazelcastThreadGroup hazelcastThreadGroup = node.getHazelcastThreadGroup();
-            PoolExecutorThreadFactory threadFactory = new PoolExecutorThreadFactory(hazelcastThreadGroup, internalName);
+            if (threadFactory == null) {
+                ClassLoader classLoader = nodeEngine.getConfigClassLoader();
+                String hzName = nodeEngine.getHazelcastInstance().getName();
+                String internalName = name.startsWith("hz:") ? name.substring(BEGIN_INDEX) : name;
+                String threadNamePrefix = createThreadPoolName(hzName, internalName);
+                threadFactory = new PoolExecutorThreadFactory(threadNamePrefix, classLoader);
+            }
+
             NamedThreadPoolExecutor pool = new NamedThreadPoolExecutor(name, poolSize, poolSize,
                     KEEP_ALIVE_TIME, TimeUnit.SECONDS,
                     new LinkedBlockingQueue<Runnable>(queueCapacity),
@@ -198,6 +232,16 @@ public final class ExecutionServiceImpl implements InternalExecutionService {
     @Override
     public ManagedExecutorService getExecutor(String name) {
         return ConcurrencyUtil.getOrPutIfAbsent(executors, name, constructor);
+    }
+
+    @Override
+    public ManagedExecutorService getDurable(String name) {
+        return ConcurrencyUtil.getOrPutIfAbsent(durableExecutors, name, durableConstructor);
+    }
+
+    @Override
+    public ExecutorService getScheduledDurable(String name) {
+        return ConcurrencyUtil.getOrPutIfAbsent(scheduleDurableExecutors, name, scheduledDurableConstructor);
     }
 
     @Override
@@ -218,8 +262,7 @@ public final class ExecutionServiceImpl implements InternalExecutionService {
 
     @Override
     public void executeDurable(String name, Runnable command) {
-        ManagedExecutorService executorService = ConcurrencyUtil.getOrPutIfAbsent(durableExecutors, name, durableConstructor);
-        executorService.execute(command);
+        getDurable(name).execute(command);
     }
 
     @Override
@@ -243,6 +286,16 @@ public final class ExecutionServiceImpl implements InternalExecutionService {
     }
 
     @Override
+    public ScheduledFuture<?> scheduleDurable(String name, Runnable command, long delay, TimeUnit unit) {
+        return getDurableTaskScheduler(name).schedule(command, delay, unit);
+    }
+
+    @Override
+    public <V> ScheduledFuture<Future<V>> scheduleDurable(String name, Callable<V> command, long delay, TimeUnit unit) {
+        return getDurableTaskScheduler(name).schedule(command, delay, unit);
+    }
+
+    @Override
     public ScheduledFuture<?> scheduleWithRepetition(Runnable command, long initialDelay, long period, TimeUnit unit) {
         return globalTaskScheduler.scheduleWithRepetition(command, initialDelay, period, unit);
     }
@@ -251,6 +304,12 @@ public final class ExecutionServiceImpl implements InternalExecutionService {
     public ScheduledFuture<?> scheduleWithRepetition(String name, Runnable command, long initialDelay,
                                                      long period, TimeUnit unit) {
         return getTaskScheduler(name).scheduleWithRepetition(command, initialDelay, period, unit);
+    }
+
+    @Override
+    public ScheduledFuture<?> scheduleDurableWithRepetition(String name, Runnable command, long initialDelay,
+                                                            long period, TimeUnit unit) {
+        return getDurableTaskScheduler(name).scheduleWithRepetition(command, initialDelay, period, unit);
     }
 
     @Override
@@ -265,10 +324,14 @@ public final class ExecutionServiceImpl implements InternalExecutionService {
 
     public void shutdown() {
         logger.finest("Stopping executors...");
+        scheduledExecutorService.notifyShutdownInitiated();
         for (ExecutorService executorService : executors.values()) {
             executorService.shutdown();
         }
         for (ExecutorService executorService : durableExecutors.values()) {
+            executorService.shutdown();
+        }
+        for (ExecutorService executorService : scheduleDurableExecutors.values()) {
             executorService.shutdown();
         }
         scheduledExecutorService.shutdownNow();
@@ -276,15 +339,18 @@ public final class ExecutionServiceImpl implements InternalExecutionService {
         try {
             scheduledExecutorService.awaitTermination(AWAIT_TIME, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
+            currentThread().interrupt();
             logger.finest(e);
         }
         try {
             cachedExecutorService.awaitTermination(AWAIT_TIME, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
+            currentThread().interrupt();
             logger.finest(e);
         }
         executors.clear();
         durableExecutors.clear();
+        scheduleDurableExecutors.clear();
     }
 
     @Override
@@ -303,9 +369,22 @@ public final class ExecutionServiceImpl implements InternalExecutionService {
         }
     }
 
+    @Override
+    public void shutdownScheduledDurableExecutor(String name) {
+        ExecutorService executorService = scheduleDurableExecutors.remove(name);
+        if (executorService != null) {
+            executorService.shutdown();
+        }
+    }
+
     private <V> ICompletableFuture<V> registerCompletableFuture(Future<V> future) {
         CompletableFutureEntry<V> entry = new CompletableFutureEntry<V>(future, nodeEngine);
         completableFutureTask.registerCompletableFutureEntry(entry);
         return entry.completableFuture;
     }
+
+    private TaskScheduler getDurableTaskScheduler(String name) {
+        return new DelegatingTaskScheduler(scheduledExecutorService, getScheduledDurable(name));
+    }
+
 }

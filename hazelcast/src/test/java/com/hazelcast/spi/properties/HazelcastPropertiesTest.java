@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.spi.properties;
 
 import com.hazelcast.config.Config;
@@ -165,6 +181,29 @@ public class HazelcastPropertiesTest {
         float maxFileSize = defaultProperties.getFloat(property);
 
         assertEquals(10, maxFileSize, 0.0001);
+    }
+
+    @Test
+    public void getPositiveMillisOrDefault() {
+        String name = GroupProperty.PARTITION_TABLE_SEND_INTERVAL.getName();
+        config.setProperty(name, "-300");
+        HazelcastProperty property = new HazelcastProperty(name, "20", TimeUnit.MILLISECONDS);
+
+        long millis = defaultProperties.getPositiveMillisOrDefault(property);
+
+        assertEquals(20, millis);
+    }
+
+    @Test
+    public void getPositiveMillisOrDefaultWithManualDefault() {
+        String name = GroupProperty.PARTITION_TABLE_SEND_INTERVAL.getName();
+        config.setProperty(name, "-300");
+        HazelcastProperties properties = new HazelcastProperties(config);
+        HazelcastProperty property = new HazelcastProperty(name, "20", TimeUnit.MILLISECONDS);
+
+        long millis = properties.getPositiveMillisOrDefault(property, 50);
+
+        assertEquals(50, millis);
     }
 
     @Test

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,8 @@ import java.nio.ByteOrder;
 import static com.hazelcast.nio.Bits.NULL_ARRAY_LENGTH;
 
 public class ObjectDataInputStream extends VersionedObjectDataInput implements Closeable {
+
+    private static final int SHORT_MASK = 0xFFFF;
 
     private final InternalSerializationService serializationService;
     private final DataInputStream dataInput;
@@ -103,7 +105,7 @@ public class ObjectDataInputStream extends VersionedObjectDataInput implements C
 
     @Override
     public int readUnsignedShort() throws IOException {
-        return readShort();
+        return readShort() & SHORT_MASK;
     }
 
     @Override
@@ -356,6 +358,10 @@ public class ObjectDataInputStream extends VersionedObjectDataInput implements C
         return serializationService.getClassLoader();
     }
 
+    public InternalSerializationService getSerializationService() {
+        return serializationService;
+    }
+
     @Override
     public ByteOrder getByteOrder() {
         return byteOrder;
@@ -364,5 +370,4 @@ public class ObjectDataInputStream extends VersionedObjectDataInput implements C
     private boolean bigEndian() {
         return byteOrder == ByteOrder.BIG_ENDIAN;
     }
-
 }

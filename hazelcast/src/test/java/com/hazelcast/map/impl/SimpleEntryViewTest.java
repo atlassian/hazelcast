@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,13 +36,12 @@ public class SimpleEntryViewTest extends HazelcastTestSupport {
     @Test
     public void test_toString() throws Exception {
         HazelcastInstance instance = createHazelcastInstance();
-        IMap map = instance.getMap("test");
+        IMap<Integer, Integer> map = instance.getMap("test");
         map.put(1, 1);
 
         EntryView entryView = map.getEntryView(1);
 
         assertEquals(stringify(entryView), entryView.toString());
-
     }
 
     private String stringify(EntryView entryView) {
@@ -58,7 +57,7 @@ public class SimpleEntryViewTest extends HazelcastTestSupport {
                 + ", lastUpdateTime=" + entryView.getLastUpdateTime()
                 + ", version=" + entryView.getVersion()
                 + ", ttl=" + entryView.getTtl()
+                + ", maxIdle=" + entryView.getMaxIdle()
                 + '}';
     }
-
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,28 +16,45 @@
 
 package com.hazelcast.spi.impl;
 
+import com.hazelcast.spi.FragmentedMigrationAwareService;
 import com.hazelcast.spi.MigrationAwareService;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.PartitionMigrationEvent;
 import com.hazelcast.spi.PartitionReplicationEvent;
+import com.hazelcast.spi.ServiceNamespace;
 
+import java.util.Collection;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * A {@link MigrationAwareService} that delegates to another {@link MigrationAwareService} and keeps track of the number of
  * migrations concerning the partition owner (either as current or new replica index) currently in-flight.
  */
-public class CountingMigrationAwareService implements MigrationAwareService {
+public class CountingMigrationAwareService implements FragmentedMigrationAwareService {
 
-    private static final int PARTITION_OWNER_INDEX = 0;
+    static final int PRIMARY_REPLICA_INDEX = 0;
+    static final int IN_FLIGHT_MIGRATION_STAMP = -1;
 
-    private final MigrationAwareService migrationAwareService;
-    // number of currently executing migrations on the partition owner
-    private final AtomicInteger ownerMigrationsInFlight;
+    private final FragmentedMigrationAwareService migrationAwareService;
+    // number of started migrations on the partition owner
+    private final AtomicInteger ownerMigrationsStarted;
+    // number of completed migrations on the partition owner
+    private final AtomicInteger ownerMigrationsCompleted;
 
-    public CountingMigrationAwareService(MigrationAwareService migrationAwareService) {
+    public CountingMigrationAwareService(FragmentedMigrationAwareService migrationAwareService) {
         this.migrationAwareService = migrationAwareService;
-        this.ownerMigrationsInFlight = new AtomicInteger();
+        this.ownerMigrationsStarted = new AtomicInteger();
+        this.ownerMigrationsCompleted = new AtomicInteger();
+    }
+
+    @Override
+    public Collection<ServiceNamespace> getAllServiceNamespaces(PartitionReplicationEvent event) {
+        return migrationAwareService.getAllServiceNamespaces(event);
+    }
+
+    @Override
+    public boolean isKnownServiceNamespace(ServiceNamespace namespace) {
+        return migrationAwareService.isKnownServiceNamespace(namespace);
     }
 
     @Override
@@ -46,9 +63,15 @@ public class CountingMigrationAwareService implements MigrationAwareService {
     }
 
     @Override
+    public Operation prepareReplicationOperation(PartitionReplicationEvent event,
+            Collection<ServiceNamespace> namespaces) {
+        return migrationAwareService.prepareReplicationOperation(event, namespaces);
+    }
+
+    @Override
     public void beforeMigration(PartitionMigrationEvent event) {
-        if (event.getCurrentReplicaIndex() == PARTITION_OWNER_INDEX || event.getNewReplicaIndex() == PARTITION_OWNER_INDEX) {
-            ownerMigrationsInFlight.incrementAndGet();
+        if (isPrimaryReplicaMigrationEvent(event)) {
+            ownerMigrationsStarted.incrementAndGet();
         }
         migrationAwareService.beforeMigration(event);
     }
@@ -58,9 +81,9 @@ public class CountingMigrationAwareService implements MigrationAwareService {
         try {
             migrationAwareService.commitMigration(event);
         } finally {
-            if (event.getCurrentReplicaIndex() == PARTITION_OWNER_INDEX || event.getNewReplicaIndex() == PARTITION_OWNER_INDEX) {
-                int count = ownerMigrationsInFlight.decrementAndGet();
-                assert count >= 0;
+            if (isPrimaryReplicaMigrationEvent(event)) {
+                int completed = ownerMigrationsCompleted.incrementAndGet();
+                assert completed <= ownerMigrationsStarted.get();
             }
         }
     }
@@ -70,19 +93,45 @@ public class CountingMigrationAwareService implements MigrationAwareService {
         try {
             migrationAwareService.rollbackMigration(event);
         } finally {
-            if (event.getCurrentReplicaIndex() == PARTITION_OWNER_INDEX || event.getNewReplicaIndex() == PARTITION_OWNER_INDEX) {
-                int count = ownerMigrationsInFlight.decrementAndGet();
-                assert count >= 0;
+            if (isPrimaryReplicaMigrationEvent(event)) {
+                int completed = ownerMigrationsCompleted.incrementAndGet();
+                assert completed <= ownerMigrationsStarted.get();
             }
         }
     }
 
     /**
-     * Get the number of currently executing migrations. This is actually
-     * (count of beforeMigration) - (count of rollbackMigration + count of commitMigration)
-     * @return the number of migrations which are currently processed.
+     * Returns whether event involves primary replica migration.
+     * @param event migration event
+     * @return true if migration involves primary replica, false otherwise
      */
-    public int getOwnerMigrationsInFlight() {
-        return ownerMigrationsInFlight.get();
+    static boolean isPrimaryReplicaMigrationEvent(PartitionMigrationEvent event) {
+        return (event.getCurrentReplicaIndex() == PRIMARY_REPLICA_INDEX || event.getNewReplicaIndex() == PRIMARY_REPLICA_INDEX);
+    }
+
+    /**
+     * Returns a stamp to denote current migration state which can later be validated
+     * using {@link #validateMigrationStamp(int)}.
+     *
+     * @return migration stamp
+     */
+    public int getMigrationStamp() {
+        int completed = ownerMigrationsCompleted.get();
+        int started = ownerMigrationsStarted.get();
+        return completed == started ? completed : IN_FLIGHT_MIGRATION_STAMP;
+    }
+
+    /**
+     * Returns true if there's no primary replica migrations started and/or completed
+     * since issuance of the given stamp. Otherwise returns false, if there's an ongoing migration
+     * when stamp is issued or a new migration is started (and optionally completed) after stamp is issued.
+     *
+     * @param stamp a stamp
+     * @return true stamp is valid since issuance of the given stamp, false otherwise
+     */
+    public boolean validateMigrationStamp(int stamp) {
+        int completed = ownerMigrationsCompleted.get();
+        int started = ownerMigrationsStarted.get();
+        return stamp == completed && stamp == started;
     }
 }

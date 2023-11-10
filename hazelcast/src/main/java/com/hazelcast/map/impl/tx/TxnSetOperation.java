@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,16 +20,13 @@ import com.hazelcast.core.EntryEventType;
 import com.hazelcast.map.impl.MapDataSerializerHook;
 import com.hazelcast.map.impl.MapService;
 import com.hazelcast.map.impl.operation.BasePutOperation;
-import com.hazelcast.map.impl.operation.PutBackupOperation;
 import com.hazelcast.map.impl.record.Record;
-import com.hazelcast.map.impl.record.RecordInfo;
-import com.hazelcast.map.impl.record.Records;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.EventService;
-import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.WaitNotifyKey;
+import com.hazelcast.spi.impl.MutatingOperation;
 import com.hazelcast.transaction.TransactionException;
 
 import java.io.IOException;
@@ -37,18 +34,14 @@ import java.io.IOException;
 /**
  * An operation to unlock and set (key,value) on the partition .
  */
-public class TxnSetOperation extends BasePutOperation implements MapTxnOperation {
+public class TxnSetOperation extends BasePutOperation implements MapTxnOperation, MutatingOperation {
 
     private long version;
-    private transient boolean shouldBackup;
     private String ownerUuid;
 
-    public TxnSetOperation() {
-    }
+    private transient boolean shouldBackup;
 
-    public TxnSetOperation(String name, Data dataKey, Data value, long version) {
-        super(name, dataKey, value);
-        this.version = version;
+    public TxnSetOperation() {
     }
 
     public TxnSetOperation(String name, Data dataKey, Data value, long version, long ttl) {
@@ -67,7 +60,7 @@ public class TxnSetOperation extends BasePutOperation implements MapTxnOperation
         super.innerBeforeRun();
 
         if (!recordStore.canAcquireLock(dataKey, ownerUuid, threadId)) {
-            throw new TransactionException("Cannot acquire lock uuid: " + ownerUuid + ", threadId: " + threadId);
+            throw new TransactionException("Cannot acquire lock UUID: " + ownerUuid + ", threadId: " + threadId);
         }
     }
 
@@ -78,10 +71,10 @@ public class TxnSetOperation extends BasePutOperation implements MapTxnOperation
         if (record == null || version == record.getVersion()) {
             EventService eventService = getNodeEngine().getEventService();
             if (eventService.hasEventRegistration(MapService.SERVICE_NAME, getName())) {
-                dataOldValue = record == null ? null : mapServiceContext.toData(record.getValue());
+                oldValue = record == null ? null : mapServiceContext.toData(record.getValue());
             }
             eventType = record == null ? EntryEventType.ADDED : EntryEventType.UPDATED;
-            recordStore.set(dataKey, dataValue, ttl);
+            recordStore.set(dataKey, dataValue, ttl, maxIdle);
             shouldBackup = true;
         }
     }
@@ -111,10 +104,9 @@ public class TxnSetOperation extends BasePutOperation implements MapTxnOperation
         return true;
     }
 
-    public Operation getBackupOperation() {
-        final Record record = recordStore.getRecord(dataKey);
-        final RecordInfo replicationInfo = record != null ? Records.buildRecordInfo(record) : null;
-        return new PutBackupOperation(name, dataKey, dataValue, replicationInfo, true, false);
+    @Override
+    protected boolean shouldUnlockKeyOnBackup() {
+        return true;
     }
 
     public void onWaitExpire() {

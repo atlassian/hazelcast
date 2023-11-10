@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,83 +18,153 @@ package com.hazelcast.map;
 
 import com.hazelcast.config.Config;
 import com.hazelcast.core.EntryEvent;
-import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.core.HazelcastInstanceAware;
 import com.hazelcast.core.IMap;
 import com.hazelcast.map.listener.EntryAddedListener;
 import com.hazelcast.map.listener.EntryRemovedListener;
 import com.hazelcast.map.listener.EntryUpdatedListener;
-import com.hazelcast.map.listener.MapListener;
 import com.hazelcast.query.SqlPredicate;
-import org.junit.Ignore;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.hazelcast.test.HazelcastParallelClassRunner;
+import com.hazelcast.test.HazelcastTestSupport;
+import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.QuickTest;
+import org.junit.Test;
+import org.junit.experimental.categories.Category;
+import org.junit.runner.RunWith;
 
 import java.io.Serializable;
-import java.util.Arrays;
 import java.util.Collection;
-import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/**
- * A simple test that performs random puts, updates & removes on a map and counts the number of entries
- * and exits (with regards to the value space defined by the predicate) as performed by the map randomizer
- * and as observed on the listener side.
- */
-@Ignore("Not a JUnit test")
-public class MapListenerTest {
+import static com.hazelcast.map.impl.event.MapEventPublisherImpl.LISTENER_WITH_PREDICATE_PRODUCES_NATURAL_EVENT_TYPES;
+import static org.junit.Assert.assertEquals;
 
-    private static final AtomicInteger ENTRIES, EXITS, ENTRIES_OBSERVED, EXITS_OBSERVED;
-    private static final Logger LOGGER = LoggerFactory.getLogger(MapListenerTest.class);
+@RunWith(HazelcastParallelClassRunner.class)
+@Category({QuickTest.class, ParallelTest.class})
+public class MapListenerTest extends HazelcastTestSupport {
+
     private static final int AGE_THRESHOLD = 50;
 
-    static {
-        System.setProperty("hazelcast.map.entry.filtering.natural.event.types", "true");
-        ENTRIES = new AtomicInteger();
-        EXITS = new AtomicInteger();
-        ENTRIES_OBSERVED = new AtomicInteger();
-        EXITS_OBSERVED = new AtomicInteger();
+    @Test
+    public void testListener_eventCountsCorrect() throws Exception {
+        // GIVEN
+        HazelcastInstance hz = createHazelcastInstance();
+
+        // GIVEN MAP & LISTENER
+        IMap<String, Person> map = hz.getMap("map");
+        AllListener listener = new AllListener();
+        map.addEntryListener(listener, new SqlPredicate("age > " + AGE_THRESHOLD), true);
+
+        // GIVEN MAP EVENTS
+        generateMapEvents(map, listener);
+
+        // THEN
+        assertAtomicEventually("wrong entries count", listener.entries.get(), listener.entriesObserved, 60);
+        assertAtomicEventually("wrong exits count", listener.exits.get(), listener.exitsObserved, 60);
     }
 
-    static class AllListener implements EntryAddedListener<String, Person>, EntryRemovedListener<String, Person>,
-                                        EntryUpdatedListener<String, Person> {
+    @Test
+    public void testListener_hazelcastAwareHandled() throws Exception {
+        // GIVEN
+        HazelcastInstance[] instances = createHazelcastInstanceFactory(2).newInstances();
 
-        private static final Logger LOGGER = LoggerFactory.getLogger(AllListener.class);
+        // GIVEN MAP & LISTENER
+        IMap<String, Person> map = instances[0].getMap("map");
+        MyEntryListener listener = new MyEntryListener();
+        map.addEntryListener(listener, new SqlPredicate("age > " + AGE_THRESHOLD), true);
+
+        // GIVEN MAP EVENTS
+        generateMapEvents(map, null);
+
+        // THEN
+        assertEquals("HazelcastInstance not injected properly to listener", 0, listener.nulls.get());
+    }
+
+    private void generateMapEvents(IMap<String, Person> map, AllListener listener) throws InterruptedException, ExecutionException {
+        MapRandomizer mapRandomizer = new MapRandomizer(map, listener);
+        Future future = spawn(mapRandomizer);
+        sleepAtLeastSeconds(2);
+        mapRandomizer.setRunning(false);
+        future.get();
+    }
+
+    static class MyEntryListener implements EntryAddedListener<String, Person>, EntryRemovedListener<String, Person>,
+            EntryUpdatedListener<String, Person>, HazelcastInstanceAware {
+
+        private HazelcastInstance hazelcastInstance;
+        public AtomicInteger nulls = new AtomicInteger(0);
 
         @Override
         public void entryAdded(EntryEvent<String, Person> event) {
-            ENTRIES_OBSERVED.incrementAndGet();
-        }
-
-        @Override
-        public void entryRemoved(EntryEvent<String, Person> event) {
-            if (event.getValue() != null && event.getOldValue() != null) {
-                dumpEvent("exit from removed", event);
-            }
-            EXITS_OBSERVED.incrementAndGet();
+            trackNullInstance();
         }
 
         @Override
         public void entryUpdated(EntryEvent<String, Person> event) {
-            if (event.getOldValue().getAge() > AGE_THRESHOLD &&
-                    event.getValue().getAge() <= AGE_THRESHOLD) {
-                EXITS_OBSERVED.incrementAndGet();
-                dumpEvent("exit", event);
-            } else if (event.getOldValue().getAge() <= AGE_THRESHOLD &&
-                    event.getValue().getAge() > AGE_THRESHOLD) {
-                ENTRIES_OBSERVED.incrementAndGet();
-                dumpEvent("entry", event);
+            trackNullInstance();
+        }
+
+        @Override
+        public void entryRemoved(EntryEvent<String, Person> event) {
+            trackNullInstance();
+        }
+
+        private void trackNullInstance() {
+            if (hazelcastInstance == null) {
+                nulls.incrementAndGet();
             }
         }
 
-        private static void dumpEvent(String qualifier, EntryEvent event) {
-            LOGGER.info(qualifier + " " + event);
+        @Override
+        public void setHazelcastInstance(HazelcastInstance hazelcastInstance) {
+            this.hazelcastInstance = hazelcastInstance;
+        }
+    }
+
+    class AllListener implements EntryAddedListener<String, Person>, EntryRemovedListener<String, Person>,
+            EntryUpdatedListener<String, Person> {
+
+        final AtomicInteger entries;
+        final AtomicInteger exits;
+        final AtomicInteger entriesObserved;
+        final AtomicInteger exitsObserved;
+
+        public AllListener() {
+            entries = new AtomicInteger();
+            exits = new AtomicInteger();
+            entriesObserved = new AtomicInteger();
+            exitsObserved = new AtomicInteger();
+        }
+
+        @Override
+        public void entryAdded(EntryEvent<String, Person> event) {
+            entriesObserved.incrementAndGet();
+        }
+
+        @Override
+        public void entryRemoved(EntryEvent<String, Person> event) {
+            exitsObserved.incrementAndGet();
+        }
+
+        @Override
+        public void entryUpdated(EntryEvent<String, Person> event) {
+            if (event.getOldValue().getAge() > AGE_THRESHOLD
+                    && event.getValue().getAge() <= AGE_THRESHOLD) {
+                exitsObserved.incrementAndGet();
+            } else if (event.getOldValue().getAge() <= AGE_THRESHOLD
+                    && event.getValue().getAge() > AGE_THRESHOLD) {
+                entriesObserved.incrementAndGet();
+            }
         }
     }
 
     static class Person implements Serializable {
+
         private int age;
         private String name;
 
@@ -103,7 +173,7 @@ public class MapListenerTest {
             this.name = name;
         }
 
-        public Person (Person p) {
+        public Person(Person p) {
             this.name = p.name;
             this.age = p.age;
         }
@@ -126,29 +196,32 @@ public class MapListenerTest {
 
         @Override
         public String toString() {
-            return "Person{" +
-                    "age=" + age +
-                    '}';
+            return "Person{"
+                    + "age=" + age
+                    + '}';
         }
     }
 
     static class MapRandomizer implements Runnable {
-        final IMap<String, Person> map;
-        volatile boolean running;
-        final Random random = new Random();
 
         private static final int ACTION_ADD = 0;
         private static final int ACTION_UPDATE_AGE = 1;
         private static final int ACTION_REMOVE = 2;
 
-        public MapRandomizer(IMap<String, Person> map) {
+        final Random random = new Random();
+        final IMap<String, Person> map;
+        final AllListener listener;
+
+        volatile boolean running;
+
+        MapRandomizer(IMap<String, Person> map, AllListener listener) {
             this.map = map;
             this.running = true;
+            this.listener = listener;
         }
 
         private void act() {
-            int action = random.nextInt(10) < 6 ? ACTION_ADD :
-                    random.nextInt(10) < 8 ? ACTION_UPDATE_AGE : ACTION_REMOVE;
+            int action = random.nextInt(10) < 6 ? ACTION_ADD : random.nextInt(10) < 8 ? ACTION_UPDATE_AGE : ACTION_REMOVE;
             switch (action) {
                 case ACTION_ADD:
                     addPerson();
@@ -159,14 +232,18 @@ public class MapListenerTest {
                 case ACTION_REMOVE:
                     removePerson();
                     break;
+                default:
+                    throw new UnsupportedOperationException("Unsupported action: " + action);
             }
         }
 
         private void addPerson() {
             Person p = new Person(random.nextInt(100), UUID.randomUUID().toString());
             map.put(p.getName(), p);
-            if (p.getAge() > AGE_THRESHOLD) {
-                ENTRIES.incrementAndGet();
+            if (listener != null) {
+                if (p.getAge() > AGE_THRESHOLD) {
+                    listener.entries.incrementAndGet();
+                }
             }
         }
 
@@ -176,13 +253,13 @@ public class MapListenerTest {
                 String key = allKeys.toArray(new String[0])[random.nextInt(map.size())];
                 Person p = map.get(key);
                 int oldAge = p.getAge();
-                p.setAge(p.getAge() + random.nextInt(10) * ((int)Math.pow(-1, random.nextInt(2))));
-                if (oldAge > AGE_THRESHOLD && p.getAge() <= AGE_THRESHOLD) {
-                    EXITS.incrementAndGet();
-                    LOGGER.info("updatePersonAge exit from " + oldAge + " to " + p.getAge());
-                } else if (oldAge <= AGE_THRESHOLD && p.getAge() > AGE_THRESHOLD) {
-                    ENTRIES.incrementAndGet();
-                    LOGGER.info("updatePersonAge entry from " + oldAge + " to " + p.getAge());
+                p.setAge(p.getAge() + random.nextInt(10) * ((int) Math.pow(-1, random.nextInt(2))));
+                if (listener != null) {
+                    if (oldAge > AGE_THRESHOLD && p.getAge() <= AGE_THRESHOLD) {
+                        listener.exits.incrementAndGet();
+                    } else if (oldAge <= AGE_THRESHOLD && p.getAge() > AGE_THRESHOLD) {
+                        listener.entries.incrementAndGet();
+                    }
                 }
                 map.put(key, p);
             }
@@ -192,8 +269,10 @@ public class MapListenerTest {
             if (map.size() > 0) {
                 Collection<String> allKeys = map.keySet();
                 String key = allKeys.toArray(new String[0])[random.nextInt(map.size())];
-                if (map.get(key).getAge() > AGE_THRESHOLD) {
-                    EXITS.incrementAndGet();
+                if (listener != null) {
+                    if (map.get(key).getAge() > AGE_THRESHOLD) {
+                        listener.exits.incrementAndGet();
+                    }
                 }
                 map.remove(key);
             }
@@ -211,48 +290,9 @@ public class MapListenerTest {
         }
     }
 
-    public static void main(String[] args)
-            throws InterruptedException {
-        // Create Hazelcast instance
-        Config config = new Config();
-        config.setInstanceName("hz-maplistener");
-        config.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
-        config.getNetworkConfig().getInterfaces().setInterfaces(Arrays.asList(new String[] {"127.0.0.1"}));
-        HazelcastInstance hz = Hazelcast.newHazelcastInstance(config);
-
-        IMap<String, Person> map = hz.getMap("map");
-        MapListener listener = new AllListener();
-        map.addEntryListener(listener, new SqlPredicate("age > " + AGE_THRESHOLD), true);
-
-        MapRandomizer mapRandomizer = new MapRandomizer(map);
-        Thread t = new Thread(mapRandomizer);
-        t.start();
-
-        // let it run for 1 minute
-        Thread.sleep(60000);
-        mapRandomizer.setRunning(false);
-
-        // assertions
-        assertCount(ENTRIES, ENTRIES_OBSERVED, "entries");
-        assertCount(EXITS, EXITS_OBSERVED, "exits");
-
-        // dumpMap(map);
-        hz.shutdown();
-    }
-
-    private static void assertCount(AtomicInteger expected, AtomicInteger observed, String unit) {
-        if (expected.get() != observed.get()) {
-            LOGGER.error("Actually performed " + expected.get() + " " + unit + ", but observed " + observed.get());
-        }
-        else {
-            LOGGER.info("Correctly observed " + expected.get() + " " + unit);
-        }
-    }
-
-    private static void dumpMap(IMap<String, Person> map) {
-        LOGGER.info("Map dump follows");
-        for (Map.Entry<String, Person> e : map.entrySet()) {
-            LOGGER.info(e.getKey() + " > " + e.getValue());
-        }
+    @Override
+    protected Config getConfig() {
+        return smallInstanceConfig()
+                    .setProperty(LISTENER_WITH_PREDICATE_PRODUCES_NATURAL_EVENT_TYPES.getName(), "true");
     }
 }

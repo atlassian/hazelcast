@@ -1,13 +1,27 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.spi.impl.operationexecutor.impl;
 
 import com.hazelcast.config.Config;
 import com.hazelcast.instance.BuildInfo;
 import com.hazelcast.instance.DefaultNodeExtension;
-import com.hazelcast.instance.HazelcastThreadGroup;
 import com.hazelcast.instance.Node;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.internal.serialization.impl.DefaultSerializationServiceBuilder;
-import com.hazelcast.internal.util.counters.Counter;
 import com.hazelcast.logging.LoggingServiceImpl;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.ObjectDataInput;
@@ -15,7 +29,6 @@ import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.Packet;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.UrgentSystemOperation;
-import com.hazelcast.spi.impl.PacketHandler;
 import com.hazelcast.spi.impl.operationexecutor.OperationHostileThread;
 import com.hazelcast.spi.impl.operationexecutor.OperationRunner;
 import com.hazelcast.spi.impl.operationexecutor.OperationRunnerFactory;
@@ -23,6 +36,7 @@ import com.hazelcast.spi.impl.operationservice.impl.responses.Response;
 import com.hazelcast.spi.properties.HazelcastProperties;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastTestSupport;
+import com.hazelcast.util.function.Consumer;
 import org.junit.After;
 import org.junit.Before;
 import org.mockito.Mockito;
@@ -31,12 +45,10 @@ import java.io.IOException;
 import java.util.LinkedList;
 import java.util.List;
 
-import static com.hazelcast.spi.properties.GroupProperty.GENERIC_OPERATION_THREAD_COUNT;
-import static com.hazelcast.spi.properties.GroupProperty.PARTITION_COUNT;
-import static com.hazelcast.spi.properties.GroupProperty.PARTITION_OPERATION_THREAD_COUNT;
 import static java.util.Collections.synchronizedList;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.when;
 
 /**
  * Abstract test support to test the {@link OperationExecutorImpl}.
@@ -50,11 +62,10 @@ public abstract class OperationExecutorImpl_AbstractTest extends HazelcastTestSu
     LoggingServiceImpl loggingService;
     HazelcastProperties props;
     Address thisAddress;
-    HazelcastThreadGroup threadGroup;
     DefaultNodeExtension nodeExtension;
     OperationRunnerFactory handlerFactory;
     InternalSerializationService serializationService;
-    PacketHandler responsePacketHandler;
+    Consumer<Packet> responsePacketConsumer;
     OperationExecutorImpl executor;
     Config config;
 
@@ -63,26 +74,20 @@ public abstract class OperationExecutorImpl_AbstractTest extends HazelcastTestSu
         loggingService = new LoggingServiceImpl("foo", "jdk", new BuildInfo("1", "1", "1", 1, false, (byte) 1));
 
         serializationService = new DefaultSerializationServiceBuilder().build();
-        config = new Config();
-        config.setProperty(PARTITION_COUNT.getName(), "10");
-        config.setProperty(PARTITION_OPERATION_THREAD_COUNT.getName(), "10");
-        config.setProperty(GENERIC_OPERATION_THREAD_COUNT.getName(), "10");
+        config = smallInstanceConfig();
         thisAddress = new Address("localhost", 5701);
-        threadGroup = new HazelcastThreadGroup(
-                "foo",
-                loggingService.getLogger(HazelcastThreadGroup.class),
-                Thread.currentThread().getContextClassLoader());
-        nodeExtension = new DefaultNodeExtension(Mockito.mock(Node.class));
+        Node node = Mockito.mock(Node.class);
+        when(node.getConfig()).thenReturn(config);
+        nodeExtension = new DefaultNodeExtension(node);
         handlerFactory = new DummyOperationRunnerFactory();
 
-        responsePacketHandler = new DummyResponsePacketHandler();
+        responsePacketConsumer = new DummyResponsePacketConsumer();
     }
 
     protected OperationExecutorImpl initExecutor() {
         props = new HazelcastProperties(config);
         executor = new OperationExecutorImpl(
-                props, loggingService, thisAddress, handlerFactory,
-                threadGroup, nodeExtension);
+                props, loggingService, thisAddress, handlerFactory, nodeExtension, "hzName", Thread.currentThread().getContextClassLoader());
         executor.start();
         return executor;
     }
@@ -97,13 +102,13 @@ public abstract class OperationExecutorImpl_AbstractTest extends HazelcastTestSu
         });
     }
 
-    class DummyResponsePacketHandler implements PacketHandler {
+    class DummyResponsePacketConsumer implements Consumer<Packet> {
 
         List<Packet> packets = synchronizedList(new LinkedList<Packet>());
         List<Response> responses = synchronizedList(new LinkedList<Response>());
 
         @Override
-        public void handle(Packet packet) throws Exception {
+        public void accept(Packet packet) {
             packets.add(packet);
             Response response = serializationService.toObject(packet);
             responses.add(response);
@@ -210,6 +215,11 @@ public abstract class OperationExecutorImpl_AbstractTest extends HazelcastTestSu
 
         DummyOperationRunner(int partitionId) {
             super(partitionId);
+        }
+
+        @Override
+        public long executedOperationsCount() {
+            return 0;
         }
 
         @Override

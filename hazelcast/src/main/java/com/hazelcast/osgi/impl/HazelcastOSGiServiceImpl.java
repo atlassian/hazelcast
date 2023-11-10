@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -176,7 +176,7 @@ class HazelcastOSGiServiceImpl
             if (ownerBundle.getState() == Bundle.STARTING) {
                 try {
                     if (hazelcastInstance != null) {
-                        LOGGER.warning("Default Hazelcast instance should be null while activating service !");
+                        LOGGER.warning("Default Hazelcast instance should be null while activating service!");
                         shutdownDefaultHazelcastInstanceIfActive();
                     }
                     if (Boolean.getBoolean(HAZELCAST_OSGI_START)) {

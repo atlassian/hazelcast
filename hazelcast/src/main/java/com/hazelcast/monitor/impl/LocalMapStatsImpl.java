@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,28 @@
 
 package com.hazelcast.monitor.impl;
 
-import com.eclipsesource.json.JsonObject;
-import com.eclipsesource.json.JsonValue;
+import com.hazelcast.internal.json.JsonObject;
+import com.hazelcast.internal.json.JsonObject.Member;
+import com.hazelcast.internal.json.JsonValue;
+import com.hazelcast.internal.metrics.Probe;
+import com.hazelcast.monitor.LocalIndexStats;
 import com.hazelcast.monitor.LocalMapStats;
 import com.hazelcast.monitor.NearCacheStats;
 import com.hazelcast.util.Clock;
 
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 
 import static com.hazelcast.util.ConcurrencyUtil.setMax;
 import static com.hazelcast.util.JsonUtil.getInt;
 import static com.hazelcast.util.JsonUtil.getLong;
+import static com.hazelcast.util.JsonUtil.getObject;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static java.util.concurrent.atomic.AtomicLongFieldUpdater.newUpdater;
 
 /**
@@ -48,12 +59,14 @@ public class LocalMapStatsImpl implements LocalMapStats {
             newUpdater(LocalMapStatsImpl.class, "putCount");
     private static final AtomicLongFieldUpdater<LocalMapStatsImpl> REMOVE_COUNT =
             newUpdater(LocalMapStatsImpl.class, "removeCount");
+
+    // The resolution is in nano seconds for the following latencies
     private static final AtomicLongFieldUpdater<LocalMapStatsImpl> TOTAL_GET_LATENCIES =
-            newUpdater(LocalMapStatsImpl.class, "totalGetLatencies");
+            newUpdater(LocalMapStatsImpl.class, "totalGetLatenciesNanos");
     private static final AtomicLongFieldUpdater<LocalMapStatsImpl> TOTAL_PUT_LATENCIES =
-            newUpdater(LocalMapStatsImpl.class, "totalPutLatencies");
+            newUpdater(LocalMapStatsImpl.class, "totalPutLatenciesNanos");
     private static final AtomicLongFieldUpdater<LocalMapStatsImpl> TOTAL_REMOVE_LATENCIES =
-            newUpdater(LocalMapStatsImpl.class, "totalRemoveLatencies");
+            newUpdater(LocalMapStatsImpl.class, "totalRemoveLatenciesNanos");
     private static final AtomicLongFieldUpdater<LocalMapStatsImpl> MAX_GET_LATENCY =
             newUpdater(LocalMapStatsImpl.class, "maxGetLatency");
     private static final AtomicLongFieldUpdater<LocalMapStatsImpl> MAX_PUT_LATENCY =
@@ -61,36 +74,65 @@ public class LocalMapStatsImpl implements LocalMapStats {
     private static final AtomicLongFieldUpdater<LocalMapStatsImpl> MAX_REMOVE_LATENCY =
             newUpdater(LocalMapStatsImpl.class, "maxRemoveLatency");
 
+    private final ConcurrentMap<String, LocalIndexStatsImpl> mutableIndexStats =
+            new ConcurrentHashMap<String, LocalIndexStatsImpl>();
+    private final Map<String, LocalIndexStats> indexStats = Collections.<String, LocalIndexStats>unmodifiableMap(
+            mutableIndexStats);
+
     // These fields are only accessed through the updaters
+    @Probe
     private volatile long lastAccessTime;
+    @Probe
     private volatile long lastUpdateTime;
+    @Probe
     private volatile long hits;
+    @Probe
     private volatile long numberOfOtherOperations;
+    @Probe
     private volatile long numberOfEvents;
+    @Probe
     private volatile long getCount;
+    @Probe
     private volatile long putCount;
+    @Probe
     private volatile long removeCount;
-    private volatile long totalGetLatencies;
-    private volatile long totalPutLatencies;
-    private volatile long totalRemoveLatencies;
+    private volatile long totalGetLatenciesNanos;
+    private volatile long totalPutLatenciesNanos;
+    private volatile long totalRemoveLatenciesNanos;
     private volatile long maxGetLatency;
     private volatile long maxPutLatency;
     private volatile long maxRemoveLatency;
-
+    @Probe
     private volatile long creationTime;
+    @Probe
     private volatile long ownedEntryCount;
+    @Probe
     private volatile long backupEntryCount;
+    @Probe
     private volatile long ownedEntryMemoryCost;
+    @Probe
     private volatile long backupEntryMemoryCost;
     /**
-     * Holds total heap cost of map & Near Cache & backups.
+     * Holds total heap cost of map & Near Cache & backups & Merkle trees.
      */
+    @Probe
     private volatile long heapCost;
+    /**
+     * Holds the total memory footprint of the Merkle trees
+     */
+    @Probe
+    private volatile long merkleTreesCost;
+    @Probe
     private volatile long lockedEntryCount;
+    @Probe
     private volatile long dirtyEntryCount;
+    @Probe
     private volatile int backupCount;
-
     private volatile NearCacheStats nearCacheStats;
+    @Probe
+    private volatile long queryCount;
+    @Probe
+    private volatile long indexedQueryCount;
 
     public LocalMapStatsImpl() {
         creationTime = Clock.currentTimeMillis();
@@ -192,23 +234,8 @@ public class LocalMapStatsImpl implements LocalMapStats {
     }
 
     @Override
-    public long total() {
-        return putCount + getCount + removeCount + numberOfOtherOperations;
-    }
-
-    @Override
     public long getPutOperationCount() {
         return putCount;
-    }
-
-    public void incrementPuts(long latency) {
-        incrementPuts(1, latency);
-    }
-
-    public void incrementPuts(long delta, long latency) {
-        PUT_COUNT.addAndGet(this, delta);
-        TOTAL_PUT_LATENCIES.addAndGet(this, latency);
-        setMax(this, MAX_PUT_LATENCY, latency);
     }
 
     @Override
@@ -216,60 +243,45 @@ public class LocalMapStatsImpl implements LocalMapStats {
         return getCount;
     }
 
-    public void incrementGets(long latency) {
-        GET_COUNT.incrementAndGet(this);
-        TOTAL_GET_LATENCIES.addAndGet(this, latency);
-        setMax(this, MAX_GET_LATENCY, latency);
-    }
-
     @Override
     public long getRemoveOperationCount() {
         return removeCount;
     }
 
-    public void incrementRemoves(long latency) {
-        REMOVE_COUNT.incrementAndGet(this);
-        TOTAL_REMOVE_LATENCIES.addAndGet(this, latency);
-        setMax(this, MAX_REMOVE_LATENCY, latency);
-    }
-
+    @Probe
     @Override
     public long getTotalPutLatency() {
-        return totalPutLatencies;
+        return NANOSECONDS.toMillis(totalPutLatenciesNanos);
     }
 
+    @Probe
     @Override
     public long getTotalGetLatency() {
-        return totalGetLatencies;
+        return NANOSECONDS.toMillis(totalGetLatenciesNanos);
     }
 
+    @Probe
     @Override
     public long getTotalRemoveLatency() {
-        return totalRemoveLatencies;
+        return NANOSECONDS.toMillis(totalRemoveLatenciesNanos);
     }
 
+    @Probe
     @Override
     public long getMaxPutLatency() {
-        return maxPutLatency;
+        return NANOSECONDS.toMillis(maxPutLatency);
     }
 
+    @Probe
     @Override
     public long getMaxGetLatency() {
-        return maxGetLatency;
+        return NANOSECONDS.toMillis(maxGetLatency);
     }
 
+    @Probe
     @Override
     public long getMaxRemoveLatency() {
-        return maxRemoveLatency;
-    }
-
-    @Override
-    public long getOtherOperationCount() {
-        return numberOfOtherOperations;
-    }
-
-    public void incrementOtherOperations() {
-        NUMBER_OF_OTHER_OPERATIONS.incrementAndGet(this);
+        return NANOSECONDS.toMillis(maxRemoveLatency);
     }
 
     @Override
@@ -277,8 +289,14 @@ public class LocalMapStatsImpl implements LocalMapStats {
         return numberOfEvents;
     }
 
-    public void incrementReceivedEvents() {
-        NUMBER_OF_EVENTS.incrementAndGet(this);
+    @Override
+    public long getOtherOperationCount() {
+        return numberOfOtherOperations;
+    }
+
+    @Override
+    public long total() {
+        return putCount + getCount + removeCount + numberOfOtherOperations;
     }
 
     @Override
@@ -291,12 +309,124 @@ public class LocalMapStatsImpl implements LocalMapStats {
     }
 
     @Override
+    public long getMerkleTreesCost() {
+        return merkleTreesCost;
+    }
+
+    public void setMerkleTreesCost(long merkleTreeCost) {
+        this.merkleTreesCost = merkleTreeCost;
+    }
+
+    @Override
     public NearCacheStats getNearCacheStats() {
         return nearCacheStats;
     }
 
     public void setNearCacheStats(NearCacheStats nearCacheStats) {
         this.nearCacheStats = nearCacheStats;
+    }
+
+    @Override
+    public long getQueryCount() {
+        return queryCount;
+    }
+
+    /**
+     * Sets the query count of this stats to the given query count value.
+     *
+     * @param queryCount the query count value to set.
+     */
+    public void setQueryCount(long queryCount) {
+        this.queryCount = queryCount;
+    }
+
+    @Override
+    public long getIndexedQueryCount() {
+        return indexedQueryCount;
+    }
+
+    /**
+     * Sets the indexed query count of this stats to the given indexed query
+     * count value.
+     *
+     * @param indexedQueryCount the indexed query count value to set.
+     */
+    public void setIndexedQueryCount(long indexedQueryCount) {
+        this.indexedQueryCount = indexedQueryCount;
+    }
+
+    @Override
+    public Map<String, LocalIndexStats> getIndexStats() {
+        return indexStats;
+    }
+
+    /**
+     * Sets the per-index stats of this map stats to the given per-index stats.
+     *
+     * @param indexStats the per-index stats to set.
+     */
+    public void setIndexStats(Map<String, LocalIndexStatsImpl> indexStats) {
+        this.mutableIndexStats.clear();
+        if (indexStats != null) {
+            this.mutableIndexStats.putAll(indexStats);
+        }
+    }
+
+    public void incrementPutLatencyNanos(long latencyNanos) {
+        incrementPutLatencyNanos(1, latencyNanos);
+    }
+
+    public void incrementPutLatencyNanos(long delta, long latencyNanos) {
+        PUT_COUNT.addAndGet(this, delta);
+        TOTAL_PUT_LATENCIES.addAndGet(this, latencyNanos);
+        setMax(this, MAX_PUT_LATENCY, latencyNanos);
+    }
+
+    public void incrementGetLatencyNanos(long latencyNanos) {
+        incrementGetLatencyNanos(1, latencyNanos);
+    }
+
+    public void incrementGetLatencyNanos(long delta, long latencyNanos) {
+        GET_COUNT.addAndGet(this, delta);
+        TOTAL_GET_LATENCIES.addAndGet(this, latencyNanos);
+        setMax(this, MAX_GET_LATENCY, latencyNanos);
+    }
+
+    public void incrementRemoveLatencyNanos(long latencyNanos) {
+        REMOVE_COUNT.incrementAndGet(this);
+        TOTAL_REMOVE_LATENCIES.addAndGet(this, latencyNanos);
+        setMax(this, MAX_REMOVE_LATENCY, latencyNanos);
+    }
+
+    public void incrementOtherOperations() {
+        NUMBER_OF_OTHER_OPERATIONS.incrementAndGet(this);
+    }
+
+    public void incrementReceivedEvents() {
+        NUMBER_OF_EVENTS.incrementAndGet(this);
+    }
+
+    public void updateIndexStats(Map<String, OnDemandIndexStats> freshIndexStats) {
+        // A new index can be added, but already existing indexes can't be
+        // removed, that matches the current implementation properties of the
+        // index management.
+
+        if (freshIndexStats == null) {
+            // no indexes yet
+            return;
+        }
+
+        for (Map.Entry<String, OnDemandIndexStats> freshIndexEntry : freshIndexStats.entrySet()) {
+            String indexName = freshIndexEntry.getKey();
+            LocalIndexStatsImpl indexStats = mutableIndexStats.get(indexName);
+            if (indexStats == null) {
+                indexStats = new LocalIndexStatsImpl();
+                indexStats.setAllFrom(freshIndexEntry.getValue());
+                mutableIndexStats.putIfAbsent(indexName, indexStats);
+            } else {
+                indexStats.setAllFrom(freshIndexEntry.getValue());
+            }
+        }
     }
 
     @Override
@@ -318,16 +448,32 @@ public class LocalMapStatsImpl implements LocalMapStats {
         root.add("creationTime", creationTime);
         root.add("lockedEntryCount", lockedEntryCount);
         root.add("dirtyEntryCount", dirtyEntryCount);
-        root.add("totalGetLatencies", totalGetLatencies);
-        root.add("totalPutLatencies", totalPutLatencies);
-        root.add("totalRemoveLatencies", totalRemoveLatencies);
-        root.add("maxGetLatency", maxGetLatency);
-        root.add("maxPutLatency", maxPutLatency);
-        root.add("maxRemoveLatency", maxRemoveLatency);
+
+        // keep the contract as milliseconds for latencies sent using Json
+        root.add("totalGetLatencies", NANOSECONDS.toMillis(totalGetLatenciesNanos));
+        root.add("totalPutLatencies", NANOSECONDS.toMillis(totalPutLatenciesNanos));
+        root.add("totalRemoveLatencies", NANOSECONDS.toMillis(totalRemoveLatenciesNanos));
+        root.add("maxGetLatency", NANOSECONDS.toMillis(maxGetLatency));
+        root.add("maxPutLatency", NANOSECONDS.toMillis(maxPutLatency));
+        root.add("maxRemoveLatency", NANOSECONDS.toMillis(maxRemoveLatency));
+
         root.add("heapCost", heapCost);
+        root.add("merkleTreesCost", merkleTreesCost);
         if (nearCacheStats != null) {
             root.add("nearCacheStats", nearCacheStats.toJson());
         }
+
+        root.add("queryCount", queryCount);
+        root.add("indexedQueryCount", indexedQueryCount);
+        Map<String, LocalIndexStats> localIndexStats = indexStats;
+        if (!localIndexStats.isEmpty()) {
+            JsonObject indexes = new JsonObject();
+            for (Map.Entry<String, LocalIndexStats> indexEntry : localIndexStats.entrySet()) {
+                indexes.add(indexEntry.getKey(), indexEntry.getValue().toJson());
+            }
+            root.add("indexStats", indexes);
+        }
+
         return root;
     }
 
@@ -340,12 +486,15 @@ public class LocalMapStatsImpl implements LocalMapStats {
         numberOfEvents = getLong(json, "numberOfEvents", -1L);
         lastAccessTime = getLong(json, "lastAccessTime", -1L);
         lastUpdateTime = getLong(json, "lastUpdateTime", -1L);
-        totalGetLatencies = getLong(json, "totalGetLatencies", -1L);
-        totalPutLatencies = getLong(json, "totalPutLatencies", -1L);
-        totalRemoveLatencies = getLong(json, "totalRemoveLatencies", -1L);
-        maxGetLatency = getLong(json, "maxGetLatency", -1L);
-        maxPutLatency = getLong(json, "maxPutLatency", -1L);
-        maxRemoveLatency = getLong(json, "maxRemoveLatency", -1L);
+
+        // Json uses milliseconds but we keep latencies in nanoseconds internally
+        totalGetLatenciesNanos = MILLISECONDS.toNanos(getLong(json, "totalGetLatencies", -1L));
+        totalPutLatenciesNanos = MILLISECONDS.toNanos(getLong(json, "totalPutLatencies", -1L));
+        totalRemoveLatenciesNanos = MILLISECONDS.toNanos(getLong(json, "totalRemoveLatencies", -1L));
+        maxGetLatency = MILLISECONDS.toNanos(getLong(json, "maxGetLatency", -1L));
+        maxPutLatency = MILLISECONDS.toNanos(getLong(json, "maxPutLatency", -1L));
+        maxRemoveLatency = MILLISECONDS.toNanos(getLong(json, "maxRemoveLatency", -1L));
+
         hits = getLong(json, "hits", -1L);
         ownedEntryCount = getLong(json, "ownedEntryCount", -1L);
         backupEntryCount = getLong(json, "backupEntryCount", -1L);
@@ -356,10 +505,26 @@ public class LocalMapStatsImpl implements LocalMapStats {
         lockedEntryCount = getLong(json, "lockedEntryCount", -1L);
         dirtyEntryCount = getLong(json, "dirtyEntryCount", -1L);
         heapCost = getLong(json, "heapCost", -1L);
+        merkleTreesCost = getLong(json, "merkleTreesCost", -1L);
         JsonValue jsonNearCacheStats = json.get("nearCacheStats");
         if (jsonNearCacheStats != null) {
             nearCacheStats = new NearCacheStatsImpl();
             nearCacheStats.fromJson(jsonNearCacheStats.asObject());
+        }
+
+        queryCount = getLong(json, "queryCount", -1L);
+        indexedQueryCount = getLong(json, "indexedQueryCount", -1L);
+        JsonObject indexes = getObject(json, "indexStats", null);
+        if (indexes != null && !indexes.isEmpty()) {
+            Map<String, LocalIndexStatsImpl> localIndexStats = new HashMap<String, LocalIndexStatsImpl>();
+            for (Member member : indexes) {
+                LocalIndexStatsImpl indexStats = new LocalIndexStatsImpl();
+                indexStats.fromJson(member.getValue().asObject());
+                localIndexStats.put(member.getName(), indexStats);
+            }
+            setIndexStats(localIndexStats);
+        } else {
+            setIndexStats(null);
         }
     }
 
@@ -374,9 +539,12 @@ public class LocalMapStatsImpl implements LocalMapStats {
                 + ", getCount=" + getCount
                 + ", putCount=" + putCount
                 + ", removeCount=" + removeCount
-                + ", totalGetLatencies=" + totalGetLatencies
-                + ", totalPutLatencies=" + totalPutLatencies
-                + ", totalRemoveLatencies=" + totalRemoveLatencies
+                + ", totalGetLatencies=" + NANOSECONDS.toMillis(totalGetLatenciesNanos)
+                + ", totalPutLatencies=" + NANOSECONDS.toMillis(totalPutLatenciesNanos)
+                + ", totalRemoveLatencies=" + NANOSECONDS.toMillis(totalRemoveLatenciesNanos)
+                + ", maxGetLatency=" + NANOSECONDS.toMillis(maxGetLatency)
+                + ", maxPutLatency=" + NANOSECONDS.toMillis(maxPutLatency)
+                + ", maxRemoveLatency=" + NANOSECONDS.toMillis(maxRemoveLatency)
                 + ", ownedEntryCount=" + ownedEntryCount
                 + ", backupEntryCount=" + backupEntryCount
                 + ", backupCount=" + backupCount
@@ -386,6 +554,11 @@ public class LocalMapStatsImpl implements LocalMapStats {
                 + ", lockedEntryCount=" + lockedEntryCount
                 + ", dirtyEntryCount=" + dirtyEntryCount
                 + ", heapCost=" + heapCost
+                + ", merkleTreesCost=" + merkleTreesCost
+                + ", nearCacheStats=" + (nearCacheStats != null ? nearCacheStats : "")
+                + ", queryCount=" + queryCount
+                + ", indexedQueryCount=" + indexedQueryCount
+                + ", indexStats=" + indexStats
                 + '}';
     }
 }

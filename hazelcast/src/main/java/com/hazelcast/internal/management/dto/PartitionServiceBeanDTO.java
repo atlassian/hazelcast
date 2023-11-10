@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,10 @@
 
 package com.hazelcast.internal.management.dto;
 
-import com.eclipsesource.json.JsonObject;
 import com.hazelcast.instance.HazelcastInstanceImpl;
 import com.hazelcast.internal.management.JsonSerializable;
 import com.hazelcast.internal.partition.InternalPartitionService;
+import com.hazelcast.internal.json.JsonObject;
 import com.hazelcast.nio.Address;
 
 import static com.hazelcast.util.JsonUtil.getInt;
@@ -39,7 +39,7 @@ public class PartitionServiceBeanDTO implements JsonSerializable {
                                    HazelcastInstanceImpl hazelcastInstance) {
         Address address = hazelcastInstance.getCluster().getLocalMember().getAddress();
         this.partitionCount = partitionService.getPartitionCount();
-        this.activePartitionCount = partitionService.getMemberPartitions(address).size();
+        this.activePartitionCount = partitionService.getMemberPartitionsIfAssigned(address).size();
     }
 
     public int getPartitionCount() {

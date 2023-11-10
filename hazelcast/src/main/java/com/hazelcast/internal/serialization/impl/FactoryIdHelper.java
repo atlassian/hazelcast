@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -116,6 +116,39 @@ public final class FactoryIdHelper {
     public static final String TEXT_PROTOCOLS_DS_FACTORY = "hazelcast.serialization.ds.text.protocols";
     public static final int TEXT_PROTOCOLS_DS_FACTORY_ID = -37;
 
+    public static final String ENTERPRISE_HOTRESTART_BACKUP_DS_FACTORY = "hazelcast.serialization.ds.spi.hotrestart.backup";
+    public static final int ENTERPRISE_HOTRESTART_BACKUP_DS_FACTORY_ID = -38;
+
+    public static final String SCHEDULED_EXECUTOR_DS_FACTORY = "hazelcast.serialization.ds.scheduled.executor";
+    public static final int SCHEDULED_EXECUTOR_DS_FACTORY_ID = -39;
+
+    public static final String USER_CODE_DEPLOYMENT_DS_FACTORY = "hazelcast.serialization.ds.user.code.deployment";
+    public static final int USER_CODE_DEPLOYMENT_DS_FACTORY_ID = -40;
+
+    public static final String AGGREGATOR_DS_FACTORY = "hazelcast.serialization.ds.aggregator";
+    public static final int AGGREGATOR_DS_FACTORY_ID = -41;
+
+    public static final String PROJECTION_DS_FACTORY = "hazelcast.serialization.ds.projection";
+    public static final int PROJECTION_DS_FACTORY_ID = -42;
+
+    public static final String CONFIG_DS_FACTORY = "hazelcast.serialization.ds.config";
+    public static final int CONFIG_DS_FACTORY_ID = -43;
+
+    public static final String ENTERPRISE_SECURITY_DS_FACTORY = "hazelcast.serialization.ds.security";
+    public static final int ENTERPRISE_SECURITY_DS_FACTORY_ID = -44;
+
+    public static final String EVENT_JOURNAL_DS_FACTORY = "hazelcast.serialization.ds.event_journal";
+    public static final int EVENT_JOURNAL_DS_FACTORY_ID = -45;
+
+    public static final String FLAKE_ID_GENERATOR_DS_FACTORY = "hazelcast.serialization.ds.flake_id_generator";
+    public static final int FLAKE_ID_GENERATOR_DS_FACTORY_ID = -46;
+
+    public static final String SPLIT_BRAIN_DS_FACTORY = "hazelcast.serialization.ds.split_brain";
+    public static final int SPLIT_BRAIN_DS_FACTORY_ID = -47;
+
+    public static final String PN_COUNTER_DS_FACTORY = "hazelcast.serialization.ds.pn_counter";
+    public static final int PN_COUNTER_DS_FACTORY_ID = -48;
+
     // =========================== portables =============================================
 
     public static final String SPI_PORTABLE_FACTORY = "hazelcast.serialization.portable.spi";
@@ -178,11 +211,10 @@ public final class FactoryIdHelper {
     public static final String ENTERPRISE_MAP_PORTABLE_FACTORY = "hazelcast.serialization.portable.enterprise.map";
     public static final int ENTERPRISE_MAP_PORTABLE_FACTORY_ID = -30;
 
-    // factory id 0 is reserved for Cluster objects (Data, Address, Member etc)...
+    // factory ID 0 is reserved for Cluster objects (Data, Address, Member etc)...
 
     private FactoryIdHelper() {
     }
-
 
     public static int getFactoryId(String prop, int defaultId) {
         final String value = System.getProperty(prop);

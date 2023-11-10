@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,39 +22,41 @@ import java.util.Map;
 
 /**
  * Provides reference-counted mutexes suitable for synchronization in the context of a supplied object.
- *
+ * <p>
  * Context objects and their associated mutexes are stored in a {@link Map}. Client code is responsible to invoke
  * {@link Mutex#close()} on the obtained {@link Mutex} after having synchronized on the mutex; failure to do so
  * will leave an entry residing in the internal {@link Map} which may have adverse effects on the ability to garbage
  * collect the context object and the mutex.
- *
+ * <p>
  * The returned {@link Mutex}es implement {@link Closeable}, so can be conveniently used in a try-with-resources statement.
+ * <p>
+ * Typical usage would allow, for example, synchronizing access to a {@link java.util.concurrent.ConcurrentMap} on a
+ * per-key basis, to avoid blocking other threads which could perform updates on other entries of the {@link Map}.
  *
- * Typical usage would allow, for example, synchronizing access to a non-thread-safe {@link Map} on a per-key basis,
- * to avoid blocking other threads who would perform updates on other entries of the {@link Map}.
+ * <pre>{@code
+ *    class Test {
  *
- * <pre>
- *     class Test {
+ *        private final ContextMutexFactory mutexFactory = new ContextMutexFactory();
+ *        private final ConcurrentMap<String, String> mapToSync = new ConcurrentHashMap<String, String>();
  *
- *         private static final ContextMutexFactory mutexFactory = new ContextMutexFactory();
- *         private final Map&lt;String, String&gt; mapToSync = new HashMap&lt;String, String&gt;();
- *
- *         public void test(String key, String value) {
- *             // critical section
- *             ContextMutexFactory.Mutex mutex = mutexFactory.mutexFor(key);
- *             try {
- *                 synchronized (mutex) {
- *                      if (mapToSync.get(key) == null) {
- *                          mapToSync.put(key, value);
- *                      }
- *                 }
- *             }
- *             finally {
- *                 mutex.close();
- *             }
- *         }
- *     }
- * </pre>
+ *        public String getValueForKey(String key) {
+ *            ContextMutexFactory.Mutex mutex = mutexFactory.mutexFor(key);
+ *            try {
+ *                synchronized (mutex) {
+ *                    // critical section - this thread is the only one trying to add value under this key
+ *                    String value = mapToSync.get(key);
+ *                    if (value == null) {
+ *                        value = ...; // compute the value
+ *                        mapToSync.put(key, value);
+ *                    }
+ *                    return value;
+ *                }
+ *            } finally {
+ *                mutex.close();
+ *            }
+ *        }
+ *    }
+ * }</pre>
  */
 public final class ContextMutexFactory {
 

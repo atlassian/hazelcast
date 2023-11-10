@@ -1,162 +1,277 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.collection.impl.list;
 
 import com.hazelcast.config.Config;
-import com.hazelcast.config.JoinConfig;
-import com.hazelcast.config.NetworkConfig;
-import com.hazelcast.core.Hazelcast;
+import com.hazelcast.config.MergePolicyConfig;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IList;
-import com.hazelcast.core.LifecycleEvent;
-import com.hazelcast.core.LifecycleListener;
-import com.hazelcast.core.MemberAttributeEvent;
-import com.hazelcast.core.MembershipEvent;
-import com.hazelcast.core.MembershipListener;
-import com.hazelcast.instance.HazelcastInstanceFactory;
-import com.hazelcast.spi.properties.GroupProperty;
-import com.hazelcast.test.HazelcastSerialClassRunner;
-import com.hazelcast.test.HazelcastTestSupport;
-import com.hazelcast.test.annotation.NightlyTest;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import com.hazelcast.spi.merge.DiscardMergePolicy;
+import com.hazelcast.spi.merge.PassThroughMergePolicy;
+import com.hazelcast.spi.merge.PutIfAbsentMergePolicy;
+import com.hazelcast.spi.merge.SplitBrainMergePolicy;
+import com.hazelcast.test.HazelcastParallelParametersRunnerFactory;
+import com.hazelcast.test.SplitBrainTestSupport;
+import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.QuickTest;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
+import org.junit.runners.Parameterized.Parameter;
+import org.junit.runners.Parameterized.Parameters;
+import org.junit.runners.Parameterized.UseParametersRunnerFactory;
 
-import java.io.IOException;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
+import java.util.Collection;
+import java.util.List;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
+import static com.hazelcast.collection.impl.CollectionTestUtil.getBackupList;
+import static java.util.Arrays.asList;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
-@RunWith(HazelcastSerialClassRunner.class)
-@Category(NightlyTest.class)
-public class ListSplitBrainTest extends HazelcastTestSupport {
+/**
+ * Tests different split-brain scenarios for {@link IList}.
+ * <p>
+ * The {@link DiscardMergePolicy}, {@link PassThroughMergePolicy} and {@link PutIfAbsentMergePolicy} are also
+ * tested with a data structure, which is only created in the smaller cluster.
+ * <p>
+ * The number and content of backup items are tested for all merge policies.
+ */
+@RunWith(Parameterized.class)
+@UseParametersRunnerFactory(HazelcastParallelParametersRunnerFactory.class)
+@Category({QuickTest.class, ParallelTest.class})
+public class ListSplitBrainTest extends SplitBrainTestSupport {
 
-    @Before
-    @After
-    public void killAllHazelcastInstances() throws IOException {
-        HazelcastInstanceFactory.shutdownAll();
+    private static final int ITEM_COUNT = 25;
+
+    @Parameters(name = "mergePolicy:{0}")
+    public static Collection<Object> parameters() {
+        return asList(new Object[]{
+                DiscardMergePolicy.class,
+                PassThroughMergePolicy.class,
+                PutIfAbsentMergePolicy.class,
+                RemoveValuesMergePolicy.class,
+                ReturnPiCollectionMergePolicy.class,
+                MergeCollectionOfIntegerValuesMergePolicy.class,
+        });
     }
 
-    @Test
-    public void testListSplitBrain_Multicast() throws InterruptedException {
-        testListSplitBrain(true);
-    }
+    @Parameter
+    public Class<? extends SplitBrainMergePolicy> mergePolicyClass;
 
-    @Test
-    public void testListSplitBrain_TcpIp() throws InterruptedException {
-        testListSplitBrain(false);
-    }
+    private String listNameA = randomMapName("listA-");
+    private String listNameB = randomMapName("listB-");
+    private IList<Object> listA1;
+    private IList<Object> listA2;
+    private IList<Object> listB1;
+    private IList<Object> listB2;
+    private List<Object> backupList;
+    private MergeLifecycleListener mergeLifecycleListener;
 
-    private void testListSplitBrain(boolean multicast) throws InterruptedException {
-        String name = randomString();
-        Config config = getConfig(multicast);
-        HazelcastInstance h1 = Hazelcast.newHazelcastInstance(config);
-        HazelcastInstance h2 = Hazelcast.newHazelcastInstance(config);
-        HazelcastInstance h3 = Hazelcast.newHazelcastInstance(config);
-        IList<Object> list = h1.getList(name);
+    @Override
+    protected Config config() {
+        MergePolicyConfig mergePolicyConfig = new MergePolicyConfig()
+                .setPolicy(mergePolicyClass.getName())
+                .setBatchSize(10);
 
-        TestMemberShipListener memberShipListener = new TestMemberShipListener(2);
-        h3.getCluster().addMembershipListener(memberShipListener);
-        TestLifeCycleListener lifeCycleListener = new TestLifeCycleListener(1);
-        h3.getLifecycleService().addLifecycleListener(lifeCycleListener);
-
-        for (int i = 0; i < 100; i++) {
-            list.add("item" + i);
-        }
-
-        assertSizeEventually(100, list);
-
-        waitAllForSafeState();
-
-        closeConnectionBetween(h1, h3);
-        closeConnectionBetween(h2, h3);
-
-        assertTrue(memberShipListener.splitLatch.await(10, TimeUnit.SECONDS));
-        assertEquals(2, h1.getCluster().getMembers().size());
-        assertEquals(2, h2.getCluster().getMembers().size());
-        assertEquals(1, h3.getCluster().getMembers().size());
-
-        for (int i = 100; i < 200; i++) {
-            list.add("item" + i);
-        }
-
-        assertSizeEventually(200, list);
-
-        IList<Object> list3 = h3.getList(name);
-        for (int i = 0; i < 50; i++) {
-            list3.add("lostListItem" + i);
-        }
-
-        assertTrue(lifeCycleListener.mergeLatch.await(60, TimeUnit.SECONDS));
-        assertEquals(3, h1.getCluster().getMembers().size());
-        assertEquals(3, h2.getCluster().getMembers().size());
-        assertEquals(3, h3.getCluster().getMembers().size());
-
-        IList<Object> testList = h1.getList(name);
-        assertFalse(testList.contains("lostListItem0"));
-        assertFalse(testList.contains("lostListItem49"));
-        assertTrue(testList.contains("item0"));
-        assertTrue(testList.contains("item199"));
-        assertTrue(testList.contains("item121"));
-        assertTrue(testList.contains("item45"));
-    }
-
-
-    private Config getConfig(boolean multicast) {
-        Config config = new Config();
-        config.setProperty(GroupProperty.MERGE_FIRST_RUN_DELAY_SECONDS.getName(), "30");
-        config.setProperty(GroupProperty.MERGE_NEXT_RUN_DELAY_SECONDS.getName(), "3");
-
-        NetworkConfig networkConfig = config.getNetworkConfig();
-        JoinConfig join = networkConfig.getJoin();
-        join.getMulticastConfig().setEnabled(multicast);
-        join.getTcpIpConfig().setEnabled(!multicast);
-        join.getTcpIpConfig().addMember("127.0.0.1");
-
+        Config config = super.config();
+        config.getListConfig(listNameA)
+                .setBackupCount(1)
+                .setAsyncBackupCount(0)
+                .setMergePolicyConfig(mergePolicyConfig);
+        config.getListConfig(listNameB)
+                .setBackupCount(1)
+                .setAsyncBackupCount(0)
+                .setMergePolicyConfig(mergePolicyConfig);
         return config;
     }
 
-    private class TestLifeCycleListener implements LifecycleListener {
-
-        CountDownLatch mergeLatch;
-
-        TestLifeCycleListener(int latch) {
-            mergeLatch = new CountDownLatch(latch);
+    @Override
+    protected void onAfterSplitBrainCreated(HazelcastInstance[] firstBrain, HazelcastInstance[] secondBrain) {
+        mergeLifecycleListener = new MergeLifecycleListener(secondBrain.length);
+        for (HazelcastInstance instance : secondBrain) {
+            instance.getLifecycleService().addLifecycleListener(mergeLifecycleListener);
         }
 
-        @Override
-        public void stateChanged(LifecycleEvent event) {
-            if (event.getState() == LifecycleEvent.LifecycleState.MERGED) {
-                mergeLatch.countDown();
-            }
+        listA1 = firstBrain[0].getList(listNameA);
+        listA2 = secondBrain[0].getList(listNameA);
+
+        listB2 = secondBrain[0].getList(listNameB);
+
+        if (mergePolicyClass == DiscardMergePolicy.class) {
+            afterSplitDiscardMergePolicy();
+        } else if (mergePolicyClass == PassThroughMergePolicy.class) {
+            afterSplitPassThroughMergePolicy();
+        } else if (mergePolicyClass == PutIfAbsentMergePolicy.class) {
+            afterSplitPutIfAbsentMergePolicy();
+        } else if (mergePolicyClass == RemoveValuesMergePolicy.class) {
+            afterSplitRemoveValuesMergePolicy();
+        } else if (mergePolicyClass == ReturnPiCollectionMergePolicy.class) {
+            afterSplitReturnPiCollectionMergePolicy();
+        } else if (mergePolicyClass == MergeCollectionOfIntegerValuesMergePolicy.class) {
+            afterSplitCustomMergePolicy();
+        } else {
+            fail();
         }
     }
 
-    private class TestMemberShipListener implements MembershipListener {
+    @Override
+    protected void onAfterSplitBrainHealed(HazelcastInstance[] instances) {
+        // wait until merge completes
+        mergeLifecycleListener.await();
 
-        final CountDownLatch splitLatch;
+        backupList = getBackupList(instances, listA1);
 
-        TestMemberShipListener(int latch) {
-            splitLatch = new CountDownLatch(latch);
+        listB1 = instances[0].getList(listNameB);
+
+        if (mergePolicyClass == DiscardMergePolicy.class) {
+            afterMergeDiscardMergePolicy();
+        } else if (mergePolicyClass == PassThroughMergePolicy.class) {
+            afterMergePassThroughMergePolicy();
+        } else if (mergePolicyClass == PutIfAbsentMergePolicy.class) {
+            afterMergePutIfAbsentMergePolicy();
+        } else if (mergePolicyClass == RemoveValuesMergePolicy.class) {
+            afterMergeRemoveValuesMergePolicy();
+        } else if (mergePolicyClass == ReturnPiCollectionMergePolicy.class) {
+            afterMergeReturnPiCollectionMergePolicy();
+        } else if (mergePolicyClass == MergeCollectionOfIntegerValuesMergePolicy.class) {
+            afterMergeCustomMergePolicy();
+        } else {
+            fail();
         }
+    }
 
-        @Override
-        public void memberAdded(MembershipEvent membershipEvent) {
+    private void afterSplitDiscardMergePolicy() {
+        for (int i = 0; i < ITEM_COUNT; i++) {
+            listA1.add("item" + i);
+            listA2.add("lostItem" + i);
 
+            listB2.add("lostItem" + i);
         }
+    }
 
-        @Override
-        public void memberRemoved(MembershipEvent membershipEvent) {
-            splitLatch.countDown();
+    private void afterMergeDiscardMergePolicy() {
+        assertListContent(listA1);
+        assertListContent(listA2);
+        assertListContent(backupList);
+
+        assertListContent(listB1, 0);
+        assertListContent(listB2, 0);
+    }
+
+    private void afterSplitPassThroughMergePolicy() {
+        for (int i = 0; i < ITEM_COUNT; i++) {
+            listA1.add("lostItem" + i);
+            listA2.add("item" + i);
+
+            listB2.add("item" + i);
         }
+    }
 
-        @Override
-        public void memberAttributeChanged(MemberAttributeEvent memberAttributeEvent) {
+    private void afterMergePassThroughMergePolicy() {
+        assertListContent(listA1);
+        assertListContent(listA2);
+        assertListContent(backupList);
 
+        assertListContent(listB1);
+        assertListContent(listB2);
+    }
+
+    private void afterSplitPutIfAbsentMergePolicy() {
+        for (int i = 0; i < ITEM_COUNT; i++) {
+            listA1.add("item" + i);
+            listA2.add("lostItem" + i);
+
+            listB2.add("item" + i);
+        }
+    }
+
+    private void afterMergePutIfAbsentMergePolicy() {
+        assertListContent(listA1);
+        assertListContent(listA2);
+        assertListContent(backupList);
+
+        assertListContent(listB1);
+        assertListContent(listB2);
+    }
+
+    private void afterSplitRemoveValuesMergePolicy() {
+        for (int i = 0; i < ITEM_COUNT; i++) {
+            listA1.add("lostItem" + i);
+            listA2.add("lostItem" + i);
+
+            listB2.add("lostItem" + i);
+        }
+    }
+
+    private void afterMergeRemoveValuesMergePolicy() {
+        assertListContent(listA1, 0);
+        assertListContent(listA2, 0);
+        assertListContent(backupList, 0);
+
+        assertListContent(listB1, 0);
+        assertListContent(listB2, 0);
+    }
+
+    private void afterSplitReturnPiCollectionMergePolicy() {
+        for (int i = 0; i < ITEM_COUNT; i++) {
+            listA1.add("lostItem" + i);
+            listA2.add("lostItem" + i);
+
+            listB2.add("lostItem" + i);
+        }
+    }
+
+    private void afterMergeReturnPiCollectionMergePolicy() {
+        assertPiCollection(listA1);
+        assertPiCollection(listA2);
+        assertPiCollection(backupList);
+
+        assertPiCollection(listB1);
+        assertPiCollection(listB2);
+    }
+
+    private void afterSplitCustomMergePolicy() {
+        for (int i = 0; i < ITEM_COUNT; i++) {
+            listA2.add(i);
+            listA2.add("lostItem" + i);
+        }
+    }
+
+    private void afterMergeCustomMergePolicy() {
+        assertListContent(listA1, ITEM_COUNT);
+        assertListContent(listA2, ITEM_COUNT);
+        assertListContent(backupList, ITEM_COUNT);
+    }
+
+    private static void assertListContent(List<Object> list) {
+        assertListContent(list, ITEM_COUNT, "item");
+    }
+
+    private static void assertListContent(List<Object> list, int expectedSize) {
+        assertListContent(list, expectedSize, null);
+    }
+
+    private static void assertListContent(List<Object> list, int expectedSize, String prefix) {
+        assertEqualsStringFormat("list " + toString(list) + " should contain %d items, but was %d ", expectedSize, list.size());
+
+        for (int i = 0; i < expectedSize; i++) {
+            Object expectedValue = prefix == null ? i : prefix + i;
+            assertTrue("list " + toString(list) + " should contain " + expectedValue, list.contains(expectedValue));
         }
     }
 }
-

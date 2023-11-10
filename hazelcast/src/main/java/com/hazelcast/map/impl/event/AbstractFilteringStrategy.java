@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,6 @@ import com.hazelcast.query.impl.CachedQueryEntry;
 import com.hazelcast.query.impl.QueryableEntry;
 import com.hazelcast.query.impl.getters.Extractors;
 import com.hazelcast.spi.EventFilter;
-import com.hazelcast.spi.serialization.SerializationService;
 
 /**
  * A common abstract class to support implementations of filtering strategies.
@@ -35,10 +34,11 @@ import com.hazelcast.spi.serialization.SerializationService;
  */
 public abstract class AbstractFilteringStrategy implements FilteringStrategy {
 
-    protected final SerializationService serializationService;
+    protected final InternalSerializationService serializationService;
     protected final MapServiceContext mapServiceContext;
 
-    public AbstractFilteringStrategy(SerializationService serializationService, MapServiceContext mapServiceContext) {
+    public AbstractFilteringStrategy(InternalSerializationService serializationService,
+                                     MapServiceContext mapServiceContext) {
         this.serializationService = serializationService;
         this.mapServiceContext = mapServiceContext;
     }
@@ -47,22 +47,44 @@ public abstract class AbstractFilteringStrategy implements FilteringStrategy {
         return mapServiceContext.getNodeEngine().getThisAddress().toString();
     }
 
+    /**
+     * Evaluates filters of {@link EntryEventFilter} type.
+     *
+     * @param filter  the filter which must be a {@link EntryEventFilter}
+     * @param dataKey the event entry key
+     * @return {@code true} if the filter matches
+     */
     protected boolean processEntryEventFilter(EventFilter filter, Data dataKey) {
         EntryEventFilter eventFilter = (EntryEventFilter) filter;
         return eventFilter.eval(dataKey);
     }
 
+    /**
+     * Evalues the {@code filter} using a {@link CachedQueryEntry} together with the
+     * value {@link Extractors} configured for this map. The filter must be of {@link QueryEventFilter} type.
+     *
+     * @param filter        a {@link QueryEventFilter} filter
+     * @param dataKey       the entry key
+     * @param testValue     the value used to evaluate the filter
+     * @param mapNameOrNull the map name. May be null if this is not a map event (e.g. cache event)
+     * @return {@code true} if the entry matches the query event filter
+     */
     protected boolean evaluateQueryEventFilter(EventFilter filter, Data dataKey, Object testValue, String mapNameOrNull) {
         Extractors extractors = getExtractorsForMapName(mapNameOrNull);
         QueryEventFilter queryEventFilter = (QueryEventFilter) filter;
-        QueryableEntry entry = new CachedQueryEntry((InternalSerializationService) serializationService,
+        QueryableEntry entry = new CachedQueryEntry(serializationService,
                 dataKey, testValue, extractors);
         return queryEventFilter.eval(entry);
     }
 
+    /**
+     * Returns the value {@link Extractors} for the map with the given name. May be null in
+     * which case no extractors are returned.
+     */
     private Extractors getExtractorsForMapName(String mapNameOrNull) {
         if (mapNameOrNull == null) {
-            return Extractors.empty();
+            return Extractors.newBuilder(serializationService)
+                    .build();
         }
         return mapServiceContext.getExtractors(mapNameOrNull);
     }

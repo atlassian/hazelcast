@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,7 +55,6 @@ public final class AlignmentAwareMemoryAccessor extends UnsafeBasedMemoryAccesso
             throw new IllegalStateException(getClass().getName() + " can only be used only when Unsafe is available!");
         }
     }
-
 
     // Address-based access
 
@@ -189,8 +188,6 @@ public final class AlignmentAwareMemoryAccessor extends UnsafeBasedMemoryAccesso
         UNSAFE.setMemory(address, lengthBytes, value);
     }
 
-
-
     // Address-based concurrent operations
 
     @Override
@@ -320,9 +317,6 @@ public final class AlignmentAwareMemoryAccessor extends UnsafeBasedMemoryAccesso
         AlignmentUtil.checkReferenceAligned(address);
         return UNSAFE.compareAndSwapObject(null, address, expected, x);
     }
-
-
-
 
     // Object-based access
 
@@ -467,7 +461,6 @@ public final class AlignmentAwareMemoryAccessor extends UnsafeBasedMemoryAccesso
             EndiannessUtil.writeDouble(EndiannessUtil.NATIVE_ACCESS, base, offset, x, AlignmentUtil.IS_PLATFORM_BIG_ENDIAN);
         }
     }
-
 
     // Object-based concurrent operations
 

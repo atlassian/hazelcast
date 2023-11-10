@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,8 +19,9 @@ package com.hazelcast.core;
 import java.util.EventObject;
 
 /**
- * Map Item event.
+ * Event for a collection item.
  *
+ * @param <E> type of the item
  * @see com.hazelcast.core.EntryEvent
  * @see com.hazelcast.core.ICollection#addItemListener(ItemListener, boolean)
  */
@@ -28,6 +29,7 @@ import java.util.EventObject;
 public class ItemEvent<E> extends EventObject {
 
     protected E item;
+
     private final ItemEventType eventType;
     private final Member member;
 
@@ -41,7 +43,7 @@ public class ItemEvent<E> extends EventObject {
     /**
      * Returns the event type.
      *
-     * @return the event type.
+     * @return the event type
      */
     public ItemEventType getEventType() {
         return eventType;
@@ -50,7 +52,7 @@ public class ItemEvent<E> extends EventObject {
     /**
      * Returns the item related to the event.
      *
-     * @return the item related to the event.
+     * @return the item related to the event
      */
     public E getItem() {
         return item;
@@ -59,7 +61,7 @@ public class ItemEvent<E> extends EventObject {
     /**
      * Returns the member that fired this event.
      *
-     * @return the member that fired this event.
+     * @return the member that fired this event
      */
     public Member getMember() {
         return member;

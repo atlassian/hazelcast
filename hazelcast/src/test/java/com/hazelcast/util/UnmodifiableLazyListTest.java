@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,7 +47,6 @@ public class UnmodifiableLazyListTest extends HazelcastTestSupport {
 
     private static final int SIZE = 10;
     private static SerializationService serializationService;
-    private List<Data> dataList;
     private UnmodifiableLazyList<Integer> list;
 
     @BeforeClass
@@ -56,8 +55,8 @@ public class UnmodifiableLazyListTest extends HazelcastTestSupport {
     }
 
     @Before
-    public void setup() {
-        dataList = new ArrayList<Data>();
+    public void setUp() {
+        List<Data> dataList = new ArrayList<Data>();
         for (int i = 0; i < SIZE; i++) {
             dataList.add(serializationService.toData(i));
         }
@@ -94,12 +93,12 @@ public class UnmodifiableLazyListTest extends HazelcastTestSupport {
 
     @Test
     public void testContains_True() {
-        assertTrue(list.contains(randomInt()));
+        assertContains(list, randomInt());
     }
 
     @Test
     public void testContains_False() {
-        assertFalse(list.contains(randomInt() + SIZE));
+        assertNotContains(list, randomInt() + SIZE);
     }
 
     @Test
@@ -137,7 +136,7 @@ public class UnmodifiableLazyListTest extends HazelcastTestSupport {
         ArrayList<Integer> integers = new ArrayList<Integer>();
         integers.add(randomInt());
         integers.add(randomInt());
-        assertTrue(list.containsAll(integers));
+        assertContainsAll(list, integers);
     }
 
     @Test
@@ -145,7 +144,7 @@ public class UnmodifiableLazyListTest extends HazelcastTestSupport {
         ArrayList<Integer> integers = new ArrayList<Integer>();
         integers.add(randomInt());
         integers.add(randomInt() + SIZE);
-        assertFalse(list.containsAll(integers));
+        assertNotContainsAll(list, integers);
     }
 
     @Test(expected = UnsupportedOperationException.class)

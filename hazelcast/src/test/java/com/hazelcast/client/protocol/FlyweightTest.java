@@ -1,7 +1,22 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.client.protocol;
 
 import com.hazelcast.client.impl.protocol.util.MessageFlyweight;
-import com.hazelcast.client.impl.protocol.util.SafeBuffer;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.After;
@@ -16,6 +31,7 @@ import static org.hamcrest.core.Is.is;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
+import static org.junit.Assert.assertTrue;
 
 /**
  * Flyweight Tests
@@ -24,8 +40,9 @@ import static org.junit.Assert.assertThat;
 @Category(QuickTest.class)
 public class FlyweightTest {
 
-    private static byte[] DATA = new byte[]{(byte) 0x61, (byte) 0x62, (byte) 0x63, (byte) 0xC2, (byte) 0xA9, (byte) 0xE2,
-            (byte) 0x98, (byte) 0xBA};
+    private static final byte[] DATA = new byte[]{
+            (byte) 0x61, (byte) 0x62, (byte) 0x63, (byte) 0xC2, (byte) 0xA9, (byte) 0xE2, (byte) 0x98, (byte) 0xBA,
+    };
 
     private MessageFlyweight flyweight = new MessageFlyweight();
     private ByteBuffer byteBuffer;
@@ -34,7 +51,7 @@ public class FlyweightTest {
     public void setUp() {
         byteBuffer = ByteBuffer.allocate(512);
 
-        flyweight.wrap(new SafeBuffer(byteBuffer.array()), 0);
+        flyweight.wrap(byteBuffer.array(), 0, true);
     }
 
     @After
@@ -43,7 +60,7 @@ public class FlyweightTest {
 
     @Test
     public void shouldEncodeLong() {
-        flyweight.set(0x12345678l);
+        flyweight.set(0x12345678L);
         assertEquals(8, flyweight.index());
         assertThat(byteBuffer.get(0), is((byte) 0x78));
         assertThat(byteBuffer.get(1), is((byte) 0x56));
@@ -68,7 +85,8 @@ public class FlyweightTest {
 
     @Test
     public void shouldEncodeStringUtf8() {
-        flyweight.set("abc©☺");//0x61 0x62 0x63 0xC2 0xA9 0xE2 0x98 0xBA
+        //0x61 0x62 0x63 0xC2 0xA9 0xE2 0x98 0xBA
+        flyweight.set("abc©☺");
         assertEquals(12, flyweight.index());
         assertThat(byteBuffer.get(0), is((byte) 0x08));
         assertThat(byteBuffer.get(1), is((byte) 0x00));
@@ -86,8 +104,9 @@ public class FlyweightTest {
 
     @Test
     public void shouldEncodeByteArray() {
-        byte[] data = new byte[]{(byte) 0x61, (byte) 0x62, (byte) 0x63, (byte) 0xC2, (byte) 0xA9, (byte) 0xE2,
-                (byte) 0x98, (byte) 0xBA};
+        byte[] data = new byte[]{
+                (byte) 0x61, (byte) 0x62, (byte) 0x63, (byte) 0xC2, (byte) 0xA9, (byte) 0xE2, (byte) 0x98, (byte) 0xBA,
+        };
 
         flyweight.set(data);
         assertEquals(12, flyweight.index());
@@ -107,9 +126,9 @@ public class FlyweightTest {
 
     @Test
     public void shouldDecodeLong() {
-        flyweight.set(0x12345678l);
+        flyweight.set(0x12345678L);
         flyweight.index(0);
-        assertEquals(0x12345678l, flyweight.getLong());
+        assertEquals(0x12345678L, flyweight.getLong());
     }
 
     @Test
@@ -124,7 +143,7 @@ public class FlyweightTest {
     public void shouldDecodeBoolean() {
         flyweight.set(true);
         flyweight.index(0);
-        assertEquals(true, flyweight.getBoolean());
+        assertTrue(flyweight.getBoolean());
         assertEquals(1, flyweight.index());
     }
 
@@ -140,7 +159,6 @@ public class FlyweightTest {
 
     @Test
     public void shouldDecodeByteArray() {
-
         flyweight.set(DATA);
         flyweight.index(0);
 
@@ -159,11 +177,10 @@ public class FlyweightTest {
 
     @Test
     public void shouldEncodeDecodeMultipleData() {
-        flyweight.set(0x12345678l);
+        flyweight.set(0x12345678L);
         flyweight.set(0x1234);
         flyweight.set((short) 0x12);
         flyweight.set(true);
         flyweight.set(DATA);
     }
-
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ package com.hazelcast.client.spi;
 public interface ClientProxyFactory {
 
     /**
-     * Creates a new client proxy with the given id.
+     * Creates a new client proxy with the given ID
      *
      * @param id the ID of the client proxy
      * @return the client proxy

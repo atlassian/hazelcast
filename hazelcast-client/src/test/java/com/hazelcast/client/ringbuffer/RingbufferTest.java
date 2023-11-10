@@ -1,23 +1,46 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.client.ringbuffer;
 
+import com.hazelcast.client.config.ClientConfig;
+import com.hazelcast.client.test.IdentifiedDataSerializableFactory;
 import com.hazelcast.client.test.TestHazelcastFactory;
+import com.hazelcast.client.test.ringbuffer.filter.StartsWithStringFilter;
 import com.hazelcast.config.Config;
 import com.hazelcast.config.RingbufferConfig;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.ICompletableFuture;
-import com.hazelcast.core.IFunction;
 import com.hazelcast.ringbuffer.ReadResultSet;
 import com.hazelcast.ringbuffer.Ringbuffer;
+import com.hazelcast.ringbuffer.StaleSequenceException;
 import com.hazelcast.ringbuffer.impl.client.PortableReadResultSet;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.QuickTest;
+import com.hazelcast.util.RootCauseMatcher;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
+import org.junit.rules.ExpectedException;
 import org.junit.runner.RunWith;
 
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Future;
 
 import static com.hazelcast.ringbuffer.OverflowPolicy.OVERWRITE;
@@ -28,7 +51,7 @@ import static org.junit.Assert.assertEquals;
 @Category(QuickTest.class)
 public class RingbufferTest extends HazelcastTestSupport {
 
-    public static int CAPACITY = 10;
+    public static final int CAPACITY = 10;
 
     private final TestHazelcastFactory hazelcastFactory = new TestHazelcastFactory();
     private HazelcastInstance client;
@@ -36,14 +59,24 @@ public class RingbufferTest extends HazelcastTestSupport {
     private Ringbuffer<String> clientRingbuffer;
     private Ringbuffer<String> serverRingbuffer;
 
+    @Rule
+    public ExpectedException expectedException = ExpectedException.none();
+
     @Before
     public void init() {
-        setLoggingLog4j();
         Config config = new Config();
         config.addRingBufferConfig(new RingbufferConfig("rb*").setCapacity(CAPACITY));
+        // Set operation timeout to larger than test timeout. So the tests do not pass accidentally because of retries.
+        // The tests should depend on notifier system, not retrying.
+        config.setProperty("hazelcast.operation.call.timeout.millis", "305000");
+        config.getSerializationConfig()
+              .addDataSerializableFactory(IdentifiedDataSerializableFactory.FACTORY_ID, new IdentifiedDataSerializableFactory());
 
         server = hazelcastFactory.newHazelcastInstance(config);
-        client = hazelcastFactory.newHazelcastClient();
+        ClientConfig clientConfig = new ClientConfig();
+        clientConfig.getSerializationConfig().addDataSerializableFactory(IdentifiedDataSerializableFactory.FACTORY_ID,
+                new IdentifiedDataSerializableFactory());
+        client = hazelcastFactory.newHazelcastClient(clientConfig);
 
         String name = "rb-" + randomString();
         serverRingbuffer = server.getRingbuffer(name);
@@ -53,6 +86,34 @@ public class RingbufferTest extends HazelcastTestSupport {
     @After
     public void tearDown() {
         hazelcastFactory.terminateAll();
+    }
+
+    @Test
+    public void readManyAsync_whenHitsStale_shouldNotBeBlocked() throws Exception {
+        ICompletableFuture<ReadResultSet<String>> f = clientRingbuffer.readManyAsync(0, 1, 10, null);
+        serverRingbuffer.addAllAsync(asList("0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"), OVERWRITE);
+        expectedException.expect(new RootCauseMatcher(StaleSequenceException.class));
+        f.get();
+    }
+
+    @Test
+    public void readOne_whenHitsStale_shouldNotBeBlocked() throws Exception {
+        final CountDownLatch latch = new CountDownLatch(1);
+        Thread consumer = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    clientRingbuffer.readOne(0);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                } catch (StaleSequenceException e) {
+                    latch.countDown();
+                }
+            }
+        });
+        consumer.start();
+        serverRingbuffer.addAllAsync(asList("0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"), OVERWRITE);
+        assertOpenEventually(latch);
     }
 
     @Test
@@ -174,7 +235,7 @@ public class RingbufferTest extends HazelcastTestSupport {
         serverRingbuffer.add("good3");
         serverRingbuffer.add("bad3");
 
-        ICompletableFuture<ReadResultSet<String>> f = clientRingbuffer.readManyAsync(0, 3, 3, new Filter());
+        ICompletableFuture<ReadResultSet<String>> f = clientRingbuffer.readManyAsync(0, 3, 3, new StartsWithStringFilter("good"));
 
         ReadResultSet rs = f.get();
         assertInstanceOf(PortableReadResultSet.class, rs);
@@ -198,7 +259,7 @@ public class RingbufferTest extends HazelcastTestSupport {
         serverRingbuffer.add("good4");
         serverRingbuffer.add("bad4");
 
-        ICompletableFuture<ReadResultSet<String>> f = clientRingbuffer.readManyAsync(0, 3, 3, new Filter());
+        ICompletableFuture<ReadResultSet<String>> f = clientRingbuffer.readManyAsync(0, 3, 3, new StartsWithStringFilter("good"));
 
         ReadResultSet rs = f.get();
         assertInstanceOf(PortableReadResultSet.class, rs);
@@ -207,12 +268,5 @@ public class RingbufferTest extends HazelcastTestSupport {
         assertEquals("good1", rs.get(0));
         assertEquals("good2", rs.get(1));
         assertEquals("good3", rs.get(2));
-    }
-
-    static class Filter implements IFunction<String, Boolean> {
-        @Override
-        public Boolean apply(String input) {
-            return input.startsWith("good");
-        }
     }
 }

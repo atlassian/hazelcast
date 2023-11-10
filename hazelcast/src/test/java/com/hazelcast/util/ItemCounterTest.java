@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,7 +48,7 @@ public class ItemCounterTest extends HazelcastTestSupport {
         counter.add("key1", 1);
         counter.add("key2", 1);
 
-        assertEquals(new HashSet(asList("key1", "key2")), counter.keySet());
+        assertEquals(new HashSet<String>(asList("key1", "key2")), counter.keySet());
     }
 
     @Test
@@ -61,13 +61,13 @@ public class ItemCounterTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void testGet_returnsZeroWhenEmpty() throws Exception {
+    public void testGet_returnsZeroWhenEmpty() {
         long count = counter.get(new Object());
         assertEquals(0, count);
     }
 
     @Test
-    public void testGet_returnsPreviouslySetValue() throws Exception {
+    public void testGet_returnsPreviouslySetValue() {
         long value = Long.MAX_VALUE;
         Object object = new Object();
 
@@ -78,19 +78,22 @@ public class ItemCounterTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void testSet_overridePreviousValue() throws Exception {
+    public void testSet_overridePreviousValue() {
         long value = Long.MAX_VALUE;
         Object object = new Object();
 
         counter.set(object, Long.MIN_VALUE);
+
+        long oldTotal = counter.total();
         counter.set(object, value);
         long count = counter.get(object);
 
         assertEquals(value, count);
+        assertEquals(Long.MAX_VALUE, counter.total());
     }
 
     @Test
-    public void testAdd_whenNoPreviousValueExist() throws Exception {
+    public void testAdd_whenNoPreviousValueExist() {
         Object object = new Object();
         long delta = 1;
 
@@ -98,10 +101,11 @@ public class ItemCounterTest extends HazelcastTestSupport {
         long count = counter.get(object);
 
         assertEquals(delta, count);
+        assertEquals(1, counter.total());
     }
 
     @Test
-    public void testAdd_increaseWhenPreviousValueDoesExist() throws Exception {
+    public void testAdd_increaseWhenPreviousValueDoesExist() {
         Object object = new Object();
         long initialValue = 1;
         long delta = 1;
@@ -111,10 +115,11 @@ public class ItemCounterTest extends HazelcastTestSupport {
         long count = counter.get(object);
 
         assertEquals(delta + initialValue, count);
+        assertEquals(2, counter.total());
     }
 
     @Test
-    public void testReset_allValuesAreSetToZeroOnReset() throws Exception {
+    public void testReset_allValuesAreSetToZeroOnReset() {
         Object object1 = new Object();
         Object object2 = new Object();
         long initialValue1 = Long.MAX_VALUE;
@@ -129,10 +134,11 @@ public class ItemCounterTest extends HazelcastTestSupport {
 
         assertEquals(0, count1);
         assertEquals(0, count2);
+        assertEquals(0, counter.total());
     }
 
     @Test
-    public void testGetAndSet_asSetWhenNoPreviousValueExist() throws Exception {
+    public void testGetAndSet_asSetWhenNoPreviousValueExist() {
         Object object = new Object();
         long newValue = Long.MAX_VALUE;
 
@@ -141,13 +147,14 @@ public class ItemCounterTest extends HazelcastTestSupport {
 
         count = counter.get(object);
         assertEquals(newValue, count);
+        assertEquals(newValue, counter.total());
     }
 
     @Test
-    public void testGetAndSet_overridePreviousValue() throws Exception {
+    public void testGetAndSet_overridePreviousValue() {
         Object object = new Object();
-        long initialValue = Long.MIN_VALUE;
-        long newValue = Long.MAX_VALUE;
+        long initialValue = 10;
+        long newValue = 20;
 
         counter.set(object, initialValue);
 
@@ -156,25 +163,26 @@ public class ItemCounterTest extends HazelcastTestSupport {
 
         count = counter.get(object);
         assertEquals(newValue, count);
+        assertEquals(count, counter.total());
     }
 
     @Test
-    public void testEquals_returnsTrueOnSameInstance() throws Exception {
+    public void testEquals_returnsTrueOnSameInstance() {
         assertTrue(counter.equals(counter));
     }
 
     @Test
-    public void testEquals_returnsFalseOnNull() throws Exception {
+    public void testEquals_returnsFalseOnNull() {
         assertFalse(counter.equals(null));
     }
 
     @Test
-    public void testEquals_returnsFalseDifferentClass() throws Exception {
+    public void testEquals_returnsFalseDifferentClass() {
         assertFalse(counter.equals(new Object()));
     }
 
     @Test
-    public void testEquals_returnsTrueOnTheSameData() throws Exception {
+    public void testEquals_returnsTrueOnTheSameData() {
         Object object1 = new Object();
         ItemCounter<Object> otherCounter = new ItemCounter<Object>();
 
@@ -185,7 +193,7 @@ public class ItemCounterTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void testEquals_returnsFalseOnTheDifferentData() throws Exception {
+    public void testEquals_returnsFalseOnTheDifferentData() {
         Object object1 = new Object();
         ItemCounter<Object> otherCounter = new ItemCounter<Object>();
 
@@ -196,12 +204,12 @@ public class ItemCounterTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void testHashCode_doesNotThrowExceptionWhenEmpty() throws Exception {
+    public void testHashCode_doesNotThrowExceptionWhenEmpty() {
         counter.hashCode();
     }
 
     @Test
-    public void testHashCode_sameHashCodeOnTheSameData() throws Exception {
+    public void testHashCode_sameHashCodeOnTheSameData() {
         ItemCounter<Object> otherCounter = new ItemCounter<Object>();
 
         int hashCode = counter.hashCode();

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -65,8 +65,9 @@ public class DynamicMapConfigTest extends HazelcastTestSupport {
 
         HazelcastInstance node = createHazelcastInstance(config);
 
-        IMap map = node.getMap(mapName);
-        map.put(1, 1);// trigger recordStore creation.
+        IMap<Integer, Integer> map = node.getMap(mapName);
+        // trigger recordStore creation
+        map.put(1, 1);
 
         boolean beforeUpdate = isRecordStoreExpirable(map) && isEvictionEnabled(map);
         updateMapConfig(mapName, node);
@@ -120,5 +121,4 @@ public class DynamicMapConfigTest extends HazelcastTestSupport {
         InternalCompletableFuture future = operationService.invokeOnTarget(MapService.SERVICE_NAME, op, address);
         return future.get();
     }
-
 }

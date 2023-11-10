@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,6 @@ import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.BackupOperation;
-import com.hazelcast.spi.impl.MutatingOperation;
 
 import java.io.IOException;
 
@@ -29,8 +28,7 @@ import java.io.IOException;
  * Backup operation used by remove operations.
  */
 public class CacheRemoveBackupOperation
-        extends AbstractBackupCacheOperation
-        implements BackupOperation, MutatingOperation {
+        extends KeyBasedCacheOperation implements BackupOperation {
 
     private boolean wanOriginated;
 
@@ -38,24 +36,25 @@ public class CacheRemoveBackupOperation
     }
 
     public CacheRemoveBackupOperation(String name, Data key) {
-        super(name, key);
+        this(name, key, false);
     }
 
     public CacheRemoveBackupOperation(String name, Data key, boolean wanOriginated) {
-        this(name, key);
+        super(name, key, true);
         this.wanOriginated = wanOriginated;
     }
 
     @Override
-    public void runInternal()
-            throws Exception {
-        cache.removeRecord(key);
+    public void run() {
+        if (recordStore != null) {
+            recordStore.removeRecord(key);
+        }
     }
 
     @Override
-    public void afterRunInternal() throws Exception {
-        if (!wanOriginated && cache.isWanReplicationEnabled()) {
-            wanEventPublisher.publishWanReplicationRemoveBackup(name, key);
+    public void afterRun() {
+        if (recordStore != null && !wanOriginated) {
+            publishWanRemove(key);
         }
     }
 

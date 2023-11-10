@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.util;
 
 import com.hazelcast.core.HazelcastException;
@@ -9,6 +25,7 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
+import java.io.IOException;
 import java.util.concurrent.ExecutionException;
 
 import static org.junit.Assert.assertEquals;
@@ -18,7 +35,7 @@ import static org.junit.Assert.assertTrue;
 @Category({QuickTest.class, ParallelTest.class})
 public class ExceptionUtilTest extends HazelcastTestSupport {
 
-    private final Throwable throwable = new RuntimeException("expected exception");;
+    private final Throwable throwable = new RuntimeException("expected exception");
 
     @Test
     public void testConstructor() {
@@ -29,8 +46,8 @@ public class ExceptionUtilTest extends HazelcastTestSupport {
     public void testToString() {
         String result = ExceptionUtil.toString(throwable);
 
-        assertTrue(result.contains("RuntimeException"));
-        assertTrue(result.contains("expected exception"));
+        assertContains(result, "RuntimeException");
+        assertContains(result, "expected exception");
     }
 
     @Test
@@ -54,5 +71,20 @@ public class ExceptionUtilTest extends HazelcastTestSupport {
 
         assertTrue(result instanceof HazelcastException);
         assertEquals(exception, result.getCause());
+    }
+
+    @Test
+    public void testPeel_whenThrowableIsExecutionExceptionWithCustomFactory_thenReturnCustomException() {
+        IOException expectedException = new IOException();
+        RuntimeException result = (RuntimeException) ExceptionUtil.peel(new ExecutionException(expectedException),
+                null, null, new ExceptionUtil.ExceptionWrapper() {
+                    @Override
+                    public RuntimeException create(Throwable throwable, String message) {
+                        return new IllegalStateException(message, throwable);
+                    }
+                });
+
+        assertEquals(result.getClass(), IllegalStateException.class);
+        assertEquals(result.getCause(), expectedException);
     }
 }

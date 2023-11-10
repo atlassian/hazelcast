@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.executor;
 
 import com.hazelcast.core.HazelcastInstance;
@@ -98,7 +114,8 @@ public class ExecutorServiceCancelTest extends ExecutorServiceTestSupport {
 
     private void testCancel_submitToMember(HazelcastInstance instance, Member member) throws Exception {
         IExecutorService executorService = instance.getExecutorService(randomString());
-        Future<Boolean> future = executorService.submitToMember(new SleepingTask(Integer.MAX_VALUE, taskStartedLatchName), member);
+        Future<Boolean> future
+                = executorService.submitToMember(new SleepingTask(Integer.MAX_VALUE, taskStartedLatchName), member);
         awaitTaskStart();
 
         assertTrue(future.cancel(true));
@@ -106,7 +123,8 @@ public class ExecutorServiceCancelTest extends ExecutorServiceTestSupport {
 
     private void testGetValueAfterCancel_submitToMember(HazelcastInstance instance, Member member) throws Exception {
         IExecutorService executorService = instance.getExecutorService(randomString());
-        Future<Boolean> future = executorService.submitToMember(new SleepingTask(Integer.MAX_VALUE, taskStartedLatchName), member);
+        Future<Boolean> future
+                = executorService.submitToMember(new SleepingTask(Integer.MAX_VALUE, taskStartedLatchName), member);
         awaitTaskStart();
 
         future.cancel(true);
@@ -116,7 +134,8 @@ public class ExecutorServiceCancelTest extends ExecutorServiceTestSupport {
     @Test
     public void testCancel_submitToKeyOwner() throws ExecutionException, InterruptedException {
         IExecutorService executorService = localHz.getExecutorService(randomString());
-        Future<Boolean> future = executorService.submitToKeyOwner(new SleepingTask(Integer.MAX_VALUE, taskStartedLatchName), randomString());
+        Future<Boolean> future
+                = executorService.submitToKeyOwner(new SleepingTask(Integer.MAX_VALUE, taskStartedLatchName), randomString());
         awaitTaskStart();
 
 
@@ -127,7 +146,8 @@ public class ExecutorServiceCancelTest extends ExecutorServiceTestSupport {
     @Test(expected = CancellationException.class)
     public void testGetValueAfterCancel_submitToKeyOwner() throws Exception {
         IExecutorService executorService = localHz.getExecutorService(randomString());
-        Future<Boolean> future = executorService.submitToKeyOwner(new SleepingTask(Integer.MAX_VALUE, taskStartedLatchName), randomString());
+        Future<Boolean> future
+                = executorService.submitToKeyOwner(new SleepingTask(Integer.MAX_VALUE, taskStartedLatchName), randomString());
         awaitTaskStart();
 
         future.cancel(true);

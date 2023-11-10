@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package com.hazelcast.cache.impl;
 
 import com.hazelcast.cache.impl.record.CacheRecord;
 import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.spi.impl.operationexecutor.impl.PartitionOperationThread;
 
 import javax.cache.configuration.Factory;
 import javax.cache.expiry.ExpiryPolicy;
@@ -111,7 +112,8 @@ public class CacheEntryProcessorEntry<K, V, R extends CacheRecord>
         }
         if (record != null) {
             state = State.ACCESS;
-            return getRecordValue(record);
+            value = getRecordValue(record);
+            return value;
         }
         if (recordLoaded == null) {
             //LOAD IT
@@ -141,6 +143,11 @@ public class CacheEntryProcessorEntry<K, V, R extends CacheRecord>
         return (V) objValue;
     }
 
+    public R getRecord() {
+        assert (Thread.currentThread() instanceof PartitionOperationThread);
+        return record;
+    }
+
     /**
      * Provides a similar functionality as committing a transaction. So, at the end of the process method, applyChanges
      * will be called to apply latest data into {@link CacheRecordStore}.
@@ -160,17 +167,17 @@ public class CacheEntryProcessorEntry<K, V, R extends CacheRecord>
                 }
                 boolean saved =
                         cacheRecordStore.createRecordWithExpiry(keyData, value, expiryPolicy,
-                                                                now, false, completionId) != null;
+                                now, false, completionId) != null;
                 onCreate(keyData, value, expiryPolicy, now, false, completionId, saved);
                 break;
             case LOAD:
                 saved = cacheRecordStore.createRecordWithExpiry(keyData, valueLoaded, expiryPolicy,
-                                                                now, true, completionId) != null;
+                        now, true, completionId) != null;
                 onLoad(keyData, valueLoaded, expiryPolicy, now, true, completionId, saved);
                 break;
             case UPDATE:
                 saved = cacheRecordStore.updateRecordWithExpiry(keyData, value, record,
-                                                                expiryPolicy, now, false, completionId);
+                        expiryPolicy, now, false, completionId);
                 onUpdate(keyData, value, record, expiryPolicy, now, false, completionId, saved);
                 if (isStatisticsEnabled) {
                     statistics.increaseCachePuts(1);
@@ -178,7 +185,7 @@ public class CacheEntryProcessorEntry<K, V, R extends CacheRecord>
                 }
                 break;
             case REMOVE:
-                boolean removed = cacheRecordStore.remove(keyData, null, completionId);
+                boolean removed = cacheRecordStore.remove(keyData, null, null, completionId);
                 onRemove(keyData, null, completionId, removed);
                 break;
             case NONE:

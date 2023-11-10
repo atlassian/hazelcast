@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,7 +52,7 @@ final class PortableSerializer implements StreamSerializer<Portable> {
             throw new IllegalArgumentException("ObjectDataOutput must be instance of BufferObjectDataOutput!");
         }
         if (p.getClassId() == 0) {
-            throw new IllegalArgumentException("Portable class id cannot be zero!");
+            throw new IllegalArgumentException("Portable class ID cannot be zero!");
         }
 
         out.writeInt(p.getFactoryId());

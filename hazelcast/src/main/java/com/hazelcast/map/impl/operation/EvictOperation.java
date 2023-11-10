@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,6 +49,16 @@ public class EvictOperation extends LockAwareOperation implements MutatingOperat
     }
 
     @Override
+    public void afterRun() {
+        if (!evicted) {
+            return;
+        }
+        mapServiceContext.interceptAfterRemove(name, dataValue);
+        mapEventPublisher.publishEvent(getCallerAddress(), name, EVICTED, dataKey, dataValue, null);
+        invalidateNearCache(dataKey);
+    }
+
+    @Override
     public Object getResponse() {
         return evicted;
     }
@@ -84,15 +94,6 @@ public class EvictOperation extends LockAwareOperation implements MutatingOperat
     @Override
     public boolean shouldBackup() {
         return evicted;
-    }
-
-    public void afterRun() {
-        if (!evicted) {
-            return;
-        }
-        mapServiceContext.interceptAfterRemove(name, dataValue);
-        mapEventPublisher.publishEvent(getCallerAddress(), name, EVICTED, dataKey, dataValue, null);
-        invalidateNearCache(dataKey);
     }
 
     @Override

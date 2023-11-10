@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,6 +41,8 @@ import com.hazelcast.core.Message;
 import com.hazelcast.core.MessageListener;
 import com.hazelcast.core.MultiMap;
 import com.hazelcast.core.Partition;
+import com.hazelcast.internal.util.RuntimeAvailableProcessors;
+import com.hazelcast.nio.IOUtil;
 import com.hazelcast.util.Clock;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
@@ -67,12 +69,14 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 
+import static com.hazelcast.util.StringUtil.lowerCaseInternal;
 import static java.lang.String.format;
-
+import static java.lang.Thread.currentThread;
 
 /**
  * A demo application to demonstrate a Hazelcast client. This is probably NOT something you want to use in production.
  */
+@SuppressWarnings({"WeakerAccess", "unused"})
 public class ClientConsoleApp implements EntryListener, ItemListener, MessageListener {
 
     private static final int ONE_KB = 1024;
@@ -86,31 +90,21 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
     private static final int LENGTH_BORDER = 4;
 
     private IQueue<Object> queue;
-
     private ITopic<Object> topic;
-
     private IMap<Object, Object> map;
-
     private MultiMap<Object, Object> multiMap;
-
     private ISet<Object> set;
-
     private IList<Object> list;
-
     private IAtomicLong atomicNumber;
 
     private String namespace = "default";
-
     private String executorNamespace = "Sample Executor";
 
     private boolean silent;
-
     private boolean echo;
 
     private volatile HazelcastInstance hazelcast;
-
     private volatile LineReader lineReader;
-
     private volatile boolean running;
 
     public ClientConsoleApp(HazelcastInstance hazelcast) {
@@ -136,7 +130,6 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
         multiMap = hazelcast.getMultiMap(namespace);
         return multiMap;
     }
-
 
     public IAtomicLong getAtomicNumber() {
         atomicNumber = hazelcast.getAtomicLong(namespace);
@@ -166,7 +159,7 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
         running = false;
     }
 
-    public void start(String[] args) throws Exception {
+    public void start(String[] args) {
         getMap().size();
         getList().size();
         getSet().size();
@@ -201,17 +194,12 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
         }
     }
 
-
-    //CHECKSTYLE:OFF
-
     /**
-     * Handle a command
-     *
-     * @param commandInputted
+     * Handle a command.
      */
     @SuppressFBWarnings("DM_EXIT")
+    @SuppressWarnings({"checkstyle:methodlength", "checkstyle:cyclomaticcomplexity", "checkstyle:npathcomplexity"})
     protected void handleCommand(String commandInputted) {
-
         String command = commandInputted;
         if (command == null) {
             return;
@@ -225,11 +213,11 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
         if (echo) {
             handleEcho(command);
         }
-        if (command == null || command.startsWith("//")) {
+        if (command.startsWith("//")) {
             return;
         }
         command = command.trim();
-        if (command == null || command.length() == 0) {
+        if (command.length() == 0) {
             return;
         }
         String first = command;
@@ -260,11 +248,9 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
                 pool.submit(new Runnable() {
                     public void run() {
                         String command = threadCommand;
-                        String[] threadArgs = command.replaceAll("\\$t", "" + threadID).trim()
-                                .split(" ");
+                        String[] threadArgs = command.replaceAll("\\$t", "" + threadID).trim().split(" ");
                         // TODO &t #4 m.putmany x k
-                        if ("m.putmany".equals(threadArgs[0])
-                                || "m.removemany".equals(threadArgs[0])) {
+                        if ("m.putmany".equals(threadArgs[0]) || "m.removemany".equals(threadArgs[0])) {
                             if (threadArgs.length < LENGTH_BORDER) {
                                 command += " " + Integer.parseInt(threadArgs[1]) * threadID;
                             }
@@ -353,6 +339,8 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
             handleMapGetMapEntry(args);
         } else if (first.equals("m.remove")) {
             handleMapRemove(args);
+        } else if (first.equals("m.delete")) {
+            handleMapDelete(args);
         } else if (first.equals("m.evict")) {
             handleMapEvict(args);
         } else if (first.equals("m.putmany") || first.equalsIgnoreCase("m.putAll")) {
@@ -381,8 +369,6 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
             handleAddListener(args);
         } else if (first.equals("m.removeMapListener")) {
             handleRemoveListener(args);
-        } else if (first.equals("m.unlock")) {
-            handleMapUnlock(args);
         } else if (first.equals("mm.put")) {
             handleMultiMapPut(args);
         } else if (first.equals("mm.get")) {
@@ -484,6 +470,7 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
             try {
                 f.get();
             } catch (InterruptedException e) {
+                currentThread().interrupt();
                 e.printStackTrace();
             } catch (ExecutionException e) {
                 e.printStackTrace();
@@ -510,16 +497,18 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
         File f = new File(first.substring(1));
         println("Executing script file " + f.getAbsolutePath());
         if (f.exists()) {
+            BufferedReader br = null;
             try {
-                BufferedReader br = new BufferedReader(new FileReader(f));
+                br = new BufferedReader(new FileReader(f));
                 String l = br.readLine();
                 while (l != null) {
                     handleCommand(l);
                     l = br.readLine();
                 }
-                br.close();
             } catch (IOException e) {
                 e.printStackTrace();
+            } finally {
+                IOUtil.closeResource(br);
             }
         } else {
             println("File not found! " + f.getAbsolutePath());
@@ -527,7 +516,8 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
     }
 
     private void handleEcho(String command) {
-        if (!Thread.currentThread().getName().toLowerCase().contains("main")) {
+        String threadName = lowerCaseInternal(Thread.currentThread().getName());
+        if (!threadName.contains("main")) {
             println(" [" + Thread.currentThread().getName() + "] " + command);
         } else {
             println(command);
@@ -538,10 +528,9 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
         if (args.length > 1) {
             namespace = args[1];
             println("namespace: " + namespace);
-//                init();
+            //init();
         }
     }
-
 
     @SuppressFBWarnings("DM_GC")
     private void handleJvm() {
@@ -554,7 +543,7 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
         long total = runtime.totalMemory();
         long free = runtime.freeMemory();
         println("Used Memory:" + ((total - free) / ONE_KB / ONE_KB) + "MB");
-        println("# procs: " + runtime.availableProcessors());
+        println("# procs: " + RuntimeAvailableProcessors.get());
         println("OS info: " + ManagementFactory.getOperatingSystemMXBean().getArch()
                 + ' ' + ManagementFactory.getOperatingSystemMXBean().getName() + ' '
                 + ManagementFactory.getOperatingSystemMXBean().getVersion());
@@ -637,16 +626,15 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
     }
 
     protected void handleListRemove(String[] args) {
-        int index = -1;
         try {
-            index = Integer.parseInt(args[1]);
+            int index = Integer.parseInt(args[1]);
+            if (index >= 0) {
+                println(getList().remove(index));
+            } else {
+                println(getList().remove(args[1]));
+            }
         } catch (NumberFormatException e) {
             throw new RuntimeException(e);
-        }
-        if (index >= 0) {
-            println(getList().remove(index));
-        } else {
-            println(getList().remove(args[1]));
         }
     }
 
@@ -694,6 +682,7 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
         try {
             println(getMap().putAsync(args[1], args[2]).get());
         } catch (InterruptedException e) {
+            currentThread().interrupt();
             e.printStackTrace();
         } catch (ExecutionException e) {
             e.printStackTrace();
@@ -716,6 +705,7 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
         try {
             println(getMap().getAsync(args[1]).get());
         } catch (InterruptedException e) {
+            currentThread().interrupt();
             e.printStackTrace();
         } catch (ExecutionException e) {
             e.printStackTrace();
@@ -728,6 +718,11 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
 
     protected void handleMapRemove(String[] args) {
         println(getMap().remove(args[1]));
+    }
+
+    protected void handleMapDelete(String[] args) {
+        getMap().delete(args[1]);
+        println("true");
     }
 
     protected void handleMapEvict(String[] args) {
@@ -749,7 +744,7 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
         if (args.length > 3) {
             start = Integer.parseInt(args[3]);
         }
-        Map theMap = new HashMap(count);
+        Map<String, byte[]> theMap = new HashMap<String, byte[]>(count);
         for (int i = 0; i < count; i++) {
             theMap.put("key" + (start + i), value);
         }
@@ -805,6 +800,7 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
             try {
                 locked = getMap().tryLock(key, time, TimeUnit.SECONDS);
             } catch (InterruptedException e) {
+                currentThread().interrupt();
                 locked = false;
             }
         }
@@ -849,7 +845,7 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
         while (it.hasNext()) {
             count++;
             Entry entry = (Entry) it.next();
-            println(entry.getKey() + " : " + entry.getValue());
+            println(entry.getKey() + ": " + entry.getValue());
         }
         println("Total " + count);
     }
@@ -897,7 +893,7 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
         while (it.hasNext()) {
             count++;
             Entry entry = (Entry) it.next();
-            println(entry.getKey() + " : " + entry.getValue());
+            println(entry.getKey() + ": " + entry.getValue());
         }
         println("Total " + count);
     }
@@ -928,6 +924,7 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
             try {
                 locked = getMultiMap().tryLock(key, time, TimeUnit.SECONDS);
             } catch (InterruptedException e) {
+                currentThread().interrupt();
                 locked = false;
             }
         }
@@ -952,7 +949,8 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
         }
     }
 
-    @SuppressWarnings("LockAcquiredButNotSafelyReleased")
+    // squid:S2222 suppression avoids sonar analysis bug regarding already known lock release issue
+    @SuppressWarnings({"LockAcquiredButNotSafelyReleased", "squid:S2222"})
     protected void handleLock(String[] args) {
         String lockStr = args[0];
         String key = args[1];
@@ -973,6 +971,7 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
                     println(lock.tryLock(time, TimeUnit.SECONDS));
                 } catch (InterruptedException e) {
                     e.printStackTrace();
+                    currentThread().interrupt();
                 }
             }
         }
@@ -1104,13 +1103,7 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
 
     protected void handleContains(String[] args) {
         String iteratorStr = args[0];
-        boolean key = false;
-        boolean value = false;
-        if (iteratorStr.toLowerCase().endsWith("key")) {
-            key = true;
-        } else if (iteratorStr.toLowerCase().endsWith("value")) {
-            value = true;
-        }
+        boolean key = lowerCaseInternal(iteratorStr).endsWith("key");
         String data = args[1];
         boolean result = false;
         if (iteratorStr.startsWith("s.")) {
@@ -1124,7 +1117,7 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
         } else if (iteratorStr.startsWith("l.")) {
             result = getList().contains(data);
         }
-        println("Contains : " + result);
+        println("Contains: " + result);
     }
 
     protected void handleSize(String[] args) {
@@ -1187,6 +1180,7 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
             boolean offered = getQueue().offer(args[1], timeout, TimeUnit.SECONDS);
             println(offered);
         } catch (InterruptedException e) {
+            currentThread().interrupt();
             e.printStackTrace();
         }
     }
@@ -1195,6 +1189,7 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
         try {
             println(getQueue().take());
         } catch (InterruptedException e) {
+            currentThread().interrupt();
             e.printStackTrace();
         }
     }
@@ -1207,6 +1202,7 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
         try {
             println(getQueue().poll(timeout, TimeUnit.SECONDS));
         } catch (InterruptedException e) {
+            currentThread().interrupt();
             e.printStackTrace();
         }
     }
@@ -1293,7 +1289,7 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
                 future = executorService.submitToKeyOwner(callable, key);
             } else if (onMember) {
                 int memberIndex = Integer.parseInt(args[2]);
-                List<Member> members = new LinkedList(hazelcast.getCluster().getMembers());
+                List<Member> members = new LinkedList<Member>(hazelcast.getCluster().getMembers());
                 if (memberIndex >= members.size()) {
                     throw new IndexOutOfBoundsException("Member index: " + memberIndex + " must be smaller than " + members
                             .size());
@@ -1305,6 +1301,7 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
             }
             println("Result: " + future.get());
         } catch (InterruptedException e) {
+            currentThread().interrupt();
             e.printStackTrace();
         } catch (ExecutionException e) {
             e.printStackTrace();
@@ -1322,6 +1319,7 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
                 println(f.get());
             }
         } catch (InterruptedException e) {
+            currentThread().interrupt();
             e.printStackTrace();
         } catch (ExecutionException e) {
             e.printStackTrace();
@@ -1374,9 +1372,7 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
     }
 
     /**
-     * Handled the help command
-     *
-     * @param command
+     * Handles the help command.
      */
     protected void handleHelp(String command) {
         boolean silentBefore = silent;
@@ -1547,11 +1543,8 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
     /**
      * Starts the test application. Loads the config from classpath hazelcast.xml,
      * if it fails to load, will use default config.
-     *
-     * @param args none
-     * @throws Exception
      */
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
         ClientConfig clientConfig;
 
         try {
@@ -1563,5 +1556,4 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
         ClientConsoleApp clientConsoleApp = new ClientConsoleApp(client);
         clientConsoleApp.start(args);
     }
-
 }

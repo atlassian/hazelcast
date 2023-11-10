@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,9 +20,9 @@ import com.hazelcast.config.ConfigPatternMatcher;
 import com.hazelcast.config.ConfigurationException;
 
 /**
- * This <code>ConfigPatternMatcher</code> supports a simplified wildcard matching.
+ * This {@code ConfigPatternMatcher} supports a simplified wildcard matching.
  * See "Config.md ## Using Wildcard" for details about the syntax options.
- * <p/>
+ * <p>
  * Throws {@link com.hazelcast.config.ConfigurationException} is multiple configurations are found.
  */
 public class WildcardConfigPatternMatcher implements ConfigPatternMatcher {
@@ -44,9 +44,9 @@ public class WildcardConfigPatternMatcher implements ConfigPatternMatcher {
     /**
      * This method is public to be accessible by {@link com.hazelcast.security.permission.InstancePermission}.
      *
-     * @param pattern     configuration pattern to match with
-     * @param itemName    item name to match
-     * @return <tt>true</tt> if itemName matches, <tt>false</tt> otherwise
+     * @param pattern  configuration pattern to match with
+     * @param itemName item name to match
+     * @return {@code true} if itemName matches, {@code false} otherwise
      */
     public boolean matches(String pattern, String itemName) {
         final int index = pattern.indexOf('*');
@@ -65,5 +65,18 @@ public class WildcardConfigPatternMatcher implements ConfigPatternMatcher {
         }
 
         return true;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        return o != null && getClass() == o.getClass();
+    }
+
+    @Override
+    public int hashCode() {
+        return super.hashCode();
     }
 }

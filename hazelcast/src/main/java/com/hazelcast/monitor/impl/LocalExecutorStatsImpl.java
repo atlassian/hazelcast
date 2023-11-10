@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,8 @@
 
 package com.hazelcast.monitor.impl;
 
-import com.eclipsesource.json.JsonObject;
+import com.hazelcast.internal.metrics.Probe;
+import com.hazelcast.internal.json.JsonObject;
 import com.hazelcast.monitor.LocalExecutorStats;
 import com.hazelcast.util.Clock;
 
@@ -41,11 +42,17 @@ public class LocalExecutorStatsImpl implements LocalExecutorStats {
     private long creationTime;
 
     // These fields are only accessed through the updaters
+    @Probe
     private volatile long pending;
+    @Probe
     private volatile long started;
+    @Probe
     private volatile long completed;
+    @Probe
     private volatile long cancelled;
+    @Probe
     private volatile long totalStartLatency;
+    @Probe
     private volatile long totalExecutionTime;
 
     public LocalExecutorStatsImpl() {

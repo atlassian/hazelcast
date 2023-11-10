@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,10 @@
 
 package com.hazelcast.mapreduce.aggregation.impl;
 
-import com.hazelcast.config.MapAttributeConfig;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.query.impl.QueryableEntry;
 import com.hazelcast.query.impl.getters.Extractors;
-
-import java.util.Collections;
 
 /**
  * Internal implementation of an map entry with changeable value to prevent
@@ -31,14 +28,12 @@ import java.util.Collections;
  * @param <K> key type
  * @param <V> value type
  */
-final class SimpleEntry<K, V>
-        extends QueryableEntry<K, V> {
+final class SimpleEntry<K, V> extends QueryableEntry<K, V> {
 
     private K key;
     private V value;
 
     public SimpleEntry() {
-        this.extractors = new Extractors(Collections.<MapAttributeConfig>emptyList(), null);
     }
 
     @Override
@@ -83,4 +78,7 @@ final class SimpleEntry<K, V>
         this.serializationService = serializationService;
     }
 
+    void setExtractors(Extractors extractors) {
+        this.extractors = extractors;
+    }
 }

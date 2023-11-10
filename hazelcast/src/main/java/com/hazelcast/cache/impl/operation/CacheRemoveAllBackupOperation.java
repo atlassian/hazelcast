@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,12 +25,14 @@ import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.spi.BackupOperation;
+import com.hazelcast.spi.ObjectNamespace;
+import com.hazelcast.spi.ServiceNamespaceAware;
 import com.hazelcast.spi.impl.AbstractNamedOperation;
-import com.hazelcast.spi.impl.MutatingOperation;
 
 import java.io.IOException;
-import java.util.HashSet;
 import java.util.Set;
+
+import static com.hazelcast.util.SetUtil.createHashSet;
 
 /**
  * Backup operation of {@link com.hazelcast.cache.impl.operation.CacheRemoveAllOperation}.
@@ -38,7 +40,7 @@ import java.util.Set;
  */
 public class CacheRemoveAllBackupOperation
         extends AbstractNamedOperation
-        implements BackupOperation, IdentifiedDataSerializable, MutatingOperation {
+        implements BackupOperation, ServiceNamespaceAware, IdentifiedDataSerializable {
 
     private Set<Data> keys;
 
@@ -92,6 +94,16 @@ public class CacheRemoveAllBackupOperation
     }
 
     @Override
+    public ObjectNamespace getServiceNamespace() {
+        ICacheRecordStore recordStore = cache;
+        if (recordStore == null) {
+            ICacheService service = getService();
+            recordStore = service.getOrCreateRecordStore(name, getPartitionId());
+        }
+        return recordStore.getObjectNamespace();
+    }
+
+    @Override
     protected void writeInternal(ObjectDataOutput out)
             throws IOException {
         super.writeInternal(out);
@@ -111,7 +123,7 @@ public class CacheRemoveAllBackupOperation
         boolean isKeysNotNull = in.readBoolean();
         if (isKeysNotNull) {
             int size = in.readInt();
-            keys = new HashSet<Data>(size);
+            keys = createHashSet(size);
             for (int i = 0; i < size; i++) {
                 Data key = in.readData();
                 keys.add(key);

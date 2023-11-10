@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,9 +53,9 @@ public class PartitionMigrationEvent extends EventObject {
     }
 
     /**
-     * Gets the partition id.
+     * Gets the partition ID.
      *
-     * @return the partition id
+     * @return the partition ID
      */
     public int getPartitionId() {
         return partitionId;

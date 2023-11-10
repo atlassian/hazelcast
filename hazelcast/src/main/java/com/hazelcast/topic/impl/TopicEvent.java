@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,17 +25,17 @@ import com.hazelcast.util.Clock;
 
 import java.io.IOException;
 
-public class TopicEvent implements IdentifiedDataSerializable {
+class TopicEvent implements IdentifiedDataSerializable {
 
-    public String name;
-    public long publishTime;
-    public Address publisherAddress;
-    public Data data;
+    String name;
+    long publishTime;
+    Address publisherAddress;
+    Data data;
 
     public TopicEvent() {
     }
 
-    public TopicEvent(String name, Data data, Address publisherAddress) {
+    TopicEvent(String name, Data data, Address publisherAddress) {
         this.name = name;
         this.publishTime = Clock.currentTimeMillis();
         this.publisherAddress = publisherAddress;

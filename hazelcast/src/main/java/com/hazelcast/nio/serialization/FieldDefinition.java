@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,12 +37,17 @@ public interface FieldDefinition {
     int getIndex();
 
     /**
-     * @return class id of this field's class
+     * @return class ID of this field's class
      */
     int getClassId();
 
     /**
-     * @return factory id of this field's class
+     * @return factory ID of this field's class
      */
     int getFactoryId();
+
+    /**
+     * @return version of this field's class
+     */
+    int getVersion();
 }

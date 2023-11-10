@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,12 +17,17 @@
 package com.hazelcast.aggregation.impl;
 
 import com.hazelcast.aggregation.Aggregator;
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+import com.hazelcast.query.impl.Comparables;
 
-import java.util.Map;
+import java.io.IOException;
 
-public class MinAggregator<T extends Comparable, K, V> extends AbstractAggregator<T, K, V> {
+public final class MinAggregator<I, R extends Comparable> extends AbstractAggregator<I, R, R>
+        implements IdentifiedDataSerializable {
 
-    private T min;
+    private R min;
 
     public MinAggregator() {
         super();
@@ -33,29 +38,54 @@ public class MinAggregator<T extends Comparable, K, V> extends AbstractAggregato
     }
 
     @Override
-    public void accumulate(Map.Entry<K, V> entry) {
-        T extractedValue = (T) extract(entry);
-
-        if (min == null || isCurrentlyGreaterThan(extractedValue)) {
-            min = extractedValue;
+    public void accumulateExtracted(I entry, R value) {
+        if (isCurrentlyGreaterThan(value)) {
+            min = value;
         }
     }
 
-    private boolean isCurrentlyGreaterThan(T otherValue) {
-        return min.compareTo(otherValue) > 0;
+    private boolean isCurrentlyGreaterThan(R otherValue) {
+        if (otherValue == null) {
+            return false;
+        }
+        return min == null || Comparables.compare(min, otherValue) > 0;
     }
 
+    @SuppressWarnings("unchecked")
     @Override
     public void combine(Aggregator aggregator) {
-        MinAggregator maxAggregator = (MinAggregator) aggregator;
-        T valueFromOtherAggregator = (T) maxAggregator.min;
+        MinAggregator minAggregator = (MinAggregator) aggregator;
+        R valueFromOtherAggregator = (R) minAggregator.min;
         if (isCurrentlyGreaterThan(valueFromOtherAggregator)) {
             this.min = valueFromOtherAggregator;
         }
     }
 
     @Override
-    public T aggregate() {
+    public R aggregate() {
         return min;
     }
+
+    @Override
+    public int getFactoryId() {
+        return AggregatorDataSerializerHook.F_ID;
+    }
+
+    @Override
+    public int getId() {
+        return AggregatorDataSerializerHook.MIN;
+    }
+
+    @Override
+    public void writeData(ObjectDataOutput out) throws IOException {
+        out.writeUTF(attributePath);
+        out.writeObject(min);
+    }
+
+    @Override
+    public void readData(ObjectDataInput in) throws IOException {
+        this.attributePath = in.readUTF();
+        this.min = in.readObject();
+    }
+
 }

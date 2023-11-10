@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,27 +35,26 @@ public class AbstractAggregationTest
     private static final int VALUES_COUNT = 10000;
     private static final Random RANDOM = new Random();
 
-    protected static HazelcastInstance HAZELCAST_INSTANCE;
-    protected static TestHazelcastInstanceFactory INSTANCE_FACTORY;
+    protected static HazelcastInstance hazelcastInstance;
+    protected static TestHazelcastInstanceFactory instanceFactory;
 
     @BeforeClass
     public static void startup() {
-        INSTANCE_FACTORY = new TestHazelcastInstanceFactory(2);
-        HAZELCAST_INSTANCE = INSTANCE_FACTORY.newHazelcastInstance();
-        HazelcastInstance hazelcastInstance = INSTANCE_FACTORY.newHazelcastInstance();
+        instanceFactory = new TestHazelcastInstanceFactory(2);
+        hazelcastInstance = instanceFactory.newHazelcastInstance();
+        HazelcastInstance hazelcastInstance = instanceFactory.newHazelcastInstance();
 
-        assertClusterSizeEventually(2, HAZELCAST_INSTANCE);
-        assertClusterSizeEventually(2, hazelcastInstance);
+        assertClusterSize(2, AbstractAggregationTest.hazelcastInstance, hazelcastInstance);
     }
 
     @AfterClass
     public static void teardown() {
-        INSTANCE_FACTORY.shutdownAll();
+        instanceFactory.shutdownAll();
     }
 
     @After
     public void cleanup() {
-        for (DistributedObject object : HAZELCAST_INSTANCE.getDistributedObjects()) {
+        for (DistributedObject object : hazelcastInstance.getDistributedObjects()) {
             if (object instanceof IMap) {
                 ((IMap) object).destroy();
             }
@@ -88,7 +87,7 @@ public class AbstractAggregationTest
         return new Value<T>(value);
     }
 
-    protected static interface ValueProvider<T> {
+    protected interface ValueProvider<T> {
         T provideRandom(Random random);
     }
 

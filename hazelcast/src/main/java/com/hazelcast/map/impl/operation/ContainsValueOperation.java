@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
 
 package com.hazelcast.map.impl.operation;
 
-import com.hazelcast.map.impl.LocalMapStatsProvider;
 import com.hazelcast.map.impl.MapDataSerializerHook;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
@@ -42,10 +41,6 @@ public class ContainsValueOperation extends MapOperation implements PartitionAwa
     @Override
     public void run() {
         contains = recordStore.containsValue(testValue);
-        if (mapContainer.getMapConfig().isStatisticsEnabled()) {
-            LocalMapStatsProvider localMapStatsProvider = mapServiceContext.getLocalMapStatsProvider();
-            localMapStatsProvider.getLocalMapStatsImpl(name).incrementOtherOperations();
-        }
     }
 
     @Override

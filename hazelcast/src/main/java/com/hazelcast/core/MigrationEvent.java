@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,11 +19,14 @@ package com.hazelcast.core;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.DataSerializable;
+import com.hazelcast.nio.serialization.SerializableByConvention;
 import com.hazelcast.partition.PartitionEvent;
 
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+
+import static com.hazelcast.nio.serialization.SerializableByConvention.Reason.PUBLIC_API;
 
 /**
  * An event fired when a partition migration starts, completes or fails.
@@ -32,6 +35,7 @@ import java.io.IOException;
  * @see PartitionService
  * @see MigrationListener
  */
+@SerializableByConvention(PUBLIC_API)
 public class MigrationEvent implements DataSerializable, PartitionEvent {
 
     private int partitionId;
@@ -50,9 +54,9 @@ public class MigrationEvent implements DataSerializable, PartitionEvent {
     }
 
     /**
-     * Returns the id of the partition which is (or is being) migrated
+     * Returns the ID of the partition which is (or is being) migrated
      *
-     * @return the id of the partition which is (or is being) migrated
+     * @return the ID of the partition which is (or is being) migrated
      */
     public int getPartitionId() {
         return partitionId;

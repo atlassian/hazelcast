@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,17 +19,20 @@ package com.hazelcast.client.impl.protocol.task.map;
 import com.hazelcast.aggregation.Aggregator;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.task.AbstractCallableMessageTask;
+import com.hazelcast.core.HazelcastException;
 import com.hazelcast.core.Member;
 import com.hazelcast.instance.Node;
 import com.hazelcast.map.QueryResultSizeExceededException;
 import com.hazelcast.map.impl.MapService;
+import com.hazelcast.map.impl.MapServiceContext;
+import com.hazelcast.map.impl.operation.MapOperation;
 import com.hazelcast.map.impl.query.Query;
-import com.hazelcast.map.impl.query.QueryOperation;
-import com.hazelcast.map.impl.query.QueryPartitionOperation;
 import com.hazelcast.map.impl.query.Result;
 import com.hazelcast.nio.Connection;
 import com.hazelcast.projection.Projection;
+import com.hazelcast.query.PartitionPredicate;
 import com.hazelcast.query.Predicate;
+import com.hazelcast.query.QueryException;
 import com.hazelcast.security.permission.ActionConstants;
 import com.hazelcast.security.permission.MapPermission;
 import com.hazelcast.spi.impl.operationservice.InternalOperationService;
@@ -44,7 +47,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
-import java.util.logging.Level;
 
 import static com.hazelcast.cluster.memberselector.MemberSelectors.DATA_MEMBER_SELECTOR;
 import static com.hazelcast.map.impl.MapService.SERVICE_NAME;
@@ -70,7 +72,7 @@ public abstract class AbstractMapQueryMessageTask<P, QueryResult extends Result,
 
     protected abstract Predicate getPredicate();
 
-    protected abstract Aggregator<?, ?, ?> getAggregator();
+    protected abstract Aggregator<?, ?> getAggregator();
 
     protected abstract Projection<?, ?> getProjection();
 
@@ -85,6 +87,12 @@ public abstract class AbstractMapQueryMessageTask<P, QueryResult extends Result,
         Collection<AccumulatedResults> result = new LinkedList<AccumulatedResults>();
         try {
             Predicate predicate = getPredicate();
+            if (predicate instanceof PartitionPredicate) {
+                int partitionId = getPartitionId();
+                QueryResult queryResult = invokeOnPartition((PartitionPredicate) predicate, partitionId);
+                extractAndAppendResult(result, queryResult);
+                return reduce(result);
+            }
             int partitionCount = clientEngine.getPartitionService().getPartitionCount();
 
             BitSet finishedPartitions = invokeOnMembers(result, predicate, partitionCount);
@@ -93,6 +101,21 @@ public abstract class AbstractMapQueryMessageTask<P, QueryResult extends Result,
             throw rethrow(t);
         }
         return reduce(result);
+    }
+
+    private QueryResult invokeOnPartition(PartitionPredicate predicate, int partitionId) {
+        final InternalOperationService operationService = nodeEngine.getOperationService();
+        MapService mapService = nodeEngine.getService(getServiceName());
+        MapServiceContext mapServiceContext = mapService.getMapServiceContext();
+
+        Query query = buildQuery(predicate);
+        MapOperation queryPartitionOperation = createQueryPartitionOperation(query, mapServiceContext);
+        queryPartitionOperation.setPartitionId(partitionId);
+        try {
+            return (QueryResult) operationService.invokeOnPartition(SERVICE_NAME, queryPartitionOperation, partitionId).get();
+        } catch (Throwable t) {
+            throw rethrow(t);
+        }
     }
 
     private BitSet invokeOnMembers(Collection<AccumulatedResults> result, Predicate predicate, int partitionCount)
@@ -111,26 +134,35 @@ public abstract class AbstractMapQueryMessageTask<P, QueryResult extends Result,
             createInvocationsForMissingPartitions(missingList, missingFutures, predicate);
             collectResultsFromMissingPartitions(finishedPartitions, result, missingFutures);
         }
+        assertAllPartitionsQueried(finishedPartitions, partitionCount);
     }
 
     private List<Future> createInvocations(Collection<Member> members, Predicate predicate) {
         List<Future> futures = new ArrayList<Future>(members.size());
         final InternalOperationService operationService = nodeEngine.getOperationService();
         final Query query = buildQuery(predicate);
+
+        MapService mapService = nodeEngine.getService(getServiceName());
+        MapServiceContext mapServiceContext = mapService.getMapServiceContext();
+
         for (Member member : members) {
             try {
                 Future future = operationService.createInvocationBuilder(SERVICE_NAME,
-                        new QueryOperation(query), member.getAddress())
+                        createQueryOperation(query, mapServiceContext),
+                        member.getAddress())
                         .invoke();
                 futures.add(future);
             } catch (Throwable t) {
-                if (t.getCause() instanceof QueryResultSizeExceededException) {
-                    rethrow(t);
+                if (!(t instanceof HazelcastException)) {
+                    // these are programmatic errors that needs to be visible
+                    throw rethrow(t);
+                } else if (t.getCause() instanceof QueryResultSizeExceededException) {
+                    throw rethrow(t);
                 } else {
                     // log failure to invoke query on member at fine level
                     // the missing partition IDs will be queried anyway, so it's not a terminal failure
                     if (logger.isFineEnabled()) {
-                        logger.log(Level.FINE, "Query invocation failed on member " + member, t);
+                        logger.fine("Query invocation failed on member " + member, t);
                     }
                 }
             }
@@ -139,11 +171,9 @@ public abstract class AbstractMapQueryMessageTask<P, QueryResult extends Result,
     }
 
     private Query buildQuery(Predicate predicate) {
-        Query.QueryBuilder builder =
-            Query.of().mapName(getDistributedObjectName())
-                      .predicate(predicate)
-                      .iterationType(getIterationType());
-
+        Query.QueryBuilder builder = Query.of().mapName(getDistributedObjectName()).predicate(
+                predicate instanceof PartitionPredicate ? ((PartitionPredicate) predicate).getTarget() : predicate)
+                .iterationType(getIterationType());
         if (getAggregator() != null) {
             builder = builder.aggregator(getAggregator());
         }
@@ -175,12 +205,12 @@ public abstract class AbstractMapQueryMessageTask<P, QueryResult extends Result,
                 }
             } catch (Throwable t) {
                 if (t.getCause() instanceof QueryResultSizeExceededException) {
-                    rethrow(t);
+                    throw rethrow(t);
                 } else {
                     // log failure to invoke query on member at fine level
                     // the missing partition IDs will be queried anyway, so it's not a terminal failure
                     if (logger.isFineEnabled()) {
-                        logger.log(Level.FINE, "Query on member failed with exception", t);
+                        logger.fine("Query on member failed with exception", t);
                     }
                 }
             }
@@ -206,9 +236,12 @@ public abstract class AbstractMapQueryMessageTask<P, QueryResult extends Result,
                                                        Predicate predicate) {
 
         final InternalOperationService operationService = nodeEngine.getOperationService();
+        MapService mapService = nodeEngine.getService(getServiceName());
+        MapServiceContext mapServiceContext = mapService.getMapServiceContext();
+
         Query query = buildQuery(predicate);
         for (Integer partitionId : missingPartitionsList) {
-            QueryPartitionOperation queryPartitionOperation = new QueryPartitionOperation(query);
+            MapOperation queryPartitionOperation = createQueryPartitionOperation(query, mapServiceContext);
             queryPartitionOperation.setPartitionId(partitionId);
             try {
                 Future future = operationService.invokeOnPartition(SERVICE_NAME,
@@ -232,4 +265,27 @@ public abstract class AbstractMapQueryMessageTask<P, QueryResult extends Result,
             }
         }
     }
+
+    private MapOperation createQueryOperation(Query query, MapServiceContext mapServiceContext) {
+        return mapServiceContext.getMapOperationProvider(query.getMapName()).createQueryOperation(query);
+    }
+
+    private MapOperation createQueryPartitionOperation(Query query, MapServiceContext mapServiceContext) {
+        return mapServiceContext.getMapOperationProvider(
+                query.getMapName()).createQueryPartitionOperation(query);
+    }
+
+    private void assertAllPartitionsQueried(BitSet finishedPartitions, int partitionCount) {
+        if (hasMissingPartitions(finishedPartitions, partitionCount)) {
+            int missedPartitionsCount = 0;
+            for (int i = 0; i < partitionCount; i++) {
+                if (!finishedPartitions.get(i)) {
+                    missedPartitionsCount++;
+                }
+            }
+            throw new QueryException("Query aborted. Could not execute query for all partitions. Missed "
+                    + missedPartitionsCount + " partitions");
+        }
+    }
+
 }

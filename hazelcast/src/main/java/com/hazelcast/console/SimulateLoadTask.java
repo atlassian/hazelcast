@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,17 +18,21 @@ package com.hazelcast.console;
 
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.HazelcastInstanceAware;
+import com.hazelcast.nio.serialization.BinaryInterface;
 
 import java.io.Serializable;
 import java.util.concurrent.Callable;
 
+import static java.lang.Thread.currentThread;
+
 /**
  * A simulated load test.
  */
+@BinaryInterface
 public final class SimulateLoadTask implements Callable, Serializable, HazelcastInstanceAware {
 
     private static final long serialVersionUID = 1;
-    private static final int ONE_THOUSAND = 1000;
+    private static final long ONE_THOUSAND = 1000L;
 
     private final int delay;
     private final int taskId;
@@ -51,6 +55,7 @@ public final class SimulateLoadTask implements Callable, Serializable, Hazelcast
         try {
             Thread.sleep(delay * ONE_THOUSAND);
         } catch (InterruptedException e) {
+            currentThread().interrupt();
             throw new RuntimeException(e);
         }
 

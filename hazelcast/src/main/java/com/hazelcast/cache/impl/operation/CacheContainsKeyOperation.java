@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,20 +28,18 @@ import com.hazelcast.spi.ReadonlyOperation;
  * (There can be at most one such mapping.)
  */
 public class CacheContainsKeyOperation
-        extends AbstractCacheOperation
-        implements ReadonlyOperation {
+        extends KeyBasedCacheOperation implements ReadonlyOperation {
 
     public CacheContainsKeyOperation() {
     }
 
     public CacheContainsKeyOperation(String name, Data key) {
-        super(name, key);
+        super(name, key, true);
     }
 
     @Override
-    public void run()
-            throws Exception {
-        response = cache.contains(key);
+    public void run() throws Exception {
+        response = recordStore != null && recordStore.contains(key);
     }
 
     @Override

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.hazelcast.client.impl.protocol.task;
 
-import com.hazelcast.client.ClientEndpoint;
+import com.hazelcast.client.impl.ClientEndpoint;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.ClientAddMembershipListenerCodec;
 import com.hazelcast.cluster.MemberAttributeOperationType;
@@ -24,13 +24,16 @@ import com.hazelcast.core.InitialMembershipEvent;
 import com.hazelcast.core.InitialMembershipListener;
 import com.hazelcast.core.MemberAttributeEvent;
 import com.hazelcast.core.MembershipEvent;
+import com.hazelcast.instance.EndpointQualifier;
 import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.instance.Node;
 import com.hazelcast.internal.cluster.ClusterService;
 import com.hazelcast.internal.cluster.impl.ClusterServiceImpl;
+import com.hazelcast.nio.Address;
 import com.hazelcast.nio.Connection;
 
 import java.security.Permission;
+import java.util.ArrayList;
 import java.util.Collection;
 
 public class AddMembershipListenerMessageTask
@@ -44,8 +47,9 @@ public class AddMembershipListenerMessageTask
     protected Object call() {
         String serviceName = ClusterServiceImpl.SERVICE_NAME;
         ClusterServiceImpl service = getService(serviceName);
-        ClientEndpoint endpoint = getEndpoint();
-        String registrationId = service.addMembershipListener(new MembershipListenerImpl(endpoint));
+        boolean advancedNetworkConfigEnabled = isAdvancedNetworkEnabled();
+        String registrationId = service.addMembershipListener(
+                new MembershipListenerImpl(endpoint, advancedNetworkConfigEnabled));
         endpoint.addListenerDestroyAction(serviceName, serviceName, registrationId);
         return registrationId;
     }
@@ -87,16 +91,22 @@ public class AddMembershipListenerMessageTask
     private class MembershipListenerImpl
             implements InitialMembershipListener {
         private final ClientEndpoint endpoint;
+        private final boolean advancedNetworkConfigEnabled;
 
-        public MembershipListenerImpl(ClientEndpoint endpoint) {
+        public MembershipListenerImpl(ClientEndpoint endpoint, boolean advancedNetworkConfigEnabled) {
             this.endpoint = endpoint;
+            this.advancedNetworkConfigEnabled = advancedNetworkConfigEnabled;
         }
 
         @Override
         public void init(InitialMembershipEvent membershipEvent) {
             ClusterService service = getService(ClusterServiceImpl.SERVICE_NAME);
-            Collection members = service.getMemberImpls();
-            ClientMessage eventMessage = ClientAddMembershipListenerCodec.encodeMemberListEvent(members);
+            Collection<MemberImpl> members = service.getMemberImpls();
+            ArrayList membersToSend = new ArrayList();
+            for (MemberImpl member : members) {
+                membersToSend.add(translateMemberAddress(member));
+            }
+            ClientMessage eventMessage = ClientAddMembershipListenerCodec.encodeMemberListEvent(membersToSend);
             sendClientMessage(endpoint.getUuid(), eventMessage);
         }
 
@@ -109,7 +119,8 @@ public class AddMembershipListenerMessageTask
             MemberImpl member = (MemberImpl) membershipEvent.getMember();
 
             ClientMessage eventMessage =
-                    ClientAddMembershipListenerCodec.encodeMemberEvent(member, MembershipEvent.MEMBER_ADDED);
+                    ClientAddMembershipListenerCodec.encodeMemberEvent(translateMemberAddress(member),
+                            MembershipEvent.MEMBER_ADDED);
             sendClientMessage(endpoint.getUuid(), eventMessage);
         }
 
@@ -121,7 +132,8 @@ public class AddMembershipListenerMessageTask
 
             MemberImpl member = (MemberImpl) membershipEvent.getMember();
             ClientMessage eventMessage =
-                    ClientAddMembershipListenerCodec.encodeMemberEvent(member, MembershipEvent.MEMBER_REMOVED);
+                    ClientAddMembershipListenerCodec.encodeMemberEvent(translateMemberAddress(member),
+                            MembershipEvent.MEMBER_REMOVED);
             sendClientMessage(endpoint.getUuid(), eventMessage);
         }
 
@@ -147,12 +159,33 @@ public class AddMembershipListenerMessageTask
             }
 
             ClusterService clusterService = clientEngine.getClusterService();
-            boolean currentMemberIsMaster = clusterService.getMasterAddress().equals(clientEngine.getThisAddress());
-            if (parameters.localOnly && !currentMemberIsMaster) {
+            if (parameters.localOnly && !clusterService.isMaster()) {
                 //if client registered localOnly, only master is allowed to send request
                 return false;
             }
             return true;
+        }
+
+        // the member partition table that is sent out to clients must contain the addresses
+        // on which cluster members listen for CLIENT protocol connections.
+        // with advanced network config, we need to return Members whose getAddress method
+        // returns the CLIENT server socket address
+        private MemberImpl translateMemberAddress(MemberImpl member) {
+            if (!advancedNetworkConfigEnabled) {
+                return member;
+            }
+
+            Address clientAddress = member.getAddressMap().get(EndpointQualifier.CLIENT);
+
+            MemberImpl result = new MemberImpl.Builder(clientAddress)
+                    .version(member.getVersion())
+                    .uuid(member.getUuid())
+                    .localMember(member.localMember())
+                    .liteMember(member.isLiteMember())
+                    .memberListJoinVersion(member.getMemberListJoinVersion())
+                    .attributes(member.getAttributes())
+                    .build();
+            return result;
         }
     }
 }

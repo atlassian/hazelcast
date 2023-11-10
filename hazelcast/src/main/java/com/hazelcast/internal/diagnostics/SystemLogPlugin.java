@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,7 +34,7 @@ import com.hazelcast.nio.ConnectionListener;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.spi.properties.HazelcastProperties;
 import com.hazelcast.spi.properties.HazelcastProperty;
-import com.hazelcast.version.ClusterVersion;
+import com.hazelcast.version.Version;
 
 import java.util.Queue;
 import java.util.Set;
@@ -50,10 +50,9 @@ import static java.util.concurrent.TimeUnit.SECONDS;
  * <li>Showing membership changes.</li>
  * <li>Optionally showing partition migration</li>
  * </ol>
- *
- * This plugin is very useful to get an idea what is happening inside a cluster; especially when there are connection related
- * problems.
- *
+ * This plugin is very useful to get an idea what is happening inside a cluster;
+ * especially when there are connection related problems.
+ * <p>
  * This plugin has a low overhead and is meant to run in production.
  */
 public class SystemLogPlugin extends DiagnosticsPlugin {
@@ -88,7 +87,7 @@ public class SystemLogPlugin extends DiagnosticsPlugin {
 
     public SystemLogPlugin(NodeEngineImpl nodeEngine) {
         this(nodeEngine.getProperties(),
-                nodeEngine.getNode().connectionManager,
+                nodeEngine.getNode().networkingService.getAggregateEndpointManager(),
                 nodeEngine.getHazelcastInstance(),
                 nodeEngine.getLogger(SystemLogPlugin.class),
                 nodeEngine.getNode().getNodeExtension());
@@ -163,8 +162,8 @@ public class SystemLogPlugin extends DiagnosticsPlugin {
             } else if (item instanceof ConnectionEvent) {
                 ConnectionEvent event = (ConnectionEvent) item;
                 render(writer, event);
-            } else if (item instanceof ClusterVersion) {
-                render(writer, (ClusterVersion) item);
+            } else if (item instanceof Version) {
+                render(writer, (Version) item);
             }
         }
     }
@@ -274,7 +273,7 @@ public class SystemLogPlugin extends DiagnosticsPlugin {
         writer.endSection();
     }
 
-    private void render(DiagnosticsLogWriter writer, ClusterVersion version) {
+    private void render(DiagnosticsLogWriter writer, Version version) {
         writer.startSection("ClusterVersionChanged");
         writer.writeEntry(version.toString());
         writer.endSection();
@@ -340,7 +339,7 @@ public class SystemLogPlugin extends DiagnosticsPlugin {
 
     private class ClusterVersionListenerImpl implements ClusterVersionListener {
         @Override
-        public void onClusterVersionChange(ClusterVersion newVersion) {
+        public void onClusterVersionChange(Version newVersion) {
             logQueue.add(newVersion);
         }
     }

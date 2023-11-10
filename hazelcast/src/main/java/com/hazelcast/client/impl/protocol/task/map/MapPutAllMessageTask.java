@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.hazelcast.client.impl.protocol.task.map;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.MapPutAllCodec;
 import com.hazelcast.instance.Node;
+import com.hazelcast.map.impl.MapContainer;
 import com.hazelcast.map.impl.MapEntries;
 import com.hazelcast.map.impl.MapService;
 import com.hazelcast.map.impl.operation.MapOperationProvider;
@@ -29,11 +30,14 @@ import com.hazelcast.security.permission.MapPermission;
 import com.hazelcast.spi.Operation;
 
 import java.security.Permission;
-import java.util.HashMap;
 import java.util.Map;
+
+import static com.hazelcast.util.MapUtil.createHashMap;
 
 public class MapPutAllMessageTask
         extends AbstractMapPartitionMessageTask<MapPutAllCodec.RequestParameters> {
+
+    private volatile long startTimeNanos;
 
     public MapPutAllMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
@@ -62,6 +66,22 @@ public class MapPutAllMessageTask
     }
 
     @Override
+    protected void beforeProcess() {
+        startTimeNanos = System.nanoTime();
+    }
+
+    @Override
+    protected void beforeResponse() {
+        final long latencyNanos = System.nanoTime() - startTimeNanos;
+        final MapService mapService = getService(MapService.SERVICE_NAME);
+        MapContainer mapContainer = mapService.getMapServiceContext().getMapContainer(parameters.name);
+        if (mapContainer.getMapConfig().isStatisticsEnabled()) {
+            mapService.getMapServiceContext().getLocalMapStatsProvider().getLocalMapStatsImpl(parameters.name)
+                    .incrementPutLatencyNanos(parameters.entries.size(), latencyNanos);
+        }
+    }
+
+    @Override
     public Permission getRequiredPermission() {
         return new MapPermission(parameters.name, ActionConstants.ACTION_PUT);
     }
@@ -78,7 +98,7 @@ public class MapPutAllMessageTask
 
     @Override
     public Object[] getParameters() {
-        HashMap<Data, Data> map = new HashMap<Data, Data>();
+        Map<Data, Data> map = createHashMap(parameters.entries.size());
         for (Map.Entry<Data, Data> entry : parameters.entries) {
             map.put(entry.getKey(), entry.getValue());
         }

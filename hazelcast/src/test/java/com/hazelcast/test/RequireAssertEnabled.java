@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,8 +22,10 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
 
 /**
  * Signals that a test method depends on Java assertions being enabled. Typically such
- * a method will expect an {@code AssertionError} to be thrown. To have this annotation honored,
- * a test class must define an instance of {@link AssertEnabledFilterRule}.
+ * a method will expect an {@code AssertionError} to be thrown.
+ * <p>
+ * To have this annotation honored, a test class must define an instance of {@link AssertEnabledFilterRule}.
+ * This is automatically done via {@link AutoRegisteredTestRule}.
  */
 @Retention(RUNTIME)
 @AutoRegisteredTestRule(testRule = AssertEnabledFilterRule.class)

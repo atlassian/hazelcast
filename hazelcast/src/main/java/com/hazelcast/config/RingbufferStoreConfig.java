@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,11 @@ package com.hazelcast.config;
 
 import com.hazelcast.core.RingbufferStore;
 import com.hazelcast.core.RingbufferStoreFactory;
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 
+import java.io.IOException;
 import java.util.Properties;
 
 import static com.hazelcast.util.Preconditions.isNotNull;
@@ -26,7 +30,7 @@ import static com.hazelcast.util.Preconditions.isNotNull;
 /**
  * Configuration for the {@link RingbufferStore}.
  */
-public class RingbufferStoreConfig {
+public class RingbufferStoreConfig implements IdentifiedDataSerializable {
 
     private boolean enabled = true;
     private String className;
@@ -34,7 +38,7 @@ public class RingbufferStoreConfig {
     private Properties properties = new Properties();
     private RingbufferStore storeImplementation;
     private RingbufferStoreFactory factoryImplementation;
-    private RingbufferStoreConfigReadOnly readOnly;
+    private transient RingbufferStoreConfigReadOnly readOnly;
 
     public RingbufferStoreConfig() {
     }
@@ -111,13 +115,6 @@ public class RingbufferStoreConfig {
         return this;
     }
 
-    public RingbufferStoreConfigReadOnly getAsReadOnly() {
-        if (readOnly == null) {
-            readOnly = new RingbufferStoreConfigReadOnly(this);
-        }
-        return readOnly;
-    }
-
     public String toString() {
         return "RingbufferStoreConfig{"
                 + "enabled=" + enabled
@@ -127,9 +124,97 @@ public class RingbufferStoreConfig {
     }
 
     /**
-     * A readonly version of the {@link RingbufferStoreConfig}.
+     * Gets immutable version of this configuration.
+     *
+     * @return immutable version of this configuration
+     * @deprecated this method will be removed in 4.0; it is meant for internal usage only
      */
-    private static class RingbufferStoreConfigReadOnly extends RingbufferStoreConfig {
+    public RingbufferStoreConfigReadOnly getAsReadOnly() {
+        if (readOnly == null) {
+            readOnly = new RingbufferStoreConfigReadOnly(this);
+        }
+        return readOnly;
+    }
+
+    @Override
+    public int getFactoryId() {
+        return ConfigDataSerializerHook.F_ID;
+    }
+
+    @Override
+    public int getId() {
+        return ConfigDataSerializerHook.RINGBUFFER_STORE_CONFIG;
+    }
+
+    @Override
+    public void writeData(ObjectDataOutput out) throws IOException {
+        out.writeBoolean(enabled);
+        out.writeUTF(className);
+        out.writeUTF(factoryClassName);
+        out.writeObject(properties);
+        out.writeObject(storeImplementation);
+        out.writeObject(factoryImplementation);
+    }
+
+    @Override
+    public void readData(ObjectDataInput in) throws IOException {
+        enabled = in.readBoolean();
+        className = in.readUTF();
+        factoryClassName = in.readUTF();
+        properties = in.readObject();
+        storeImplementation = in.readObject();
+        factoryImplementation = in.readObject();
+    }
+
+    @Override
+    @SuppressWarnings({"checkstyle:cyclomaticcomplexity", "checkstyle:npathcomplexity"})
+    public final boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof RingbufferStoreConfig)) {
+            return false;
+        }
+
+        RingbufferStoreConfig that = (RingbufferStoreConfig) o;
+
+        if (enabled != that.enabled) {
+            return false;
+        }
+        if (className != null ? !className.equals(that.className) : that.className != null) {
+            return false;
+        }
+        if (factoryClassName != null
+                ? !factoryClassName.equals(that.factoryClassName) : that.factoryClassName != null) {
+            return false;
+        }
+        if (properties != null ? !properties.equals(that.properties) : that.properties != null) {
+            return false;
+        }
+        if (storeImplementation != null
+                ? !storeImplementation.equals(that.storeImplementation) : that.storeImplementation != null) {
+            return false;
+        }
+        return factoryImplementation != null
+                ? factoryImplementation.equals(that.factoryImplementation) : that.factoryImplementation == null;
+    }
+
+    @Override
+    @SuppressWarnings({"checkstyle:cyclomaticcomplexity", "checkstyle:npathcomplexity"})
+    public final int hashCode() {
+        int result = (enabled ? 1 : 0);
+        result = 31 * result + (className != null ? className.hashCode() : 0);
+        result = 31 * result + (factoryClassName != null ? factoryClassName.hashCode() : 0);
+        result = 31 * result + (properties != null ? properties.hashCode() : 0);
+        result = 31 * result + (storeImplementation != null ? storeImplementation.hashCode() : 0);
+        result = 31 * result + (factoryImplementation != null ? factoryImplementation.hashCode() : 0);
+        return result;
+    }
+
+    /**
+     * A readonly version of the {@link RingbufferStoreConfig}. Non-private for testing.
+     */
+    static class RingbufferStoreConfigReadOnly extends RingbufferStoreConfig {
 
         RingbufferStoreConfigReadOnly(RingbufferStoreConfig config) {
             super(config);

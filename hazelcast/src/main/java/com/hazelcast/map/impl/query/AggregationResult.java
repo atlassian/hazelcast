@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,30 +20,38 @@ import com.hazelcast.aggregation.Aggregator;
 import com.hazelcast.map.impl.MapDataSerializerHook;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+import com.hazelcast.query.PagingPredicate;
+import com.hazelcast.query.impl.QueryableEntry;
+import com.hazelcast.spi.serialization.SerializationService;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Map;
 
 /**
  * Contains the result of the evaluation of an aggregation on a specific Partition or Node.
- *
+ * <p>
  * At the end of the aggregation execution path all AggregationResults are merged into one AggregationResult.
  */
-public class AggregationResult implements Result<AggregationResult>, IdentifiedDataSerializable {
+public class AggregationResult implements Result<AggregationResult> {
 
     private Aggregator aggregator;
     private Collection<Integer> partitionIds;
 
+    private final transient SerializationService serializationService;
+
     public AggregationResult() {
+        this.serializationService = null;
     }
 
-    public AggregationResult(Aggregator aggregator) {
+    public AggregationResult(Aggregator aggregator, SerializationService serializationService) {
         this.aggregator = aggregator;
+        this.serializationService = serializationService;
     }
 
-    public <R> Aggregator<R, ?, ?> getAggregator() {
+    @SuppressWarnings("unchecked")
+    public <R> Aggregator<?, R> getAggregator() {
         return aggregator;
     }
 
@@ -54,11 +62,15 @@ public class AggregationResult implements Result<AggregationResult>, IdentifiedD
 
     @Override
     public void combine(AggregationResult result) {
-        if (partitionIds == null) {
-            partitionIds = new ArrayList<Integer>(result.getPartitionIds().size());
+        Collection<Integer> otherPartitionIds = result.getPartitionIds();
+        if (otherPartitionIds == null) {
+            return;
         }
-        partitionIds.addAll(result.getPartitionIds());
-        aggregator.combine((result.aggregator));
+        if (partitionIds == null) {
+            partitionIds = new ArrayList<Integer>(otherPartitionIds.size());
+        }
+        partitionIds.addAll(otherPartitionIds);
+        aggregator.combine(result.aggregator);
     }
 
     @Override
@@ -66,6 +78,28 @@ public class AggregationResult implements Result<AggregationResult>, IdentifiedD
         if (aggregator != null) {
             aggregator.onCombinationFinished();
         }
+    }
+
+    @Override
+    public void add(QueryableEntry entry) {
+        aggregator.accumulate(entry);
+    }
+
+    @Override
+    public AggregationResult createSubResult() {
+        Aggregator aggregatorClone = serializationService.toObject(serializationService.toData(aggregator));
+        return new AggregationResult(aggregatorClone, serializationService);
+    }
+
+    @Override
+    public void orderAndLimit(PagingPredicate pagingPredicate, Map.Entry<Integer, Map.Entry> nearestAnchorEntry) {
+        // Do nothing, since there is no support of paging predicates for
+        // aggregations.
+    }
+
+    @Override
+    public void completeConstruction(Collection<Integer> partitionIds) {
+        setPartitionIds(partitionIds);
     }
 
     @Override
@@ -85,20 +119,25 @@ public class AggregationResult implements Result<AggregationResult>, IdentifiedD
 
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
-        out.writeObject(aggregator);
-        out.writeInt(partitionIds.size());
-        for (Integer partitionId : partitionIds) {
-            out.writeInt(partitionId);
+        int partitionSize = (partitionIds == null) ? 0 : partitionIds.size();
+        out.writeInt(partitionSize);
+        if (partitionSize > 0) {
+            for (Integer partitionId : partitionIds) {
+                out.writeInt(partitionId);
+            }
         }
+        out.writeObject(aggregator);
     }
 
     @Override
     public void readData(ObjectDataInput in) throws IOException {
-        this.aggregator = in.readObject();
-        int partitionIdsSize = in.readInt();
-        this.partitionIds = new ArrayList<Integer>(partitionIdsSize);
-        for (int i = 0; i < partitionIdsSize; i++) {
-            this.partitionIds.add(in.readInt());
+        int partitionSize = in.readInt();
+        if (partitionSize > 0) {
+            this.partitionIds = new ArrayList<Integer>(partitionSize);
+            for (int i = 0; i < partitionSize; i++) {
+                this.partitionIds.add(in.readInt());
+            }
         }
+        this.aggregator = in.readObject();
     }
 }

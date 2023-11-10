@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.hazelcast.map;
 
 import com.hazelcast.config.Config;
@@ -90,7 +91,6 @@ public class EntryListenerConfigTest extends HazelcastTestSupport {
         assertInstanceSet(TestMapListener.INSTANCE_AWARE);
     }
 
-
     @Test
     public void testEntryListenerAddition_withClassName() throws Exception {
         listenerConfig.setClassName(TestEntryListener.class.getCanonicalName());
@@ -136,14 +136,12 @@ public class EntryListenerConfigTest extends HazelcastTestSupport {
 
         instance = createHazelcastInstance(config);
         instance.getMap(mapName);
-
     }
 
     private void assertListenerRegisteration() {
         boolean hasEventRegistration = getEventService().hasEventRegistration(SERVICE_NAME, mapName);
         assertTrue("Listener should be registered", hasEventRegistration);
     }
-
 
     private void assertInstanceSet(final AtomicBoolean instanceSet) {
         assertTrueEventually(new AssertTask() {
@@ -158,7 +156,6 @@ public class EntryListenerConfigTest extends HazelcastTestSupport {
         NodeEngineImpl nodeEngineImpl = getNodeEngineImpl(instance);
         return nodeEngineImpl.getEventService();
     }
-
 
     private void init() {
         TestMapListener.INSTANCE_AWARE.set(false);

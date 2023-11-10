@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,14 +26,14 @@ import com.hazelcast.multimap.impl.MultiMapService;
 import com.hazelcast.nio.Connection;
 import com.hazelcast.security.permission.ActionConstants;
 import com.hazelcast.security.permission.MultiMapPermission;
-import com.hazelcast.spi.DefaultObjectNamespace;
+import com.hazelcast.spi.DistributedObjectNamespace;
 import com.hazelcast.spi.Operation;
 
 import java.security.Permission;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Client Protocol Task for handling messages with type id:
+ * Client Protocol Task for handling messages with type ID:
  * {@link com.hazelcast.client.impl.protocol.codec.MultiMapMessageType#MULTIMAP_LOCK}
  */
 public class MultiMapLockMessageTask
@@ -45,12 +45,12 @@ public class MultiMapLockMessageTask
 
     @Override
     protected Operation prepareOperation() {
-        DefaultObjectNamespace namespace = getNamespace();
+        DistributedObjectNamespace namespace = getNamespace();
         return new LockOperation(namespace, parameters.key, parameters.threadId, parameters.ttl, -1, parameters.referenceId);
     }
 
-    private DefaultObjectNamespace getNamespace() {
-        return new DefaultObjectNamespace(MultiMapService.SERVICE_NAME, parameters.name);
+    private DistributedObjectNamespace getNamespace() {
+        return new DistributedObjectNamespace(MultiMapService.SERVICE_NAME, parameters.name);
     }
 
     @Override

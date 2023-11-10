@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,46 +21,63 @@ import com.hazelcast.nio.IOUtil;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+import com.hazelcast.nio.serialization.impl.Versioned;
 import com.hazelcast.replicatedmap.impl.operation.ReplicatedMapDataSerializerHook;
+import com.hazelcast.spi.serialization.SerializationService;
 
 import java.io.IOException;
 
-public class ReplicatedMapEntryView<K, V> implements EntryView, IdentifiedDataSerializable {
+import static com.hazelcast.internal.cluster.Versions.V3_11;
+
+public class ReplicatedMapEntryView<K, V>
+        implements EntryView, IdentifiedDataSerializable, Versioned {
 
     private static final int NOT_AVAILABLE = -1;
 
-    private K key;
-    private V value;
+    private Object key;
+    private Object value;
     private long creationTime;
     private long hits;
     private long lastAccessTime;
     private long lastUpdateTime;
     private long ttl;
+    private long maxIdle;
 
-    public ReplicatedMapEntryView(K key, V value) {
-        this.key = key;
-        this.value = value;
-    }
+    private SerializationService serializationService;
 
     public ReplicatedMapEntryView() {
     }
 
-    @Override
-    public K getKey() {
-        return key;
+    public ReplicatedMapEntryView(SerializationService serializationService) {
+        this.serializationService = serializationService;
     }
 
-    public void setKey(K key) {
+    @Override
+    public K getKey() {
+        // Null serializationService means, use raw type without any conversion
+        if (serializationService != null) {
+            key = serializationService.toObject(key);
+        }
+        return (K) key;
+    }
+
+    public ReplicatedMapEntryView<K, V> setKey(K key) {
         this.key = key;
+        return this;
     }
 
     @Override
     public V getValue() {
-        return value;
+        // Null serializationService means, use raw type without any conversion
+        if (serializationService != null) {
+            value = serializationService.toObject(value);
+        }
+        return (V) value;
     }
 
-    public void setValue(V value) {
+    public ReplicatedMapEntryView<K, V> setValue(V value) {
         this.value = value;
+        return this;
     }
 
     @Override
@@ -73,8 +90,9 @@ public class ReplicatedMapEntryView<K, V> implements EntryView, IdentifiedDataSe
         return creationTime;
     }
 
-    public void setCreationTime(long creationTime) {
+    public ReplicatedMapEntryView<K, V> setCreationTime(long creationTime) {
         this.creationTime = creationTime;
+        return this;
     }
 
     @Override
@@ -82,14 +100,14 @@ public class ReplicatedMapEntryView<K, V> implements EntryView, IdentifiedDataSe
         return NOT_AVAILABLE;
     }
 
-
     @Override
     public long getHits() {
         return hits;
     }
 
-    public void setHits(long hits) {
+    public ReplicatedMapEntryView<K, V> setHits(long hits) {
         this.hits = hits;
+        return this;
     }
 
     @Override
@@ -97,8 +115,9 @@ public class ReplicatedMapEntryView<K, V> implements EntryView, IdentifiedDataSe
         return lastAccessTime;
     }
 
-    public void setLastAccessTime(long lastAccessTime) {
+    public ReplicatedMapEntryView<K, V> setLastAccessTime(long lastAccessTime) {
         this.lastAccessTime = lastAccessTime;
+        return this;
     }
 
     @Override
@@ -106,14 +125,14 @@ public class ReplicatedMapEntryView<K, V> implements EntryView, IdentifiedDataSe
         return NOT_AVAILABLE;
     }
 
-
     @Override
     public long getLastUpdateTime() {
         return lastUpdateTime;
     }
 
-    public void setLastUpdateTime(long lastUpdateTime) {
+    public ReplicatedMapEntryView<K, V> setLastUpdateTime(long lastUpdateTime) {
         this.lastUpdateTime = lastUpdateTime;
+        return this;
     }
 
     @Override
@@ -126,19 +145,29 @@ public class ReplicatedMapEntryView<K, V> implements EntryView, IdentifiedDataSe
         return ttl;
     }
 
-    public void setTtl(long ttl) {
+    @Override
+    public Long getMaxIdle() {
+        return maxIdle;
+    }
+
+    public ReplicatedMapEntryView<K, V> setTtl(long ttl) {
         this.ttl = ttl;
+        return this;
     }
 
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
-        IOUtil.writeObject(out, key);
-        IOUtil.writeObject(out, value);
+        IOUtil.writeObject(out, getKey());
+        IOUtil.writeObject(out, getValue());
         out.writeLong(creationTime);
         out.writeLong(hits);
         out.writeLong(lastAccessTime);
         out.writeLong(lastUpdateTime);
         out.writeLong(ttl);
+        //RU_COMPAT_3_10
+        if (out.getVersion().isGreaterOrEqual(V3_11)) {
+            out.writeLong(maxIdle);
+        }
     }
 
     @Override
@@ -150,6 +179,10 @@ public class ReplicatedMapEntryView<K, V> implements EntryView, IdentifiedDataSe
         lastAccessTime = in.readLong();
         lastUpdateTime = in.readLong();
         ttl = in.readLong();
+        //RU_COMPAT_3_10
+        if (in.getVersion().isGreaterOrEqual(V3_11)) {
+            maxIdle = in.readLong();
+        }
     }
 
     @Override
@@ -162,12 +195,11 @@ public class ReplicatedMapEntryView<K, V> implements EntryView, IdentifiedDataSe
         return ReplicatedMapDataSerializerHook.ENTRY_VIEW;
     }
 
-
     @Override
     public String toString() {
         return "ReplicatedMapEntryView{"
-                + "key=" + key
-                + ", value=" + value
+                + "key=" + getKey()
+                + ", value=" + getValue()
                 + ", creationTime=" + creationTime
                 + ", hits=" + hits
                 + ", lastAccessTime=" + lastAccessTime

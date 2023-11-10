@@ -1,122 +1,169 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.nio.tcp;
 
+import com.hazelcast.config.Config;
 import com.hazelcast.instance.BuildInfoProvider;
+import com.hazelcast.instance.EndpointQualifier;
 import com.hazelcast.internal.metrics.MetricsRegistry;
 import com.hazelcast.internal.metrics.impl.MetricsRegistryImpl;
+import com.hazelcast.internal.networking.ChannelInitializer;
+import com.hazelcast.internal.networking.ChannelInitializerProvider;
+import com.hazelcast.internal.networking.ServerSocketRegistry;
+import com.hazelcast.internal.networking.nio.Select_NioNetworkingFactory;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.internal.serialization.impl.DefaultSerializationServiceBuilder;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.logging.LoggingServiceImpl;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.Connection;
-import com.hazelcast.internal.networking.nonblocking.Select_NonBlockingIOThreadingModelFactory;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastTestSupport;
 import org.junit.After;
 import org.junit.Before;
 
+import java.io.IOException;
 import java.net.SocketAddress;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static com.hazelcast.instance.EndpointQualifier.MEMBER;
 import static com.hazelcast.internal.metrics.ProbeLevel.INFO;
+import static java.util.Collections.singletonMap;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.fail;
 
+@SuppressWarnings("WeakerAccess")
 public abstract class TcpIpConnection_AbstractTest extends HazelcastTestSupport {
 
-    protected IOThreadingModelFactory threadingModelFactory = new Select_NonBlockingIOThreadingModelFactory();
+    private static final int PORT_NUMBER_UPPER_LIMIT = 5799;
+    private int portNumber = 5701;
+
+    protected NetworkingFactory networkingFactory = new Select_NioNetworkingFactory();
 
     protected ILogger logger;
     protected LoggingServiceImpl loggingService;
     protected InternalSerializationService serializationService;
 
     protected Address addressA;
-    protected TcpIpConnectionManager connManagerA;
-    protected MockIOService ioServiceA;
-    protected MetricsRegistryImpl metricsRegistryA;
-
     protected Address addressB;
-    protected TcpIpConnectionManager connManagerB;
-    protected MockIOService ioServiceB;
-    protected MetricsRegistryImpl metricsRegistryB;
-
-    protected TcpIpConnectionManager connManagerC;
     protected Address addressC;
+
+    protected TcpIpNetworkingService networkingServiceA;
+    protected TcpIpNetworkingService networkingServiceB;
+    protected TcpIpNetworkingService networkingServiceC;
+
+    protected MockIOService ioServiceA;
+    protected MockIOService ioServiceB;
     protected MockIOService ioServiceC;
+
+    protected MetricsRegistryImpl metricsRegistryA;
+    protected MetricsRegistryImpl metricsRegistryB;
     protected MetricsRegistryImpl metricsRegistryC;
 
     @Before
     public void setup() throws Exception {
-        addressA = new Address("127.0.0.1", 5701);
-        addressB = new Address("127.0.0.1", 5702);
-        addressC = new Address("127.0.0.1", 5703);
 
-        loggingService = new LoggingServiceImpl("somegroup", "log4j", BuildInfoProvider.getBuildInfo());
+        loggingService = new LoggingServiceImpl("somegroup", "log4j2", BuildInfoProvider.getBuildInfo());
         logger = loggingService.getLogger(TcpIpConnection_AbstractTest.class);
 
         metricsRegistryA = newMetricsRegistry();
-        connManagerA = newConnectionManager(addressA.getPort(), metricsRegistryA);
-        ioServiceA = (MockIOService) connManagerA.getIoService();
+        networkingServiceA = newNetworkingService(metricsRegistryA);
+        ioServiceA = (MockIOService) networkingServiceA.getIoService();
+        addressA = ioServiceA.getThisAddress();
 
         metricsRegistryB = newMetricsRegistry();
-        connManagerB = newConnectionManager(addressB.getPort(), metricsRegistryB);
-        ioServiceB = (MockIOService) connManagerB.getIoService();
+        networkingServiceB = newNetworkingService(metricsRegistryB);
+        ioServiceB = (MockIOService) networkingServiceB.getIoService();
+        addressB = ioServiceB.getThisAddress();
 
         metricsRegistryC = newMetricsRegistry();
-        connManagerC = newConnectionManager(addressC.getPort(), metricsRegistryC);
-        ioServiceC = (MockIOService) connManagerB.getIoService();
+        networkingServiceC = newNetworkingService(metricsRegistryC);
+        ioServiceC = (MockIOService) networkingServiceC.getIoService();
+        addressC = ioServiceC.getThisAddress();
 
-        serializationService = (InternalSerializationService) new DefaultSerializationServiceBuilder()
+        serializationService = new DefaultSerializationServiceBuilder()
                 .addDataSerializableFactory(TestDataFactory.FACTORY_ID, new TestDataFactory())
                 .build();
     }
 
-    public void startAllConnectionManagers() {
-        connManagerA.start();
-        connManagerB.start();
-        connManagerC.start();
-    }
-
     @After
     public void tearDown() {
-        connManagerA.shutdown();
-        connManagerB.shutdown();
-        connManagerC.shutdown();
+        networkingServiceA.shutdown();
+        networkingServiceB.shutdown();
+        networkingServiceC.shutdown();
 
         metricsRegistryA.shutdown();
         metricsRegistryB.shutdown();
         metricsRegistryC.shutdown();
     }
 
+    protected void startAllNetworkingServices() {
+        networkingServiceA.start();
+        networkingServiceB.start();
+        networkingServiceC.start();
+    }
+
     protected MetricsRegistryImpl newMetricsRegistry() {
         return new MetricsRegistryImpl(loggingService.getLogger(MetricsRegistryImpl.class), INFO);
     }
 
-    protected TcpIpConnectionManager newConnectionManager(int port, MetricsRegistry metricsRegistry) throws Exception {
-        MockIOService ioService = new MockIOService(port);
+    protected TcpIpNetworkingService newNetworkingService(MetricsRegistry metricsRegistry) throws Exception {
+        MockIOService ioService = null;
+        while (ioService == null) {
+            try {
+                ioService = new MockIOService(portNumber++);
+            } catch (IOException e) {
+                if (portNumber >= PORT_NUMBER_UPPER_LIMIT) {
+                    throw e;
+                }
+            }
+        }
 
-        return new TcpIpConnectionManager(
+        ServerSocketRegistry registry = new ServerSocketRegistry(singletonMap(MEMBER, ioService.serverSocketChannel), true);
+
+        final MockIOService finalIoService = ioService;
+        return new TcpIpNetworkingService(new Config(),
                 ioService,
-                ioService.serverSocketChannel,
+                registry,
                 ioService.loggingService,
                 metricsRegistry,
-                threadingModelFactory.create(ioService, metricsRegistry));
+                networkingFactory.create(ioService, metricsRegistry),
+                new ChannelInitializerProvider() {
+                    @Override
+                    public ChannelInitializer provide(EndpointQualifier qualifier) {
+                        return new UnifiedChannelInitializer(finalIoService);
+                    }
+                });
     }
 
     // ====================== support ========================================
 
     protected TcpIpConnection connect(Address address) {
-        return connect(connManagerA, address);
+        return connect(networkingServiceA, address);
     }
 
-    protected TcpIpConnection connect(final TcpIpConnectionManager connectionManager, final Address address) {
-        connectionManager.getOrConnect(address);
+    protected TcpIpConnection connect(final TcpIpNetworkingService service, final Address address) {
+        service.getEndpointManager(MEMBER).getOrConnect(address);
 
         final AtomicReference<TcpIpConnection> ref = new AtomicReference<TcpIpConnection>();
         assertTrueEventually(new AssertTask() {
             @Override
-            public void run() throws Exception {
-                Connection c = connectionManager.getConnection(address);
+            public void run() {
+                Connection c = service.getEndpointManager(MEMBER).getConnection(address);
                 assertNotNull(c);
                 ref.set((TcpIpConnection) c);
             }
@@ -125,11 +172,11 @@ public abstract class TcpIpConnection_AbstractTest extends HazelcastTestSupport 
         return ref.get();
     }
 
-    public static TcpIpConnection getConnection(TcpIpConnectionManager connManager, SocketAddress localSocketAddress) {
+    public static TcpIpConnection getConnection(TcpIpNetworkingService service, SocketAddress localSocketAddress) {
         long startMs = System.currentTimeMillis();
 
         for (; ; ) {
-            for (TcpIpConnection connection : connManager.getActiveConnections()) {
+            for (TcpIpConnection connection : service.getEndpointManager(MEMBER).getActiveConnections()) {
                 if (connection.getRemoteSocketAddress().equals(localSocketAddress)) {
                     return connection;
                 }

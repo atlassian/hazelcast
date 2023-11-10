@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,11 +30,6 @@ public class ClientCacheStatisticsImpl extends CacheStatisticsImpl {
         super(creationTime);
     }
 
-    public ClientCacheStatisticsImpl(long creationTime, NearCacheStats nearCacheStats) {
-        super(creationTime);
-        this.nearCacheStats = nearCacheStats;
-    }
-
     @Override
     public long getOwnedEntryCount() {
         throw new UnsupportedOperationException("This statistic is not supported for client.");
@@ -53,7 +48,7 @@ public class ClientCacheStatisticsImpl extends CacheStatisticsImpl {
     @Override
     public NearCacheStats getNearCacheStatistics() {
         if (nearCacheStats == null) {
-            throw new UnsupportedOperationException("Near-cache is not enabled.");
+            throw new UnsupportedOperationException("Near Cache is not enabled.");
 
         }
         return nearCacheStats;
@@ -74,5 +69,9 @@ public class ClientCacheStatisticsImpl extends CacheStatisticsImpl {
                 + ", removeTimeTakenNanos=" + removeTimeTakenNanos
                 + (nearCacheStats != null ? ", nearCacheStats=" + nearCacheStats : "")
                 + '}';
+    }
+
+    public void setNearCacheStats(NearCacheStats nearCacheStats) {
+        this.nearCacheStats = nearCacheStats;
     }
 }

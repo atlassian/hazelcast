@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,9 +46,6 @@ public final class ClientMessageSplitter {
         assert ClientMessage.HEADER_SIZE < frameSize;
         int frameLength = originalClientMessage.getFrameLength();
         int sizeWithoutHeader = frameSize - ClientMessage.HEADER_SIZE;
-        System.out.println(ClientMessage.HEADER_SIZE);
-        System.out.println(frameLength);
-        System.out.println(sizeWithoutHeader);
         return (int) Math.ceil((float) (frameLength - ClientMessage.HEADER_SIZE) / sizeWithoutHeader);
     }
 

@@ -1,41 +1,61 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.nio.tcp;
 
-import com.hazelcast.client.impl.protocol.ClientMessage;
+import com.hazelcast.client.impl.ClientEngine;
+import com.hazelcast.config.MemcacheProtocolConfig;
+import com.hazelcast.config.RestApiConfig;
 import com.hazelcast.config.SSLConfig;
-import com.hazelcast.config.SocketInterceptorConfig;
 import com.hazelcast.config.SymmetricEncryptionConfig;
 import com.hazelcast.instance.BuildInfoProvider;
-import com.hazelcast.instance.HazelcastThreadGroup;
 import com.hazelcast.internal.ascii.TextCommandService;
-import com.hazelcast.internal.networking.IOOutOfMemoryHandler;
-import com.hazelcast.internal.networking.ReadHandler;
-import com.hazelcast.internal.networking.SocketChannelWrapperFactory;
-import com.hazelcast.internal.networking.WriteHandler;
+import com.hazelcast.instance.EndpointQualifier;
+import com.hazelcast.internal.networking.InboundHandler;
+import com.hazelcast.internal.networking.OutboundHandler;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.internal.serialization.impl.DefaultSerializationServiceBuilder;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.logging.LoggingService;
 import com.hazelcast.logging.LoggingServiceImpl;
 import com.hazelcast.nio.Address;
-import com.hazelcast.nio.Connection;
 import com.hazelcast.nio.IOService;
 import com.hazelcast.nio.MemberSocketInterceptor;
 import com.hazelcast.nio.Packet;
-import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.EventFilter;
 import com.hazelcast.spi.EventRegistration;
 import com.hazelcast.spi.EventService;
-import com.hazelcast.spi.impl.PacketHandler;
-import com.hazelcast.spi.impl.packetdispatcher.PacketDispatcher;
+import com.hazelcast.spi.properties.HazelcastProperties;
+import com.hazelcast.util.function.Consumer;
 
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
+import java.net.Socket;
 import java.nio.channels.ServerSocketChannel;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 
-import static com.hazelcast.logging.Logger.getLogger;
+import static com.hazelcast.nio.Packet.Type.BIND;
+import static com.hazelcast.nio.Packet.Type.EXTENDED_BIND;
+import static com.hazelcast.spi.properties.GroupProperty.IO_INPUT_THREAD_COUNT;
+import static com.hazelcast.spi.properties.GroupProperty.IO_OUTPUT_THREAD_COUNT;
 
 public class MockIOService implements IOService {
 
@@ -43,17 +63,14 @@ public class MockIOService implements IOService {
     public final Address thisAddress;
     public final InternalSerializationService serializationService;
     public final LoggingServiceImpl loggingService;
-    public final HazelcastThreadGroup hazelcastThreadGroup;
     public final ConcurrentHashMap<Long, DummyPayload> payloads = new ConcurrentHashMap<Long, DummyPayload>();
-    public volatile PacketHandler packetHandler;
+    private final HazelcastProperties properties;
+    public volatile Consumer<Packet> packetConsumer;
+    private final ILogger logger;
 
     public MockIOService(int port) throws Exception {
-        loggingService = new LoggingServiceImpl("somegroup", "log4j", BuildInfoProvider.getBuildInfo());
-        hazelcastThreadGroup = new HazelcastThreadGroup(
-                "hz",
-                loggingService.getLogger(HazelcastThreadGroup.class),
-                getClass().getClassLoader());
-
+        loggingService = new LoggingServiceImpl("somegroup", "log4j2", BuildInfoProvider.getBuildInfo());
+        logger = loggingService.getLogger(MockIOService.class);
         serverSocketChannel = ServerSocketChannel.open();
         ServerSocket serverSocket = serverSocketChannel.socket();
         serverSocket.setReuseAddress(true);
@@ -63,6 +80,21 @@ public class MockIOService implements IOService {
         this.serializationService = new DefaultSerializationServiceBuilder()
                 .addDataSerializableFactory(TestDataFactory.FACTORY_ID, new TestDataFactory())
                 .build();
+
+        Properties props = new Properties();
+        props.put(IO_INPUT_THREAD_COUNT.getName(), "1");
+        props.put(IO_OUTPUT_THREAD_COUNT.getName(), "1");
+        this.properties = new HazelcastProperties(props);
+    }
+
+    @Override
+    public HazelcastProperties properties() {
+        return properties;
+    }
+
+    @Override
+    public String getHazelcastName() {
+        return "hz";
     }
 
     @Override
@@ -71,22 +103,8 @@ public class MockIOService implements IOService {
     }
 
     @Override
-    public HazelcastThreadGroup getHazelcastThreadGroup() {
-        return hazelcastThreadGroup;
-    }
-
-    @Override
     public LoggingService getLoggingService() {
         return loggingService;
-    }
-
-    @Override
-    public IOOutOfMemoryHandler getIoOutOfMemoryHandler() {
-        return new IOOutOfMemoryHandler() {
-            @Override
-            public void handle(OutOfMemoryError error) {
-            }
-        };
     }
 
     @Override
@@ -95,26 +113,30 @@ public class MockIOService implements IOService {
     }
 
     @Override
+    public Map<EndpointQualifier, Address> getThisAddresses() {
+        Map<EndpointQualifier, Address> addressMap = new HashMap<EndpointQualifier, Address>();
+        addressMap.put(EndpointQualifier.MEMBER, thisAddress);
+        return addressMap;
+    }
+
+    @Override
     public void onFatalError(Exception e) {
+        logger.severe("Fatal error", e);
     }
 
     @Override
-    public SocketInterceptorConfig getSocketInterceptorConfig() {
+    public SymmetricEncryptionConfig getSymmetricEncryptionConfig(EndpointQualifier endpointQualifier) {
         return null;
     }
 
     @Override
-    public SymmetricEncryptionConfig getSymmetricEncryptionConfig() {
+    public SSLConfig getSSLConfig(EndpointQualifier endpointQualifier) {
         return null;
     }
 
     @Override
-    public SSLConfig getSSLConfig() {
+    public ClientEngine getClientEngine() {
         return null;
-    }
-
-    @Override
-    public void handleClientMessage(ClientMessage cm, Connection connection) {
     }
 
     @Override
@@ -123,30 +145,18 @@ public class MockIOService implements IOService {
     }
 
     @Override
-    public boolean isMemcacheEnabled() {
-        return false;
-    }
-
-    @Override
-    public boolean isRestEnabled() {
-        return false;
-    }
-
-    @Override
-    public boolean isHealthcheckEnabled() {
-        return false;
-    }
-
-    @Override
     public void removeEndpoint(Address endpoint) {
+        logger.info("Removing endpoint: " + endpoint);
     }
 
     @Override
     public void onSuccessfulConnection(Address address) {
+        logger.info("Successful connection: " + address);
     }
 
     @Override
     public void onFailedConnection(Address address) {
+        logger.info("Failed connection: " + address);
     }
 
     @Override
@@ -167,58 +177,17 @@ public class MockIOService implements IOService {
     }
 
     @Override
-    public int getSocketReceiveBufferSize() {
-        return 32;
+    public void interceptSocket(EndpointQualifier endpointQualifier, Socket socket, boolean onAccept) {
     }
 
     @Override
-    public int getSocketSendBufferSize() {
-        return 32;
-    }
-
-    @Override
-    public int getSocketClientReceiveBufferSize() {
-        return 32;
-    }
-
-    @Override
-    public int getSocketClientSendBufferSize() {
-        return 32;
-    }
-
-    @Override
-    public boolean isSocketBufferDirect() {
+    public boolean isSocketInterceptorEnabled(EndpointQualifier endpointQualifier) {
         return false;
     }
 
     @Override
-    public int getSocketLingerSeconds() {
+    public int getSocketConnectTimeoutSeconds(EndpointQualifier endpointQualifier) {
         return 0;
-    }
-
-    @Override
-    public int getSocketConnectTimeoutSeconds() {
-        return 0;
-    }
-
-    @Override
-    public boolean getSocketKeepAlive() {
-        return true;
-    }
-
-    @Override
-    public boolean getSocketNoDelay() {
-        return true;
-    }
-
-    @Override
-    public int getInputSelectorThreadCount() {
-        return 1;
-    }
-
-    @Override
-    public int getOutputSelectorThreadCount() {
-        return 1;
     }
 
     @Override
@@ -232,17 +201,8 @@ public class MockIOService implements IOService {
     }
 
     @Override
-    public int getBalancerIntervalSeconds() {
-        return 0;
-    }
-
-    @Override
     public void onDisconnect(Address endpoint, Throwable cause) {
-    }
-
-    @Override
-    public boolean isClient() {
-        return false;
+        logger.warning("Disconnected address: " + endpoint, cause);
     }
 
     @Override
@@ -252,7 +212,7 @@ public class MockIOService implements IOService {
                 try {
                     runnable.run();
                 } catch (Throwable t) {
-                    loggingService.getLogger(MockIOService.class).severe(t);
+                    logger.severe(t);
                 }
             }
         }.start();
@@ -344,7 +304,7 @@ public class MockIOService implements IOService {
     }
 
     @Override
-    public Collection<Integer> getOutboundPorts() {
+    public Collection<Integer> getOutboundPorts(EndpointQualifier endpointQualifier) {
         return Collections.emptyList();
     }
 
@@ -354,41 +314,43 @@ public class MockIOService implements IOService {
     }
 
     @Override
-    public SocketChannelWrapperFactory getSocketChannelWrapperFactory() {
-        return new DefaultSocketChannelWrapperFactory();
-    }
-
-    @Override
-    public MemberSocketInterceptor getMemberSocketInterceptor() {
+    public MemberSocketInterceptor getSocketInterceptor(EndpointQualifier endpointQualifier) {
         return null;
     }
 
     @Override
-    public ReadHandler createReadHandler(final TcpIpConnection connection) {
-        return new MemberReadHandler(connection, new PacketDispatcher() {
-            private ILogger logger = loggingService.getLogger("MockIOService");
-
+    public InboundHandler[] createInboundHandlers(EndpointQualifier qualifier, final TcpIpConnection connection) {
+        return new InboundHandler[]{new PacketDecoder(connection, new Consumer<Packet>() {
             @Override
-            public void dispatch(Packet packet) {
+            public void accept(Packet packet) {
                 try {
-                    if (packet.isFlagSet(Packet.FLAG_BIND)) {
-                        connection.getConnectionManager().handle(packet);
+                    if (packet.getPacketType() == BIND || packet.getPacketType() == EXTENDED_BIND) {
+                        connection.getEndpointManager().accept(packet);
                     } else {
-                        PacketHandler handler = packetHandler;
-                        if (handler != null) {
-                            handler.handle(packet);
+                        Consumer<Packet> consumer = packetConsumer;
+                        if (consumer != null) {
+                            consumer.accept(packet);
                         }
                     }
                 } catch (Exception e) {
                     logger.severe(e);
                 }
             }
-        });
+        })};
     }
 
     @Override
-    public WriteHandler createWriteHandler(TcpIpConnection connection) {
-        return new MemberWriteHandler();
+    public OutboundHandler[] createOutboundHandlers(EndpointQualifier qualifier, TcpIpConnection connection) {
+        return new OutboundHandler[]{new PacketEncoder()};
     }
 
+    @Override
+    public RestApiConfig getRestApiConfig() {
+        return new RestApiConfig();
+    }
+
+    @Override
+    public MemcacheProtocolConfig getMemcacheProtocolConfig() {
+        return new MemcacheProtocolConfig();
+    }
 }

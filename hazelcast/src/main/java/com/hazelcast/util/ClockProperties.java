@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,9 @@ public final class ClockProperties {
     public static final String HAZELCAST_CLOCK_OFFSET = "com.hazelcast.clock.offset";
 
     /**
-     * will call the <code>currentTimeMillis()</code> method of given <code>ClockImpl</code>.
+     * The implementation of {@link com.hazelcast.util.Clock.ClockImpl} to use. If not defined we will use
+     * {@link com.hazelcast.util.Clock.SystemClock} or {@link com.hazelcast.util.Clock.SystemOffsetClock}, depending on
+     * whether an offset is defined with {@link #HAZELCAST_CLOCK_OFFSET}.
      */
     public static final String HAZELCAST_CLOCK_IMPL = "com.hazelcast.clock.impl";
 

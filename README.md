@@ -83,17 +83,17 @@ Hazelcast has 3 testing profiles:
 * **Slow Tests**: Type `mvn test -P slow-test` to run tests those are either slow or cannot be run in-parallel.
 * **All Tests**: Type `mvn test -P all-tests` to run all test serially using network.
 
-### Checkstyle and Findbugs
+### Checkstyle and SpotBugs
 
-In each Pull Request, we do static analyzing on the changes.
-Run the following commands locally to check if your contribution is checkstyle and findbugs compatible.
-
-```
-mvn clean compile -P findbugs
-```
+Hazelcast uses static code analysis tools to check if a Pull Request is ready for merge.
+Run the following commands locally to check if your contribution is Checkstyle and SpotBugs compatible.
 
 ```
 mvn clean validate -P checkstyle
+```
+
+```
+mvn clean compile -P spotbugs
 ```
 
 ### Contributing to Hazelcast
@@ -102,8 +102,8 @@ We encourage pull requests and process them promptly.
 
 To contribute:
 
-* see [Developing with Git] (https://hazelcast.atlassian.net/wiki/display/COM/Developing+with+Git) for our Git process
-* complete the [Hazelcast Contributor Agreement] (https://hazelcast.atlassian.net/wiki/display/COM/Hazelcast+Contributor+Agreement)
+* see [Developing with Git](https://hazelcast.atlassian.net/wiki/display/COM/Developing+with+Git) for our Git process
+* complete the [Hazelcast Contributor Agreement](https://hazelcast.atlassian.net/wiki/display/COM/Hazelcast+Contributor+Agreement)
 
 For an enhancement or larger feature, create a GitHub issue first to discuss.
 
@@ -120,6 +120,6 @@ Hazelcast is available under the Apache 2 License. Please see the [Licensing sec
 
 #### Copyright
 
-Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
 
 Visit [www.hazelcast.com](http://www.hazelcast.com/) for more info.

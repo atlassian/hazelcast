@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -249,7 +249,7 @@ public class MultiMapSumAggregationTest
             throws Exception {
 
         String mapName = randomMapName();
-        MultiMap<String, T> map = HAZELCAST_INSTANCE.getMultiMap(mapName);
+        MultiMap<String, T> map = hazelcastInstance.getMultiMap(mapName);
 
         for (int i = 0; i < values.length; i++) {
             map.put("key-" + i, values[i]);
@@ -263,7 +263,7 @@ public class MultiMapSumAggregationTest
             throws Exception {
 
         String mapName = randomMapName();
-        MultiMap<String, Value<T>> map = HAZELCAST_INSTANCE.getMultiMap(mapName);
+        MultiMap<String, Value<T>> map = hazelcastInstance.getMultiMap(mapName);
 
         for (int i = 0; i < values.length; i++) {
             map.put("key-" + i, values[i]);

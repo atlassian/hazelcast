@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,10 +22,16 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+
+import static com.hazelcast.util.SetUtil.createHashSet;
+
 /**
  * Or result set for Predicates.
  */
 public class OrResultSet extends AbstractSet<QueryableEntry> {
+
+    private static final int ENTRY_MULTIPLE = 4;
+    private static final int ENTRY_MIN_SIZE = 8;
 
     private final List<Set<QueryableEntry>> indexedResults;
     private Set<QueryableEntry> entries;
@@ -46,6 +52,29 @@ public class OrResultSet extends AbstractSet<QueryableEntry> {
 
     @Override
     public Iterator<QueryableEntry> iterator() {
+        return getEntries().iterator();
+    }
+
+    @Override
+    public int size() {
+        return getEntries().size();
+    }
+
+    /**
+     * @return returns estimated size without allocating the full result set
+     */
+    public int estimatedSize() {
+        if (entries == null) {
+            if (indexedResults.isEmpty()) {
+                return 0;
+            } else {
+                return indexedResults.get(0).size();
+            }
+        }
+        return entries.size();
+    }
+
+    private Set<QueryableEntry> getEntries() {
         if (entries == null) {
             if (indexedResults.isEmpty()) {
                 entries = Collections.emptySet();
@@ -53,22 +82,14 @@ public class OrResultSet extends AbstractSet<QueryableEntry> {
                 if (indexedResults.size() == 1) {
                     entries = new HashSet<QueryableEntry>(indexedResults.get(0));
                 } else {
-                    entries = new HashSet<QueryableEntry>();
+                    entries = createHashSet(Math.max(ENTRY_MIN_SIZE, indexedResults.size() * ENTRY_MULTIPLE));
                     for (Set<QueryableEntry> result : indexedResults) {
                         entries.addAll(result);
                     }
                 }
             }
         }
-        return entries.iterator();
+        return entries;
     }
 
-    @Override
-    public int size() {
-        if (indexedResults.isEmpty()) {
-            return 0;
-        } else {
-            return indexedResults.get(0).size();
-        }
-    }
 }

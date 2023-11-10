@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.internal.cluster.impl;
 
 import com.hazelcast.core.Member;
@@ -5,6 +21,7 @@ import com.hazelcast.core.MemberSelector;
 import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.nio.Address;
 import com.hazelcast.test.HazelcastParallelClassRunner;
+import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
 import com.hazelcast.version.MemberVersion;
@@ -21,6 +38,7 @@ import static com.hazelcast.cluster.memberselector.MemberSelectors.DATA_MEMBER_S
 import static com.hazelcast.cluster.memberselector.MemberSelectors.LITE_MEMBER_SELECTOR;
 import static com.hazelcast.cluster.memberselector.MemberSelectors.NON_LOCAL_MEMBER_SELECTOR;
 import static com.hazelcast.cluster.memberselector.MemberSelectors.and;
+import static com.hazelcast.util.UuidUtil.newUnsecureUuidString;
 import static java.util.Arrays.asList;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -28,7 +46,7 @@ import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
-public class MemberSelectingCollectionTest {
+public class MemberSelectingCollectionTest extends HazelcastTestSupport {
 
     private static final MemberSelector NO_OP_MEMBER_SELECTOR = new MemberSelector() {
         @Override
@@ -50,10 +68,17 @@ public class MemberSelectingCollectionTest {
     @Before
     public void before()
             throws Exception {
-        thisMember = new MemberImpl(new Address("localhost", 5701), MemberVersion.of("3.8.0"), true, true);
-        liteMember = new MemberImpl(new Address("localhost", 5702), MemberVersion.of("3.8.0"), false, true);
-        dataMember = new MemberImpl(new Address("localhost", 5704), MemberVersion.of("3.8.0"), false, false);
-        nonExistingMember = new MemberImpl(new Address("localhost", 5705), MemberVersion.of("3.8.0"), false, false);
+        MemberVersion version = MemberVersion.of("3.8.0");
+        thisMember
+                = new MemberImpl.Builder(new Address("localhost", 5701)).version(version).localMember(true)
+                .uuid(newUnsecureUuidString()).liteMember(true).build();
+        liteMember
+                = new MemberImpl.Builder(new Address("localhost", 5702)).version(version).uuid(newUnsecureUuidString())
+                .liteMember(true).build();
+        dataMember
+                = new MemberImpl.Builder(new Address("localhost", 5704)).version(version).uuid(newUnsecureUuidString()).build();
+        nonExistingMember
+                = new MemberImpl.Builder(new Address("localhost", 5705)).version(version).uuid(newUnsecureUuidString()).build();
 
         members = createMembers();
     }
@@ -77,9 +102,9 @@ public class MemberSelectingCollectionTest {
     public void testContainsWhenAllSelected() {
         final MemberSelectingCollection<MemberImpl> collection = new MemberSelectingCollection<MemberImpl>(members,
                 NO_OP_MEMBER_SELECTOR);
-        assertTrue(collection.contains(liteMember));
-        assertTrue(collection.contains(thisMember));
-        assertTrue(collection.contains(dataMember));
+        assertContains(collection, liteMember);
+        assertContains(collection, thisMember);
+        assertContains(collection, dataMember);
     }
 
     // ################ IS EMPTY ################
@@ -106,7 +131,7 @@ public class MemberSelectingCollectionTest {
     @Test
     public void testContainsThisMemberWhenLiteMembersSelected() {
         final Collection<MemberImpl> collection = new MemberSelectingCollection<MemberImpl>(members, LITE_MEMBER_SELECTOR);
-        assertTrue(collection.contains(thisMember));
+        assertContains(collection, thisMember);
     }
 
     @Test
@@ -132,14 +157,14 @@ public class MemberSelectingCollectionTest {
     @Test
     public void testContainsMatchingMemberWhenLiteMembersSelected() {
         final Collection<MemberImpl> collection = new MemberSelectingCollection<MemberImpl>(members, LITE_MEMBER_SELECTOR);
-        assertTrue(collection.contains(liteMember));
+        assertContains(collection, liteMember);
     }
 
     @Test
     public void testContainsMatchingMemberWhenLiteMembersSelectedAndNoLocalMember() {
         final Collection<MemberImpl> collection = new MemberSelectingCollection<MemberImpl>(members,
                 and(LITE_MEMBER_SELECTOR, NON_LOCAL_MEMBER_SELECTOR));
-        assertTrue(collection.contains(liteMember));
+        assertContains(collection, liteMember);
     }
 
     @Test
@@ -172,20 +197,20 @@ public class MemberSelectingCollectionTest {
     @Test
     public void testContainsAllWhenLiteMembersSelected() {
         final Collection<MemberImpl> collection = new MemberSelectingCollection<MemberImpl>(members, LITE_MEMBER_SELECTOR);
-        assertTrue(collection.containsAll(asList(thisMember, liteMember)));
+        assertContainsAll(collection, asList(thisMember, liteMember));
     }
 
     @Test
     public void testDoesNotContainAllWhenLiteMembersSelectedAndNoLocalMember() {
         final Collection<MemberImpl> collection = new MemberSelectingCollection<MemberImpl>(members,
                 and(LITE_MEMBER_SELECTOR, NON_LOCAL_MEMBER_SELECTOR));
-        assertFalse(collection.containsAll(asList(thisMember, liteMember)));
+        assertNotContainsAll(collection, asList(thisMember, liteMember));
     }
 
     @Test
     public void testDoesNotContainNonMatchingMemberTypesWhenLiteMembersSelected() {
         final Collection<MemberImpl> collection = new MemberSelectingCollection<MemberImpl>(members, LITE_MEMBER_SELECTOR);
-        assertFalse(collection.containsAll(asList(thisMember, dataMember)));
+        assertNotContainsAll(collection, asList(thisMember, dataMember));
     }
 
     // ################ SIZE ################
@@ -270,5 +295,4 @@ public class MemberSelectingCollectionTest {
             assertEquals(member, array[i++]);
         }
     }
-
 }

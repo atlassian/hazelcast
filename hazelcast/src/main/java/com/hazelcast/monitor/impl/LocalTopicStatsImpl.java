@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,10 @@
 
 package com.hazelcast.monitor.impl;
 
-import com.eclipsesource.json.JsonObject;
+import com.hazelcast.internal.metrics.Probe;
+import com.hazelcast.internal.json.JsonObject;
 import com.hazelcast.monitor.LocalTopicStats;
+import com.hazelcast.topic.impl.reliable.ReliableMessageRunner;
 import com.hazelcast.util.Clock;
 
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
@@ -31,10 +33,13 @@ public class LocalTopicStatsImpl implements LocalTopicStats {
             newUpdater(LocalTopicStatsImpl.class, "totalPublishes");
     private static final AtomicLongFieldUpdater<LocalTopicStatsImpl> TOTAL_RECEIVED_MESSAGES =
             newUpdater(LocalTopicStatsImpl.class, "totalReceivedMessages");
+    @Probe
     private long creationTime;
 
     // These fields are only accessed through the updaters
+    @Probe
     private volatile long totalPublishes;
+    @Probe
     private volatile long totalReceivedMessages;
 
     public LocalTopicStatsImpl() {
@@ -51,6 +56,14 @@ public class LocalTopicStatsImpl implements LocalTopicStats {
         return totalPublishes;
     }
 
+    /**
+     * Increment the number of locally published messages. The count can be local
+     * to the member or local to a single proxy (whereas there are many proxies
+     * on one member).
+     *
+     * @see com.hazelcast.topic.impl.TopicService
+     * @see com.hazelcast.topic.impl.reliable.ReliableTopicService
+     */
     public void incrementPublishes() {
         TOTAL_PUBLISHES.incrementAndGet(this);
     }
@@ -60,6 +73,14 @@ public class LocalTopicStatsImpl implements LocalTopicStats {
         return totalReceivedMessages;
     }
 
+    /**
+     * Increment the number of locally received messages. The count can be local
+     * to the member or local to a single listener (whereas there are many listeners
+     * on one member).
+     *
+     * @see com.hazelcast.topic.impl.TopicService
+     * @see ReliableMessageRunner
+     */
     public void incrementReceives() {
         TOTAL_RECEIVED_MESSAGES.incrementAndGet(this);
     }

@@ -1,9 +1,25 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.nio.serialization.impl;
 
 import com.hazelcast.config.Config;
 import com.hazelcast.core.IMap;
 import com.hazelcast.instance.HazelcastInstanceProxy;
-import com.hazelcast.internal.serialization.impl.SerializationServiceV1;
+import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.map.AbstractEntryProcessor;
 import com.hazelcast.map.impl.LazyMapEntry;
 import com.hazelcast.nio.serialization.Data;
@@ -15,10 +31,8 @@ import com.hazelcast.nio.serialization.PortableWriter;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.QuickTest;
-import org.junit.Rule;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
-import org.junit.rules.ExpectedException;
 import org.junit.runner.RunWith;
 
 import java.io.IOException;
@@ -34,13 +48,10 @@ import static org.junit.Assert.fail;
 @Category(QuickTest.class)
 public class DefaultPortableReaderQuickTest extends HazelcastTestSupport {
 
-    @Rule
-    public ExpectedException expected = ExpectedException.none();
-
-    public static final CarPortable NON_EMPTY_PORSCHE = new CarPortable("Porsche", new EnginePortable(300),
+    static final CarPortable NON_EMPTY_PORSCHE = new CarPortable("Porsche", new EnginePortable(300),
             w("front", true), w("rear", true));
 
-    public static final CarPortable PORSCHE = new CarPortable("Porsche", new EnginePortable(300),
+    static final CarPortable PORSCHE = new CarPortable("Porsche", new EnginePortable(300),
             w("front", false), w("rear", false));
 
     @Test(expected = IllegalArgumentException.class)
@@ -277,21 +288,28 @@ public class DefaultPortableReaderQuickTest extends HazelcastTestSupport {
 
     @Test
     public void portableArrayFirst_withAny_primitiveArrayAtTheEnd2() throws IOException {
-        Portable[] expected = new Portable[]{((WheelPortable) PORSCHE.wheels[0]).chip,
-                ((WheelPortable) PORSCHE.wheels[1]).chip};
+        Portable[] expected = new Portable[]{
+                ((WheelPortable) PORSCHE.wheels[0]).chip,
+                ((WheelPortable) PORSCHE.wheels[1]).chip,
+        };
         assertArrayEquals(expected, reader(PORSCHE).readPortableArray("wheels[any].chip"));
     }
 
     @Test
     public void portableArrayFirst_withAny_primitiveArrayAtTheEnd3() throws IOException {
-        Portable[] expected = new Portable[]{((WheelPortable) PORSCHE.wheels[0]).chips[1],
-                ((WheelPortable) PORSCHE.wheels[1]).chips[1]};
+        Portable[] expected = new Portable[]{
+                ((WheelPortable) PORSCHE.wheels[0]).chips[1],
+                ((WheelPortable) PORSCHE.wheels[1]).chips[1],
+        };
         assertArrayEquals(expected, reader(PORSCHE).readPortableArray("wheels[any].chips[1]"));
     }
 
     @Test
     public void portableArrayFirst_withAny_primitiveArrayAtTheEnd5() throws IOException {
-        String[] expected = {"front", "rear"};
+        String[] expected = {
+                "front",
+                "rear",
+        };
         assertArrayEquals(expected, reader(PORSCHE).readUTFArray("wheels[any].name"));
     }
 
@@ -333,7 +351,7 @@ public class DefaultPortableReaderQuickTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void reusingTheReader_multipleCalls_stateResetCorreclty() throws IOException {
+    public void reusingTheReader_multipleCalls_stateResetCorrectly() throws IOException {
         PortableReader reader = reader(PORSCHE);
         assertEquals("rear", reader.readUTF("wheels[1].name"));
         assertEquals(300, reader.readInt("engine.power"));
@@ -342,7 +360,7 @@ public class DefaultPortableReaderQuickTest extends HazelcastTestSupport {
         try {
             reader.readFloat("wheels[0].serial[0]");
             fail();
-        } catch (Exception ex) {
+        } catch (Exception ignored) {
         }
 
         assertEquals("front", reader.readUTF("wheels[0].name"));
@@ -351,7 +369,7 @@ public class DefaultPortableReaderQuickTest extends HazelcastTestSupport {
         try {
             reader.readIntArray("name");
             fail();
-        } catch (Exception ex) {
+        } catch (Exception ignored) {
         }
 
         assertEquals(15, reader.readInt("engine.chip.power"));
@@ -361,13 +379,14 @@ public class DefaultPortableReaderQuickTest extends HazelcastTestSupport {
     //
     // Utilities
     //
+
     public PortableReader reader(Portable portable) throws IOException {
         Config config = new Config();
         config.getSerializationConfig().addPortableFactory(TestPortableFactory.ID,
                 new TestPortableFactory());
 
         HazelcastInstanceProxy hz = (HazelcastInstanceProxy) createHazelcastInstance(config);
-        IMap map = hz.getMap("stealingMap");
+        IMap<String, Object> map = hz.getMap("stealingMap");
 
         if (portable instanceof CarPortable) {
             // makes sure that proper class definitions are registered
@@ -379,7 +398,7 @@ public class DefaultPortableReaderQuickTest extends HazelcastTestSupport {
         EntryStealingProcessor processor = new EntryStealingProcessor(portable.toString());
         map.executeOnEntries(processor);
 
-        SerializationServiceV1 ss = (SerializationServiceV1) hz.getSerializationService();
+        InternalSerializationService ss = hz.getSerializationService();
         return ss.createPortableReader(processor.stolenEntryData);
     }
 
@@ -395,10 +414,8 @@ public class DefaultPortableReaderQuickTest extends HazelcastTestSupport {
 
         @Override
         public Object process(Map.Entry entry) {
-            // Hack to get rid of de-serialization cost.
-            // And assuming in-memory-format is BINARY, if it is OBJECT you can replace
-            // the null check below with entry.getValue() != null
-            // Works only for versions >= 3.6
+            // hack to get rid of de-serialization cost (assuming in-memory-format is BINARY, if it is OBJECT you can replace
+            // the null check below with entry.getValue() != null), but works only for versions >= 3.6
             if (key.equals(entry.getKey())) {
                 stolenEntryData = (Data) ((LazyMapEntry) entry).getValueData();
             }
@@ -408,13 +425,13 @@ public class DefaultPortableReaderQuickTest extends HazelcastTestSupport {
 
     static class CarPortable implements Portable {
 
-        final static int FACTORY_ID = 1;
-        final static int ID = 5;
+        static final int FACTORY_ID = 1;
+        static final int ID = 5;
 
-        public int power;
-        public String name;
-        public EnginePortable engine;
-        public Portable[] wheels;
+        int power;
+        String name;
+        EnginePortable engine;
+        Portable[] wheels;
 
         public String[] model;
 
@@ -482,11 +499,11 @@ public class DefaultPortableReaderQuickTest extends HazelcastTestSupport {
 
     static class EnginePortable implements Portable, Comparable<EnginePortable> {
 
-        final static int FACTORY_ID = 1;
-        final static int ID = 8;
+        static final int FACTORY_ID = 1;
+        static final int ID = 8;
 
-        public Integer power;
-        public ChipPortable chip;
+        Integer power;
+        ChipPortable chip;
 
         public EnginePortable() {
             this.chip = new ChipPortable();
@@ -545,9 +562,10 @@ public class DefaultPortableReaderQuickTest extends HazelcastTestSupport {
 
     static class ChipPortable implements Portable, Comparable<ChipPortable> {
 
-        final static int FACTORY_ID = 1;
-        final static int ID = 6;
-        public Integer power;
+        static final int FACTORY_ID = 1;
+        static final int ID = 6;
+
+        Integer power;
 
         public ChipPortable() {
             this.power = 15;
@@ -603,15 +621,15 @@ public class DefaultPortableReaderQuickTest extends HazelcastTestSupport {
 
     static class WheelPortable implements Portable, Comparable<WheelPortable> {
 
-        final static int FACTORY_ID = 1;
-        final static int ID = 7;
+        static final int FACTORY_ID = 1;
+        static final int ID = 7;
 
-        public String name;
-        public ChipPortable chip;
-        public Portable chips[];
-        public Portable emptyChips[];
-        public Portable nullChips[];
-        public int serial[];
+        String name;
+        ChipPortable chip;
+        Portable[] chips;
+        Portable[] emptyChips;
+        Portable[] nullChips;
+        int[] serial;
 
         public WheelPortable() {
         }
@@ -690,7 +708,7 @@ public class DefaultPortableReaderQuickTest extends HazelcastTestSupport {
 
     public static class TestPortableFactory implements PortableFactory {
 
-        public final static int ID = 1;
+        public static final int ID = 1;
 
         @Override
         public Portable create(int classId) {

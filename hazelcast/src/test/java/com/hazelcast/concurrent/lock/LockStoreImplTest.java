@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.hazelcast.concurrent.lock;
 
 import com.hazelcast.internal.serialization.impl.HeapData;
 import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.spi.DefaultObjectNamespace;
+import com.hazelcast.spi.DistributedObjectNamespace;
 import com.hazelcast.spi.ObjectNamespace;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
@@ -48,12 +48,11 @@ import static org.mockito.Mockito.when;
 @Category({QuickTest.class, ParallelTest.class})
 public class LockStoreImplTest extends HazelcastTestSupport {
 
-    private static final ObjectNamespace OBJECT_NAME_SPACE = new DefaultObjectNamespace("service", "object");
+    private static final ObjectNamespace OBJECT_NAME_SPACE = new DistributedObjectNamespace("service", "object");
     private static final int BACKUP_COUNT = 0;
     private static final int ASYNC_BACKUP_COUNT = 0;
 
     private LockService mockLockServiceImpl;
-    private EntryTaskScheduler mockScheduler;
     private LockStoreImpl lockStore;
 
     private Data key = new HeapData();
@@ -66,7 +65,7 @@ public class LockStoreImplTest extends HazelcastTestSupport {
     public void setUp() {
         mockLockServiceImpl = mock(LockService.class);
         when(mockLockServiceImpl.getMaxLeaseTimeInMillis()).thenReturn(Long.MAX_VALUE);
-        mockScheduler = mock(EntryTaskScheduler.class);
+        EntryTaskScheduler<Data, Integer> mockScheduler = mock(EntryTaskScheduler.class);
         lockStore = new LockStoreImpl(mockLockServiceImpl, OBJECT_NAME_SPACE, mockScheduler, BACKUP_COUNT, ASYNC_BACKUP_COUNT);
     }
 
@@ -78,7 +77,7 @@ public class LockStoreImplTest extends HazelcastTestSupport {
 
     @Test(expected = IllegalArgumentException.class)
     public void testLock_whenMaximumLeaseTimeExceeded_thenThrowException() {
-        when(mockLockServiceImpl.getMaxLeaseTimeInMillis()).thenReturn(1l);
+        when(mockLockServiceImpl.getMaxLeaseTimeInMillis()).thenReturn(1L);
         lockAndIncreaseReferenceId();
     }
 
@@ -119,7 +118,7 @@ public class LockStoreImplTest extends HazelcastTestSupport {
 
         long remainingLeaseTime = lockStore.getRemainingLeaseTime(key);
         assertThat(remainingLeaseTime, lessThanOrEqualTo(leaseTime));
-        assertThat(remainingLeaseTime, greaterThan(0l));
+        assertThat(remainingLeaseTime, greaterThan(0L));
     }
 
     @Test
@@ -439,7 +438,6 @@ public class LockStoreImplTest extends HazelcastTestSupport {
         assertTrue(locked);
     }
 
-
     private boolean lock() {
         return lockStore.lock(key, callerId, threadId, referenceId, leaseTime);
     }
@@ -469,5 +467,4 @@ public class LockStoreImplTest extends HazelcastTestSupport {
         referenceId++;
         return isUnlocked;
     }
-
 }

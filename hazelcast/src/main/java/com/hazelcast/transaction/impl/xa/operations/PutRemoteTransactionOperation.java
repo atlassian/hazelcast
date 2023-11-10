@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ import com.hazelcast.transaction.impl.xa.XAService;
 import com.hazelcast.transaction.impl.xa.XATransaction;
 
 import java.io.IOException;
+import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -44,7 +45,7 @@ public class PutRemoteTransactionOperation extends AbstractXAOperation implement
     public PutRemoteTransactionOperation() {
     }
 
-    public PutRemoteTransactionOperation(List<TransactionLogRecord> logs, String txnId, SerializableXID xid,
+    public PutRemoteTransactionOperation(Collection<TransactionLogRecord> logs, String txnId, SerializableXID xid,
                                          String txOwnerUuid, long timeoutMillis, long startTime) {
         records.addAll(logs);
         this.txnId = txnId;

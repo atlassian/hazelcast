@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,13 @@ import com.hazelcast.spi.InternalCompletableFuture;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.Operation;
 
-public class TotalOrderedTopicProxy extends TopicProxy {
+/**
+ * Topic proxy used when global ordering is enabled (all nodes listening to
+ * the same topic get their messages in the same order).
+ *
+ * @param <E> the type of message in this topic
+ */
+public class TotalOrderedTopicProxy<E> extends TopicProxy<E> {
 
     private final int partitionId;
 
@@ -30,7 +36,7 @@ public class TotalOrderedTopicProxy extends TopicProxy {
     }
 
     @Override
-    public void publish(Object message) {
+    public void publish(E message) {
         Operation operation = new PublishOperation(getName(), toData(message))
                 .setPartitionId(partitionId);
         InternalCompletableFuture f = invokeOnPartition(operation);

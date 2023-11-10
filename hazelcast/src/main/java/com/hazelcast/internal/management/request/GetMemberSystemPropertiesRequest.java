@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,9 @@
 
 package com.hazelcast.internal.management.request;
 
-import com.eclipsesource.json.JsonObject;
 import com.hazelcast.internal.management.ManagementCenterService;
+import com.hazelcast.internal.json.JsonObject;
 
-import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Properties;
 
@@ -38,17 +36,6 @@ public class GetMemberSystemPropertiesRequest implements ConsoleRequest {
     }
 
     @Override
-    public Object readResponse(JsonObject in) {
-        Map<String, String> properties = new LinkedHashMap<String, String>();
-        final Iterator<JsonObject.Member> iterator = in.iterator();
-        while (iterator.hasNext()) {
-            final JsonObject.Member property = iterator.next();
-            properties.put(property.getName(), property.getValue().asString());
-        }
-        return properties;
-    }
-
-    @Override
     public void writeResponse(ManagementCenterService mcs, JsonObject root) {
         Properties properties = System.getProperties();
         JsonObject result = new JsonObject();
@@ -56,11 +43,6 @@ public class GetMemberSystemPropertiesRequest implements ConsoleRequest {
             result.add(entry.getKey().toString(), entry.getValue().toString());
         }
         root.add("result", result);
-    }
-
-    @Override
-    public JsonObject toJson() {
-        return new JsonObject();
     }
 
     @Override

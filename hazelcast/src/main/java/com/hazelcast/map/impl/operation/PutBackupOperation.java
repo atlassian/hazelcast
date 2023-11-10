@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,7 @@
 
 package com.hazelcast.map.impl.operation;
 
-import com.hazelcast.core.EntryView;
-import com.hazelcast.map.impl.EntryViews;
 import com.hazelcast.map.impl.MapDataSerializerHook;
-import com.hazelcast.map.impl.MapServiceContext;
-import com.hazelcast.map.impl.event.MapEventPublisher;
 import com.hazelcast.map.impl.record.Record;
 import com.hazelcast.map.impl.record.RecordInfo;
 import com.hazelcast.map.impl.record.Records;
@@ -31,14 +27,13 @@ import com.hazelcast.spi.BackupOperation;
 
 import java.io.IOException;
 
-public final class PutBackupOperation extends MutatingKeyBasedMapOperation implements BackupOperation {
+public final class PutBackupOperation extends KeyBasedMapOperation implements BackupOperation {
 
     // todo unlockKey is a logic just used in transactional put operations.
     // todo It complicates here there should be another Operation for that logic. e.g. TxnSetBackup
     private boolean unlockKey;
     private RecordInfo recordInfo;
     private boolean putTransient;
-    private boolean disableWanReplicationEvent;
 
     public PutBackupOperation(String name, Data dataKey, Data dataValue, RecordInfo recordInfo) {
         this(name, dataKey, dataValue, recordInfo, false, false);
@@ -69,41 +64,25 @@ public final class PutBackupOperation extends MutatingKeyBasedMapOperation imple
     @Override
     public void run() {
         ttl = recordInfo != null ? recordInfo.getTtl() : ttl;
-        final Record record = recordStore.putBackup(dataKey, dataValue, ttl, putTransient);
+        maxIdle = recordInfo != null ? recordInfo.getMaxIdle() : maxIdle;
+        final Record record = recordStore.putBackup(dataKey, dataValue, ttl, maxIdle, putTransient, getCallerProvenance());
+
         if (recordInfo != null) {
             Records.applyRecordInfo(record, recordInfo);
         }
+
         if (unlockKey) {
             recordStore.forceUnlock(dataKey);
         }
     }
 
     @Override
-    public void afterRun() throws Exception {
+    public void afterRun() {
         if (recordInfo != null) {
             evict(dataKey);
         }
-        if (!disableWanReplicationEvent) {
-            publishWANReplicationEventBackup(mapServiceContext, mapEventPublisher);
-        }
-
+        publishWanUpdate(dataKey, dataValue);
     }
-
-    private void publishWANReplicationEventBackup(MapServiceContext mapServiceContext, MapEventPublisher mapEventPublisher) {
-        if (!mapContainer.isWanReplicationEnabled()) {
-            return;
-        }
-
-        Record record = recordStore.getRecord(dataKey);
-        if (record == null) {
-            return;
-        }
-
-        final Data valueConvertedData = mapServiceContext.toData(dataValue);
-        final EntryView entryView = EntryViews.createSimpleEntryView(dataKey, valueConvertedData, record);
-        mapEventPublisher.publishWanReplicationUpdateBackup(name, entryView);
-    }
-
 
     @Override
     public Object getResponse() {

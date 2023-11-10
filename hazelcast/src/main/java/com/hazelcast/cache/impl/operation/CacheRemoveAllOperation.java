@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +18,16 @@ package com.hazelcast.cache.impl.operation;
 
 import com.hazelcast.cache.impl.CacheClearResponse;
 import com.hazelcast.cache.impl.CacheDataSerializerHook;
+import com.hazelcast.cache.impl.CacheService;
 import com.hazelcast.cache.impl.ICacheRecordStore;
 import com.hazelcast.cache.impl.ICacheService;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.BackupAwareOperation;
+import com.hazelcast.spi.ObjectNamespace;
 import com.hazelcast.spi.Operation;
+import com.hazelcast.spi.ServiceNamespaceAware;
 import com.hazelcast.spi.impl.MutatingOperation;
 import com.hazelcast.spi.partition.IPartitionService;
 
@@ -34,13 +37,14 @@ import java.util.HashSet;
 import java.util.Set;
 
 import static com.hazelcast.cache.impl.CacheEventContextUtil.createCacheCompleteEvent;
+import static com.hazelcast.util.SetUtil.createHashSet;
 
 /**
  * TODO add a proper JavaDoc
  */
 public class CacheRemoveAllOperation
         extends PartitionWideCacheOperation
-        implements BackupAwareOperation, MutatingOperation {
+        implements BackupAwareOperation, MutatingOperation, ServiceNamespaceAware {
 
     private Set<Data> keys;
     private int completionId;
@@ -120,6 +124,11 @@ public class CacheRemoveAllOperation
     }
 
     @Override
+    public ObjectNamespace getServiceNamespace() {
+        return cache != null ? cache.getObjectNamespace() : CacheService.getObjectNamespace(name);
+    }
+
+    @Override
     protected void writeInternal(ObjectDataOutput out) throws IOException {
         super.writeInternal(out);
         out.writeInt(completionId);
@@ -139,7 +148,7 @@ public class CacheRemoveAllOperation
         boolean isKeysNotNull = in.readBoolean();
         if (isKeysNotNull) {
             int size = in.readInt();
-            keys = new HashSet<Data>(size);
+            keys = createHashSet(size);
             for (int i = 0; i < size; i++) {
                 Data key = in.readData();
                 keys.add(key);

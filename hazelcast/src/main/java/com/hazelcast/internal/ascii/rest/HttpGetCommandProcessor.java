@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,44 +17,108 @@
 package com.hazelcast.internal.ascii.rest;
 
 import com.hazelcast.cluster.ClusterState;
+import com.hazelcast.core.ExecutionCallback;
+import com.hazelcast.core.ICompletableFuture;
+import com.hazelcast.cp.CPGroup;
+import com.hazelcast.cp.CPGroupId;
+import com.hazelcast.cp.CPMember;
+import com.hazelcast.cp.CPSubsystem;
+import com.hazelcast.cp.CPSubsystemManagementService;
+import com.hazelcast.cp.session.CPSession;
 import com.hazelcast.instance.Node;
 import com.hazelcast.instance.NodeState;
 import com.hazelcast.internal.ascii.TextCommandService;
+import com.hazelcast.internal.cluster.ClusterService;
 import com.hazelcast.internal.cluster.impl.ClusterServiceImpl;
+import com.hazelcast.internal.json.JsonArray;
+import com.hazelcast.internal.json.JsonObject;
 import com.hazelcast.internal.partition.InternalPartitionService;
-import com.hazelcast.nio.ConnectionManager;
+import com.hazelcast.nio.Address;
+import com.hazelcast.nio.AggregateEndpointManager;
+import com.hazelcast.nio.EndpointManager;
+import com.hazelcast.nio.NetworkingService;
+import com.hazelcast.util.StringUtil;
 
+import java.util.Collection;
+
+import static com.hazelcast.instance.EndpointQualifier.CLIENT;
 import static com.hazelcast.internal.ascii.TextCommandConstants.MIME_TEXT_PLAIN;
 import static com.hazelcast.internal.ascii.rest.HttpCommand.CONTENT_TYPE_BINARY;
 import static com.hazelcast.internal.ascii.rest.HttpCommand.CONTENT_TYPE_PLAIN_TEXT;
+import static com.hazelcast.internal.ascii.rest.HttpCommand.RES_200_WITH_NO_CONTENT;
+import static com.hazelcast.internal.ascii.rest.HttpCommand.RES_503;
+import static com.hazelcast.util.ExceptionUtil.peel;
 import static com.hazelcast.util.StringUtil.stringToBytes;
 
 public class HttpGetCommandProcessor extends HttpCommandProcessor<HttpGetCommand> {
 
     public static final String QUEUE_SIZE_COMMAND = "size";
 
+    private static final String HEALTH_PATH_PARAM_NODE_STATE = "/node-state";
+    private static final String HEALTH_PATH_PARAM_CLUSTER_STATE = "/cluster-state";
+    private static final String HEALTH_PATH_PARAM_CLUSTER_SAFE = "/cluster-safe";
+    private static final String HEALTH_PATH_PARAM_MIGRATION_QUEUE_SIZE = "/migration-queue-size";
+    private static final String HEALTH_PATH_PARAM_CLUSTER_SIZE = "/cluster-size";
+
     public HttpGetCommandProcessor(TextCommandService textCommandService) {
         super(textCommandService);
     }
 
     @Override
+    @SuppressWarnings({"checkstyle:cyclomaticcomplexity"})
     public void handle(HttpGetCommand command) {
-        String uri = command.getURI();
-        if (uri.startsWith(URI_MAPS)) {
-            handleMap(command, uri);
-        } else if (uri.startsWith(URI_QUEUES)) {
-            handleQueue(command, uri);
-        } else if (uri.startsWith(URI_CLUSTER)) {
-            handleCluster(command);
-        } else if (uri.startsWith(URI_HEALTH_URL)) {
-            handleHealthcheck(command);
-        } else {
+        boolean sendResponse = true;
+        try {
+            String uri = command.getURI();
+            if (uri.startsWith(URI_MAPS)) {
+                handleMap(command, uri);
+            } else if (uri.startsWith(URI_QUEUES)) {
+                handleQueue(command, uri);
+            } else if (uri.startsWith(URI_CLUSTER)) {
+                handleCluster(command);
+            } else if (uri.startsWith(URI_HEALTH_READY)) {
+                handleHealthReady(command);
+            } else if (uri.startsWith(URI_HEALTH_URL)) {
+                handleHealthcheck(command, uri);
+            } else if (uri.startsWith(URI_CLUSTER_VERSION_URL)) {
+                handleGetClusterVersion(command);
+            } else if (uri.startsWith(URI_LICENSE_INFO)) {
+                handleLicense(command);
+            } else if (uri.startsWith(URI_CP_GROUPS_URL)) {
+                handleCPGroupRequest(command);
+                sendResponse = false;
+            } else if (uri.startsWith(URI_LOCAL_CP_MEMBER_URL)) {
+                // this else if block must be above get-cp-members block
+                handleGetLocalCPMember(command);
+            } else if (uri.startsWith(URI_CP_MEMBERS_URL)) {
+                handleGetCPMembers(command);
+                sendResponse = false;
+            } else {
+                command.send404();
+            }
+        } catch (IndexOutOfBoundsException e) {
             command.send400();
+        } catch (Exception e) {
+            command.send500();
         }
-        textCommandService.sendResponse(command);
+
+        if (sendResponse) {
+            textCommandService.sendResponse(command);
+        }
     }
 
-    private void handleHealthcheck(HttpGetCommand command) {
+    private void handleHealthReady(HttpGetCommand command) {
+        Node node = textCommandService.getNode();
+
+        if (node.isRunning()
+                && node.getNodeExtension().isStartCompleted()) {
+            command.setResponse(RES_200_WITH_NO_CONTENT);
+        } else {
+            command.setResponse(RES_503);
+        }
+    }
+
+    private void handleHealthcheck(HttpGetCommand command, String uri) {
         Node node = textCommandService.getNode();
         NodeState nodeState = node.getState();
 
@@ -67,23 +131,232 @@ public class HttpGetCommandProcessor extends HttpCommandProcessor<HttpGetCommand
         boolean clusterSafe = memberStateSafe && !partitionService.hasOnGoingMigration();
         long migrationQueueSize = partitionService.getMigrationQueueSize();
 
-        StringBuilder res = new StringBuilder();
-        res.append("Hazelcast::NodeState=").append(nodeState).append("\n");
-        res.append("Hazelcast::ClusterState=").append(clusterState).append("\n");
-        res.append("Hazelcast::ClusterSafe=").append(Boolean.toString(clusterSafe).toUpperCase()).append("\n");
-        res.append("Hazelcast::MigrationQueueSize=").append(migrationQueueSize).append("\n");
-        res.append("Hazelcast::ClusterSize=").append(clusterSize).append("\n");
-        command.setResponse(MIME_TEXT_PLAIN, stringToBytes(res.toString()));
+        String healthParameter = uri.substring(URI_HEALTH_URL.length());
+        if (healthParameter.equals(HEALTH_PATH_PARAM_NODE_STATE)) {
+            if (NodeState.SHUT_DOWN.equals(nodeState)) {
+                command.setResponse(RES_503);
+            } else {
+                command.setResponse(null, stringToBytes(nodeState.toString()));
+            }
+        } else if (healthParameter.equals(HEALTH_PATH_PARAM_CLUSTER_STATE)) {
+            command.setResponse(null, stringToBytes(clusterState.toString()));
+        } else if (healthParameter.equals(HEALTH_PATH_PARAM_CLUSTER_SAFE)) {
+            if (clusterSafe) {
+                command.send200();
+            } else {
+                command.setResponse(RES_503);
+            }
+        } else if (healthParameter.equals(HEALTH_PATH_PARAM_MIGRATION_QUEUE_SIZE)) {
+            command.setResponse(null, stringToBytes(Long.toString(migrationQueueSize)));
+        } else if (healthParameter.equals(HEALTH_PATH_PARAM_CLUSTER_SIZE)) {
+            command.setResponse(null, stringToBytes(Integer.toString(clusterSize)));
+        } else if (healthParameter.isEmpty()) {
+            StringBuilder res = new StringBuilder();
+            res.append("Hazelcast::NodeState=").append(nodeState).append("\n");
+            res.append("Hazelcast::ClusterState=").append(clusterState).append("\n");
+            res.append("Hazelcast::ClusterSafe=").append(booleanToString(clusterSafe)).append("\n");
+            res.append("Hazelcast::MigrationQueueSize=").append(migrationQueueSize).append("\n");
+            res.append("Hazelcast::ClusterSize=").append(clusterSize).append("\n");
+            command.setResponse(MIME_TEXT_PLAIN, stringToBytes(res.toString()));
+        } else {
+            command.send400();
+        }
     }
 
+    private static String booleanToString(boolean b) {
+        return Boolean.toString(b).toUpperCase(StringUtil.LOCALE_INTERNAL);
+    }
+
+    private void handleGetClusterVersion(HttpGetCommand command) {
+        String res = "{\"status\":\"${STATUS}\",\"version\":\"${VERSION}\"}";
+        Node node = textCommandService.getNode();
+        ClusterService clusterService = node.getClusterService();
+        res = res.replace("${STATUS}", "success");
+        res = res.replace("${VERSION}", clusterService.getClusterVersion().toString());
+        command.setResponse(HttpCommand.CONTENT_TYPE_JSON, stringToBytes(res));
+    }
+
+    private void handleCPGroupRequest(HttpGetCommand command) {
+        String uri = command.getURI();
+        if (uri.contains(URI_CP_SESSIONS_SUFFIX)) {
+            handleGetCPSessions(command);
+        } else if (uri.endsWith(URI_CP_GROUPS_URL) || uri.endsWith(URI_CP_GROUPS_URL + "/")) {
+            handleGetCPGroupIds(command);
+        } else {
+            handleGetCPGroupByName(command);
+        }
+    }
+
+    private void handleGetCPGroupIds(final HttpGetCommand command) {
+        ICompletableFuture<Collection<CPGroupId>> f = getCpSubsystemManagementService().getCPGroupIds();
+        f.andThen(new ExecutionCallback<Collection<CPGroupId>>() {
+            @Override
+            public void onResponse(Collection<CPGroupId> groupIds) {
+                JsonArray arr = new JsonArray();
+                for (CPGroupId groupId : groupIds) {
+                    arr.add(toJson(groupId));
+                }
+                command.setResponse(HttpCommand.CONTENT_TYPE_JSON, stringToBytes(arr.toString()));
+                textCommandService.sendResponse(command);
+            }
+
+            @Override
+            public void onFailure(Throwable t) {
+                command.send500();
+                textCommandService.sendResponse(command);
+            }
+        });
+    }
+
+    private void handleGetCPSessions(final HttpGetCommand command) {
+        String uri = command.getURI();
+        String prefix = URI_CP_GROUPS_URL + "/";
+        int i = uri.indexOf(URI_CP_SESSIONS_SUFFIX);
+        String groupName = uri.substring(prefix.length(), i).trim();
+        getCpSubsystem().getCPSessionManagementService()
+                        .getAllSessions(groupName)
+                        .andThen(new ExecutionCallback<Collection<CPSession>>() {
+                            @Override
+                            public void onResponse(Collection<CPSession> sessions) {
+                                JsonArray sessionsArr = new JsonArray();
+                                for (CPSession session : sessions) {
+                                    sessionsArr.add(toJson(session));
+                                }
+
+                                command.setResponse(HttpCommand.CONTENT_TYPE_JSON, stringToBytes(sessionsArr.toString()));
+                                textCommandService.sendResponse(command);
+                            }
+
+                            @Override
+                            public void onFailure(Throwable t) {
+                                if (peel(t) instanceof IllegalArgumentException) {
+                                    command.send404();
+                                } else {
+                                    command.send500();
+                                }
+
+                                textCommandService.sendResponse(command);
+                            }
+                        });
+    }
+
+    private void handleGetCPGroupByName(final HttpGetCommand command) {
+        String prefix = URI_CP_GROUPS_URL + "/";
+        String groupName = command.getURI().substring(prefix.length()).trim();
+        ICompletableFuture<CPGroup> f = getCpSubsystemManagementService().getCPGroup(groupName);
+        f.andThen(new ExecutionCallback<CPGroup>() {
+            @Override
+            public void onResponse(CPGroup group) {
+                if (group != null) {
+                    JsonObject json = new JsonObject();
+                    json.add("id", toJson(group.id()))
+                        .add("status", group.status().name());
+
+                    JsonArray membersArr = new JsonArray();
+                    for (CPMember member : group.members()) {
+                        membersArr.add(toJson(member));
+                    }
+
+                    json.add("members", membersArr);
+
+                    command.setResponse(HttpCommand.CONTENT_TYPE_JSON, stringToBytes(json.toString()));
+                } else {
+                    command.send404();
+                }
+
+                textCommandService.sendResponse(command);
+            }
+
+            @Override
+            public void onFailure(Throwable t) {
+                command.send500();
+                textCommandService.sendResponse(command);
+            }
+        });
+    }
+
+    private void handleGetCPMembers(final HttpGetCommand command) {
+        ICompletableFuture<Collection<CPMember>> f = getCpSubsystemManagementService().getCPMembers();
+        f.andThen(new ExecutionCallback<Collection<CPMember>>() {
+            @Override
+            public void onResponse(Collection<CPMember> cpMembers) {
+                JsonArray arr = new JsonArray();
+                for (CPMember cpMember : cpMembers) {
+                    arr.add(toJson(cpMember));
+                }
+
+                command.setResponse(HttpCommand.CONTENT_TYPE_JSON, stringToBytes(arr.toString()));
+                textCommandService.sendResponse(command);
+            }
+
+            @Override
+            public void onFailure(Throwable t) {
+                command.send500();
+                textCommandService.sendResponse(command);
+            }
+        });
+    }
+
+    private void handleGetLocalCPMember(final HttpGetCommand command) {
+        CPMember localCPMember = getCpSubsystem().getLocalCPMember();
+        if (localCPMember != null) {
+            command.setResponse(HttpCommand.CONTENT_TYPE_JSON, stringToBytes(toJson(localCPMember).toString()));
+        } else {
+            command.send404();
+        }
+    }
+
+    private CPSubsystemManagementService getCpSubsystemManagementService() {
+        return getCpSubsystem().getCPSubsystemManagementService();
+    }
+
+    private CPSubsystem getCpSubsystem() {
+        return textCommandService.getNode().getNodeEngine().getHazelcastInstance().getCPSubsystem();
+    }
+
+    private JsonObject toJson(CPGroupId groupId) {
+        return new JsonObject().add("name", groupId.name()).add("id", groupId.id());
+    }
+
+    private JsonObject toJson(CPMember cpMember) {
+        Address address = cpMember.getAddress();
+        return new JsonObject()
+                .add("uuid", cpMember.getUuid())
+                .add("address", "[" + address.getHost() + "]:" + address.getPort());
+    }
+
+    private JsonObject toJson(CPSession cpSession) {
+        Address address = cpSession.endpoint();
+        return new JsonObject()
+                .add("id", cpSession.id())
+                .add("creationTime", cpSession.creationTime())
+                .add("expirationTime", cpSession.expirationTime())
+                .add("version", cpSession.version())
+                .add("endpoint", "[" + address.getHost() + "]:" + address.getPort())
+                .add("endpointType", cpSession.endpointType().name())
+                .add("endpointName", cpSession.endpointName());
+    }
+
+    /**
+     * Sets the HTTP response to a string containing basic cluster information:
+     * <ul>
+     * <li>Member list</li>
+     * <li>Client connection count</li>
+     * <li>Connection count</li>
+     * </ul>
+     *
+     * @param command the HTTP request
+     */
     private void handleCluster(HttpGetCommand command) {
         Node node = textCommandService.getNode();
-        StringBuilder res = new StringBuilder(node.getClusterService().membersString());
+        StringBuilder res = new StringBuilder(node.getClusterService().getMemberListString());
         res.append("\n");
-        ConnectionManager connectionManager = node.getConnectionManager();
-        res.append("ConnectionCount: ").append(connectionManager.getCurrentClientConnections());
+        NetworkingService ns = node.getNetworkingService();
+        EndpointManager cem = ns.getEndpointManager(CLIENT);
+        AggregateEndpointManager aem = ns.getAggregateEndpointManager();
+        res.append("ConnectionCount: ").append(cem == null ? "0" : cem.getActiveConnections().size());
         res.append("\n");
-        res.append("AllConnectionCount: ").append(connectionManager.getAllTextConnections());
+        res.append("AllConnectionCount: ").append(aem.getActiveConnections().size());
         res.append("\n");
         command.setResponse(null, stringToBytes(res.toString()));
     }
@@ -129,5 +402,12 @@ public class HttpGetCommandProcessor extends HttpCommandProcessor<HttpGetCommand
         } else {
             command.setResponse(CONTENT_TYPE_BINARY, textCommandService.toByteArray(value));
         }
+    }
+
+    /**
+     * License info is mplemented in the Enterprise GET command processor. The OS version returns simple "404 Not Found".
+     */
+    protected void handleLicense(HttpGetCommand command) {
+        command.send404();
     }
 }

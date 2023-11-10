@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,18 +26,18 @@ public interface ManagedExecutorService extends ExecutorService {
 
     String getName();
 
-    @Probe(name = "completedTaskCount")
+    @Probe
     long getCompletedTaskCount();
 
-    @Probe(name = "maximumPoolSize")
+    @Probe
     int getMaximumPoolSize();
 
-    @Probe(name = "poolSize")
+    @Probe
     int getPoolSize();
 
-    @Probe(name = "queueSize", level = MANDATORY)
+    @Probe(level = MANDATORY)
     int getQueueSize();
 
-    @Probe(name = "remainingQueueCapacity")
+    @Probe
     int getRemainingQueueCapacity();
 }

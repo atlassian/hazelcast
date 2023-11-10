@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -137,7 +137,7 @@ public class AllTest {
     }
 
     private void topicStats() {
-        log("Topic Messages Sent : " + messagesSend.getAndSet(0) / STATS_SECONDS + "::: Messages Received: " + messagesReceived
+        log("Topic Messages Sent: " + messagesSend.getAndSet(0) / STATS_SECONDS + "::: Messages Received: " + messagesReceived
                 .getAndSet(0) / STATS_SECONDS);
     }
 

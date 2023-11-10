@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,7 +41,9 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
@@ -133,7 +135,6 @@ public class PagingPredicateTest extends HazelcastTestSupport {
         for (Integer val : values) {
             assertEquals(value++, val);
         }
-
     }
 
     @Test
@@ -156,7 +157,8 @@ public class PagingPredicateTest extends HazelcastTestSupport {
     @Test
     public void testPagingWithFilteringAndComparator() {
         Predicate<Integer, Integer> lessEqual = Predicates.lessEqual("this", 8);
-        PagingPredicate<Integer, Integer> predicate = new PagingPredicate<Integer, Integer>(lessEqual, new TestComparator(false, IterationType.VALUE), pageSize);
+        PagingPredicate<Integer, Integer> predicate
+                = new PagingPredicate<Integer, Integer>(lessEqual, new TestComparator(false, IterationType.VALUE), pageSize);
 
         Collection<Integer> values = map.values(predicate);
         assertIterableEquals(values, 8, 7, 6, 5, 4);
@@ -192,7 +194,8 @@ public class PagingPredicateTest extends HazelcastTestSupport {
     @Test
     public void testKeyPaging() {
         map.clear();
-        for (int i = 0; i < size; i++) {    // keys [50-1] values [0-49]
+        // keys [50-1] values [0-49]
+        for (int i = 0; i < size; i++) {
             map.put(size - i, i);
         }
 
@@ -214,13 +217,17 @@ public class PagingPredicateTest extends HazelcastTestSupport {
 
     @Test
     public void testEqualValuesPaging() {
-        for (int i = size; i < 2 * size; i++) { //keys[50-99] values[0-49]
+        // keys[50-99] values[0-49]
+        for (int i = size; i < 2 * size; i++) {
             map.put(i, i - size);
         }
 
-        Predicate<Integer, Integer> lessEqual = Predicates.lessEqual("this", 8); // entries which has value less than 8
-        TestComparator comparator = new TestComparator(true, IterationType.VALUE); //ascending values
-        PagingPredicate<Integer, Integer> predicate = new PagingPredicate<Integer, Integer>(lessEqual, comparator, pageSize); //pageSize = 5
+        // entries which has value less than 8
+        Predicate<Integer, Integer> lessEqual = Predicates.lessEqual("this", 8);
+        // ascending values
+        TestComparator comparator = new TestComparator(true, IterationType.VALUE);
+        PagingPredicate<Integer, Integer> predicate
+                = new PagingPredicate<Integer, Integer>(lessEqual, comparator, pageSize); //pageSize = 5
 
         Collection<Integer> values = map.values(predicate);
         assertIterableEquals(values, 0, 0, 1, 1, 2);
@@ -240,9 +247,12 @@ public class PagingPredicateTest extends HazelcastTestSupport {
 
     @Test
     public void testNextPageAfterResultSetEmpty() {
-        Predicate<Integer, Integer> lessEqual = Predicates.lessEqual("this", 3); // entries which has value less than 3
-        TestComparator comparator = new TestComparator(true, IterationType.VALUE); //ascending values
-        PagingPredicate<Integer, Integer> predicate = new PagingPredicate<Integer, Integer>(lessEqual, comparator, pageSize); //pageSize = 5
+        // entries which has value less than 3
+        Predicate<Integer, Integer> lessEqual = Predicates.lessEqual("this", 3);
+        // ascending values
+        TestComparator comparator = new TestComparator(true, IterationType.VALUE);
+        PagingPredicate<Integer, Integer> predicate
+                = new PagingPredicate<Integer, Integer>(lessEqual, comparator, pageSize); //pageSize = 5
 
         Collection<Integer> values = map.values(predicate);
         assertIterableEquals(values, 0, 1, 2, 3);
@@ -256,6 +266,78 @@ public class PagingPredicateTest extends HazelcastTestSupport {
         assertEquals(0, values.size());
     }
 
+    @Test
+    public void testLargePageSizeIsNotCausingIndexOutBoundsExceptions() {
+        final int[] pageSizesToCheck = new int[]{
+                Integer.MAX_VALUE / 2,
+                Integer.MAX_VALUE - 1000,
+                Integer.MAX_VALUE - 1,
+                Integer.MAX_VALUE,
+        };
+
+        final int[] pagesToCheck = new int[]{
+                1,
+                1000,
+                Integer.MAX_VALUE / 2,
+                Integer.MAX_VALUE - 1000,
+                Integer.MAX_VALUE - 1,
+                Integer.MAX_VALUE,
+        };
+
+        for (int pageSize : pageSizesToCheck) {
+            final PagingPredicate<Integer, Integer> predicate = new PagingPredicate<Integer, Integer>(pageSize);
+
+            assertEquals(size, map.keySet(predicate).size());
+            for (int page : pagesToCheck) {
+                predicate.setPage(page);
+                assertEquals(0, map.keySet(predicate).size());
+            }
+        }
+    }
+
+    @Test
+    public void testEmptyIndexResultIsNotCausingFullScan() {
+        map.addIndex("this", false);
+        for (int i = 0; i < size; ++i) {
+            map.set(i, i);
+        }
+
+        int resultSize = map.entrySet(new PagingPredicate(Predicates.equal("this", size), pageSize) {
+            @Override
+            public boolean apply(Map.Entry mapEntry) {
+                fail("full scan is not expected");
+                return false;
+            }
+        }).size();
+        assertEquals(0, resultSize);
+    }
+
+    @Test
+    public void testCustomComparatorAbleToActOnKeysAndValues() {
+        Set<Integer> keys = map.keySet(new PagingPredicate<Integer, Integer>(new CustomComparator(), pageSize));
+        assertEquals(pageSize, keys.size());
+        int counter = 0;
+        for (Integer key : keys) {
+            assertEquals(counter++, (int) key);
+        }
+
+        Collection<Integer> values = map.values(new PagingPredicate<Integer, Integer>(new CustomComparator(), pageSize));
+        assertEquals(pageSize, values.size());
+        counter = 0;
+        for (Integer value : values) {
+            assertEquals(counter++, (int) value);
+        }
+
+        Set<Map.Entry<Integer, Integer>> entries =
+                map.entrySet(new PagingPredicate<Integer, Integer>(new CustomComparator(), pageSize));
+        assertEquals(pageSize, entries.size());
+        counter = 0;
+        for (Map.Entry<Integer, Integer> entry : entries) {
+            assertEquals(counter, (int) entry.getKey());
+            assertEquals(counter, (int) entry.getValue());
+            ++counter;
+        }
+    }
 
     static class TestComparator implements Comparator<Map.Entry<Integer, Integer>>, Serializable {
 
@@ -271,23 +353,34 @@ public class PagingPredicateTest extends HazelcastTestSupport {
             this.iterationType = iterationType;
         }
 
+        @Override
         public int compare(Map.Entry<Integer, Integer> e1, Map.Entry<Integer, Integer> e2) {
-            Map.Entry<Integer, Integer> o1 = e1;
-            Map.Entry<Integer, Integer> o2 = e2;
-
             switch (iterationType) {
                 case KEY:
-                    return (o1.getKey() - o2.getKey()) * ascending;
+                    return (e1.getKey() - e2.getKey()) * ascending;
                 case VALUE:
-                    return (o1.getValue() - o2.getValue()) * ascending;
+                    return (e1.getValue() - e2.getValue()) * ascending;
                 default:
-                    int result = (o1.getValue() - o2.getValue()) * ascending;
+                    int result = (e1.getValue() - e2.getValue()) * ascending;
                     if (result != 0) {
                         return result;
                     }
-                    return (o1.getKey() - o2.getKey()) * ascending;
+                    return (e1.getKey() - e2.getKey()) * ascending;
             }
         }
+    }
+
+    static class CustomComparator implements Comparator<Map.Entry<Integer, Integer>>, Serializable {
+
+        @Override
+        public int compare(Map.Entry<Integer, Integer> a, Map.Entry<Integer, Integer> b) {
+            assertNotNull(a.getKey());
+            assertNotNull(a.getValue());
+            assertNotNull(b.getKey());
+            assertNotNull(b.getValue());
+            return a.getKey() - b.getValue();
+        }
+
     }
 
 }

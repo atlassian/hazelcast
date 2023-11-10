@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@ import org.junit.runner.RunWith;
 import static com.hazelcast.config.EvictionConfig.MaxSizePolicy.ENTRY_COUNT;
 import static com.hazelcast.config.EvictionConfig.MaxSizePolicy.USED_NATIVE_MEMORY_PERCENTAGE;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -106,14 +107,6 @@ public class NearCacheConfigTest {
         assertEquals(66, config.getEvictionConfig().getSize());
     }
 
-    /**
-     * Test method for {@link com.hazelcast.config.NearCacheConfigReadOnly#setCacheLocalEntries(boolean)}.
-     */
-    @Test(expected = UnsupportedOperationException.class)
-    public void testReadOnlyNearCacheConfigSetCacheLocalEntries() {
-        new NearCacheConfigReadOnly(new NearCacheConfig()).setCacheLocalEntries(true);
-    }
-
     @Test
     public void testSetInMemoryFormat_withString() {
         config.setInMemoryFormat("NATIVE");
@@ -129,6 +122,25 @@ public class NearCacheConfigTest {
     @Test(expected = NullPointerException.class)
     public void testSetInMemoryFormat_withString_whenNull() {
         config.setInMemoryFormat((String) null);
+    }
+
+    @Test
+    public void testIsSerializeKeys_whenEnabled() {
+        config.setSerializeKeys(true);
+        assertTrue(config.isSerializeKeys());
+    }
+
+    @Test
+    public void testIsSerializeKeys_whenDisabled() {
+        config.setSerializeKeys(false);
+        assertFalse(config.isSerializeKeys());
+    }
+
+    @Test
+    public void testIsSerializeKeys_whenNativeMemoryFormat_thenAlwaysReturnTrue() {
+        config.setSerializeKeys(false);
+        config.setInMemoryFormat(InMemoryFormat.NATIVE);
+        assertTrue(config.isSerializeKeys());
     }
 
     @Test
@@ -162,6 +174,7 @@ public class NearCacheConfigTest {
 
         EvictionConfig evictionConfig = config.getEvictionConfig();
         assertEquals(123, evictionConfig.getSize());
+        assertEquals(EvictionPolicy.LFU, evictionConfig.getEvictionPolicy());
         assertEquals(EvictionPolicyType.LFU, evictionConfig.getEvictionPolicyType());
         assertEquals(ENTRY_COUNT, evictionConfig.getMaximumSizePolicy());
     }
@@ -212,7 +225,7 @@ public class NearCacheConfigTest {
         config.setInMemoryFormat(InMemoryFormat.NATIVE);
         config.setTimeToLiveSeconds(23);
         config.setMaxIdleSeconds(42);
-        config.setLocalUpdatePolicy(NearCacheConfig.LocalUpdatePolicy.CACHE);
+        config.setLocalUpdatePolicy(NearCacheConfig.LocalUpdatePolicy.CACHE_ON_UPDATE);
 
         SerializationService serializationService = new DefaultSerializationServiceBuilder().build();
         Data serialized = serializationService.toData(config);

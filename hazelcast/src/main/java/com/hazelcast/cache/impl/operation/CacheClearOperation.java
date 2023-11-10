@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,20 +18,26 @@ package com.hazelcast.cache.impl.operation;
 
 import com.hazelcast.cache.impl.CacheClearResponse;
 import com.hazelcast.cache.impl.CacheDataSerializerHook;
+import com.hazelcast.cache.impl.CacheService;
 import com.hazelcast.cache.impl.ICacheRecordStore;
 import com.hazelcast.cache.impl.ICacheService;
 import com.hazelcast.spi.BackupAwareOperation;
+import com.hazelcast.spi.ObjectNamespace;
 import com.hazelcast.spi.Operation;
+import com.hazelcast.spi.ServiceNamespaceAware;
 import com.hazelcast.spi.impl.MutatingOperation;
+import com.hazelcast.spi.partition.IPartitionService;
 
 import javax.cache.CacheException;
+
+import static com.hazelcast.cache.impl.AbstractCacheRecordStore.SOURCE_NOT_AVAILABLE;
 
 /**
  * Cache Clear will clear all internal cache data without sending any event
  */
 public class CacheClearOperation
         extends PartitionWideCacheOperation
-        implements BackupAwareOperation, MutatingOperation {
+        implements BackupAwareOperation, ServiceNamespaceAware, MutatingOperation {
 
     private transient ICacheRecordStore cache;
 
@@ -62,6 +68,21 @@ public class CacheClearOperation
     }
 
     @Override
+    public void afterRun() throws Exception {
+        super.afterRun();
+
+        CacheService cacheService = getService();
+        int partitionId = getPartitionId();
+
+        IPartitionService partitionService = getNodeEngine().getPartitionService();
+        if (partitionService.getPartitionId(name) == partitionId) {
+            cacheService.sendInvalidationEvent(name, null, SOURCE_NOT_AVAILABLE);
+        }
+
+        cacheService.getCacheEventHandler().resetPartitionMetaData(name, partitionId);
+    }
+
+    @Override
     public int getId() {
         return CacheDataSerializerHook.CLEAR;
     }
@@ -86,4 +107,13 @@ public class CacheClearOperation
         return new CacheClearBackupOperation(name);
     }
 
+    @Override
+    public ObjectNamespace getServiceNamespace() {
+        ICacheRecordStore recordStore = cache;
+        if (recordStore == null) {
+            ICacheService service = getService();
+            recordStore = service.getOrCreateRecordStore(name, getPartitionId());
+        }
+        return recordStore.getObjectNamespace();
+    }
 }

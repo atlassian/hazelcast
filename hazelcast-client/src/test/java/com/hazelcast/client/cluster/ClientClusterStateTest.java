@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.client.cluster;
 
 import com.hazelcast.client.config.ClientConfig;
@@ -7,8 +23,10 @@ import com.hazelcast.cluster.ClusterState;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
+import com.hazelcast.core.OperationTimeoutException;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.logging.Logger;
+import com.hazelcast.spi.exception.TargetDisconnectedException;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
@@ -89,7 +107,7 @@ public class ClientClusterStateTest {
         factory.newHazelcastClient();
     }
 
-    @Test(expected = IllegalStateException.class)
+    @Test(expected = OperationTimeoutException.class)
     public void testClient_canNotExecuteWriteOperations_whenClusterState_passive() {
         warmUpPartitions(instances);
 
@@ -152,19 +170,22 @@ public class ClientClusterStateTest {
                 @Override
                 public void run() {
                     ILogger logger = Logger.getLogger(getClass());
-                    boolean finished = false;
                     threadsStarted.countDown();
                     logger.info("putAll thread started");
-                    while (!finished) {
+                    while (true) {
                         try {
                             map.putAll(values);
                             Thread.sleep(100);
                         } catch (IllegalStateException e) {
-                           logger.warning("Expected exception for Map putAll during cluster shutdown:", e);
-                            finished = true;
+                            logger.warning("Expected exception for Map putAll during cluster shutdown:", e);
+                            break;
+                        } catch (TargetDisconnectedException e) {
+                            logger.warning("Expected exception for Map putAll during cluster shutdown:", e);
+                            break;
                         } catch (InterruptedException e) {
                             // do nothing
                         }
+
                     }
                     threadsFinished.countDown();
                     logger.info("putAll thread finishing. Current finished thread count is:" + (numThreads - threadsFinished

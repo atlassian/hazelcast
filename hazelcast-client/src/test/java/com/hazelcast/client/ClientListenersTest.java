@@ -1,7 +1,24 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.client;
 
 import com.hazelcast.client.config.ClientConfig;
 import com.hazelcast.client.test.TestHazelcastFactory;
+import com.hazelcast.config.ListenerConfig;
 import com.hazelcast.core.EntryAdapter;
 import com.hazelcast.core.EntryEvent;
 import com.hazelcast.core.EntryView;
@@ -13,12 +30,14 @@ import com.hazelcast.core.ISet;
 import com.hazelcast.core.ITopic;
 import com.hazelcast.core.ItemEvent;
 import com.hazelcast.core.ItemListener;
+import com.hazelcast.core.LifecycleEvent;
+import com.hazelcast.core.LifecycleListener;
 import com.hazelcast.core.Message;
 import com.hazelcast.core.MessageListener;
 import com.hazelcast.instance.Node;
 import com.hazelcast.map.impl.EntryViews;
 import com.hazelcast.map.impl.MapService;
-import com.hazelcast.map.impl.operation.MergeOperation;
+import com.hazelcast.map.impl.operation.LegacyMergeOperation;
 import com.hazelcast.map.impl.record.Record;
 import com.hazelcast.map.listener.EntryMergedListener;
 import com.hazelcast.map.merge.PassThroughMergePolicy;
@@ -40,6 +59,9 @@ import org.junit.runner.RunWith;
 import org.mockito.Mockito;
 
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
@@ -67,6 +89,8 @@ public class ClientListenersTest extends HazelcastTestSupport {
                 return null;
             }
         });
+
+        config.addListenerConfig(new ListenerConfig("com.hazelcast.client.ClientListenersTest$StaticListener"));
 
         server = hazelcastFactory.newHazelcastInstance();
         client = hazelcastFactory.newHazelcastClient(config);
@@ -107,7 +131,7 @@ public class ClientListenersTest extends HazelcastTestSupport {
         Data key = serializationService.toData(1);
         Data value = serializationService.toData(new ClientRegressionWithMockNetworkTest.SamplePortable(1));
         EntryView entryView = EntryViews.createSimpleEntryView(key, value, Mockito.mock(Record.class));
-        MergeOperation op = new MergeOperation(map.getName(), key, entryView, new PassThroughMergePolicy());
+        LegacyMergeOperation op = new LegacyMergeOperation(map.getName(), entryView, new PassThroughMergePolicy(), false);
         int partitionId = nodeEngine.getPartitionService().getPartitionId(key);
         operationService.invokeOnPartition(MapService.SERVICE_NAME, op, partitionId);
 
@@ -193,4 +217,18 @@ public class ClientListenersTest extends HazelcastTestSupport {
         assertOpenEventually(latch);
     }
 
+    @Test
+    public void testLifecycleListener_registeredViaClassName() {
+        assertTrue(StaticListener.CALLED_AT_LEAST_ONCE.get());
+    }
+
+    public static class StaticListener implements LifecycleListener {
+
+        private static final AtomicBoolean CALLED_AT_LEAST_ONCE = new AtomicBoolean();
+
+        @Override
+        public void stateChanged(LifecycleEvent event) {
+            CALLED_AT_LEAST_ONCE.set(true);
+        }
+    }
 }

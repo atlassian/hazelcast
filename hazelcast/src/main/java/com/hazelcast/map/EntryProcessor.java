@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.hazelcast.map;
 
-import com.hazelcast.nio.serialization.impl.BinaryInterface;
+import com.hazelcast.nio.serialization.BinaryInterface;
 
 import java.io.Serializable;
 import java.util.Map;
@@ -69,13 +69,12 @@ public interface EntryProcessor<K, V> extends Serializable {
 
     /**
      * Process the entry without worrying about concurrency.
-     * <p/>
-     * Note that to modify an entry by using EntryProcessor you should explicitly call
-     * {@link java.util.Map.Entry#setValue} method of {@link java.util.Map.Entry} such as:
-     * <p/>
+     * <p>
+     * Note that to modify an entry by using an EntryProcessor you should explicitly call
+     * {@link java.util.Map.Entry#setValue setValue()} method of {@link java.util.Map.Entry},
+     * for example:
      * <pre>
-     * <code>
-     * {@literal}Override
+     *       {@literal @}Override
      *        public Object process(Map.Entry entry) {
      *          Value value = entry.getValue();
      *          // process and modify value
@@ -83,19 +82,23 @@ public interface EntryProcessor<K, V> extends Serializable {
      *          entry.setValue(value);
      *          return result;
      *        }
-     * </code>
      * </pre>
-     * otherwise EntryProcessor does not guarantee to modify the entry.
+     * otherwise the {@code EntryProcessor} does not guarantee to modify the entry.
+     * <p>
+     * The entry's value will be {@code null}, if the entry for the key doesn't exist. You
+     * can create new mapping by setting a non-null value or remove existing mapping
+     * entry by setting the value to null.
      *
      * @param entry entry to be processed
-     * @return result of the process
+     * @return a result that will be returned from the method taking the {@link EntryProcessor}, such as
+     * {@link com.hazelcast.core.IMap#executeOnKey(Object, EntryProcessor) IMap.executeOnKey()}
      */
     Object process(Map.Entry<K, V> entry);
 
     /**
      * Get the entry processor to be applied to backup entries.
      *
-     * In case of a readonly execution, null can be returned to indicate that no backups should be made.
+     * In case of a readonly execution, {@code null} can be returned to indicate that no backups should be made.
      *
      * @return the back up processor
      */

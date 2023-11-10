@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,20 +16,30 @@
 
 package com.hazelcast.config;
 
-import java.util.Arrays;
+import static java.util.Arrays.copyOf;
 
 /**
  * Contains configuration for symmetric encryption
  */
 public class SymmetricEncryptionConfig {
 
+    /**
+     * Default symmetric encryption password
+     */
+    public static final String DEFAULT_SYMMETRIC_PASSWORD = "thepassword";
+
+    /**
+     * Default symmetric encryption salt
+     */
+    public static final String DEFAULT_SYMMETRIC_SALT = "thesalt";
+
     private static final int ITERATION_COUNT = 19;
 
     private boolean enabled;
-    private String salt = "thesalt";
-    private String password = "thepassword";
-    private int iterationCount = ITERATION_COUNT;
     private String algorithm = "PBEWithMD5AndDES";
+    private String password = DEFAULT_SYMMETRIC_PASSWORD;
+    private String salt = DEFAULT_SYMMETRIC_SALT;
+    private int iterationCount = ITERATION_COUNT;
     private byte[] key;
 
     public boolean isEnabled() {
@@ -38,33 +48,6 @@ public class SymmetricEncryptionConfig {
 
     public SymmetricEncryptionConfig setEnabled(boolean enabled) {
         this.enabled = enabled;
-        return this;
-    }
-
-    public String getSalt() {
-        return salt;
-    }
-
-    public SymmetricEncryptionConfig setSalt(String salt) {
-        this.salt = salt;
-        return this;
-    }
-
-    public String getPassword() {
-        return password;
-    }
-
-    public SymmetricEncryptionConfig setPassword(String password) {
-        this.password = password;
-        return this;
-    }
-
-    public int getIterationCount() {
-        return iterationCount;
-    }
-
-    public SymmetricEncryptionConfig setIterationCount(int iterationCount) {
-        this.iterationCount = iterationCount;
         return this;
     }
 
@@ -77,23 +60,55 @@ public class SymmetricEncryptionConfig {
         return this;
     }
 
+    public String getPassword() {
+        return password;
+    }
+
+    public SymmetricEncryptionConfig setPassword(String password) {
+        this.password = password;
+        return this;
+    }
+
+    public String getSalt() {
+        return salt;
+    }
+
+    public SymmetricEncryptionConfig setSalt(String salt) {
+        this.salt = salt;
+        return this;
+    }
+
+    public int getIterationCount() {
+        return iterationCount;
+    }
+
+    public SymmetricEncryptionConfig setIterationCount(int iterationCount) {
+        this.iterationCount = iterationCount;
+        return this;
+    }
+
     public byte[] getKey() {
-        return key != null ? Arrays.copyOf(key, key.length) : null;
+        return cloneKey(key);
     }
 
     public SymmetricEncryptionConfig setKey(byte[] key) {
-        this.key = key != null ? Arrays.copyOf(key, key.length) : null;
+        this.key = cloneKey(key);
         return this;
+    }
+
+    private byte[] cloneKey(byte[] key) {
+        return key != null ? copyOf(key, key.length) : null;
     }
 
     @Override
     public String toString() {
         return "SymmetricEncryptionConfig{"
                 + "enabled=" + enabled
-                + ", iterationCount=" + iterationCount
                 + ", algorithm='" + algorithm + '\''
-                + ", key=" + Arrays.toString(key)
+                + ", password='***'"
+                + ", salt='***'"
+                + ", iterationCount=***"
+                + ", key=***"
                 + '}';
     }
-
 }

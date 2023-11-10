@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,11 @@
 
 package com.hazelcast.config;
 
-import com.hazelcast.nio.serialization.impl.BinaryInterface;
+import com.hazelcast.cache.impl.DeferredValue;
+import com.hazelcast.core.HazelcastException;
+import com.hazelcast.internal.serialization.InternalSerializationService;
+import com.hazelcast.nio.ClassLoaderUtil;
+import com.hazelcast.nio.serialization.BinaryInterface;
 import com.hazelcast.nio.serialization.DataSerializable;
 
 import javax.cache.configuration.CacheEntryListenerConfiguration;
@@ -34,41 +38,30 @@ import static com.hazelcast.util.Preconditions.checkNotNull;
 
 /**
  * Base class for {@link CacheConfig}
+ *
+ * @param <K> the key type
+ * @param <V> the value type
  */
 @BinaryInterface
-abstract class AbstractCacheConfig<K, V> implements CacheConfiguration<K, V>, DataSerializable {
+@SuppressWarnings("checkstyle:methodcount")
+public abstract class AbstractCacheConfig<K, V> implements CacheConfiguration<K, V>, DataSerializable {
 
-    /**
-     * The {@link CacheEntryListenerConfiguration}s for the {@link javax.cache.configuration.Configuration}.
-     */
-    protected Set<CacheEntryListenerConfiguration<K, V>> listenerConfigurations;
-
-    /**
-     * The type of keys for {@link javax.cache.Cache}s configured with this
-     * {@link javax.cache.configuration.Configuration}.
-     */
-    protected Class<K> keyType;
-
-    /**
-     * The type of values for {@link javax.cache.Cache}s configured with this
-     * {@link javax.cache.configuration.Configuration}.
-     */
-    protected Class<V> valueType;
+    private static final String DEFAULT_KEY_VALUE_TYPE = "java.lang.Object";
 
     /**
      * The {@link javax.cache.configuration.Factory} for the {@link javax.cache.integration.CacheLoader}.
      */
-    protected Factory<CacheLoader<K, V>> cacheLoaderFactory;
+    protected DeferredValue<Factory<CacheLoader<K, V>>> cacheLoaderFactory;
 
     /**
      * The {@link Factory} for the {@link javax.cache.integration.CacheWriter}.
      */
-    protected Factory<CacheWriter<? super K, ? super V>> cacheWriterFactory;
+    protected DeferredValue<Factory<CacheWriter<? super K, ? super V>>> cacheWriterFactory;
 
     /**
      * The {@link Factory} for the {@link javax.cache.expiry.ExpiryPolicy}.
      */
-    protected Factory<ExpiryPolicy> expiryPolicyFactory;
+    protected DeferredValue<Factory<ExpiryPolicy>> expiryPolicyFactory;
 
     /**
      * A flag indicating if "read-through" mode is required.
@@ -97,13 +90,36 @@ abstract class AbstractCacheConfig<K, V> implements CacheConfiguration<K, V>, Da
 
     protected HotRestartConfig hotRestartConfig = new HotRestartConfig();
 
+    /**
+     * The ClassLoader to be used to resolve key & value types, if set
+     */
+    protected transient ClassLoader classLoader;
+    protected transient InternalSerializationService serializationService;
+
+    /**
+     * The {@link CacheEntryListenerConfiguration}s for the {@link javax.cache.configuration.Configuration}.
+     */
+    protected Set<DeferredValue<CacheEntryListenerConfiguration<K, V>>> listenerConfigurations;
+
+    /**
+     * The type of keys for {@link javax.cache.Cache}s configured with this
+     * {@link javax.cache.configuration.Configuration}.
+     */
+    private Class<K> keyType;
+    private String keyClassName = DEFAULT_KEY_VALUE_TYPE;
+
+    /**
+     * The type of values for {@link javax.cache.Cache}s configured with this
+     * {@link javax.cache.configuration.Configuration}.
+     */
+    private Class<V> valueType;
+    private String valueClassName = DEFAULT_KEY_VALUE_TYPE;
+
     public AbstractCacheConfig() {
-        this.keyType = (Class<K>) Object.class;
-        this.valueType = (Class<V>) Object.class;
         this.listenerConfigurations = createConcurrentSet();
-        this.cacheLoaderFactory = null;
-        this.cacheWriterFactory = null;
-        this.expiryPolicyFactory = EternalExpiryPolicy.factoryOf();
+        this.cacheLoaderFactory = DeferredValue.withNullValue();
+        this.cacheWriterFactory = DeferredValue.withNullValue();
+        this.expiryPolicyFactory = DeferredValue.withValue(EternalExpiryPolicy.factoryOf());
         this.isReadThrough = false;
         this.isWriteThrough = false;
         this.isStatisticsEnabled = false;
@@ -112,18 +128,18 @@ abstract class AbstractCacheConfig<K, V> implements CacheConfiguration<K, V>, Da
     }
 
     public AbstractCacheConfig(CompleteConfiguration<K, V> configuration) {
-        this.keyType = configuration.getKeyType();
-        this.valueType = configuration.getValueType();
+        setKeyType(configuration.getKeyType());
+        setValueType(configuration.getValueType());
         this.listenerConfigurations = createConcurrentSet();
         for (CacheEntryListenerConfiguration<K, V> listenerConf : configuration.getCacheEntryListenerConfigurations()) {
-            listenerConfigurations.add(listenerConf);
+            listenerConfigurations.add(DeferredValue.withValue(listenerConf));
         }
-        this.cacheLoaderFactory = configuration.getCacheLoaderFactory();
-        this.cacheWriterFactory = configuration.getCacheWriterFactory();
-
+        this.cacheLoaderFactory = DeferredValue.withValue(configuration.getCacheLoaderFactory());
+        this.cacheWriterFactory = DeferredValue.withValue(configuration.getCacheWriterFactory());
 
         Factory<ExpiryPolicy> factory = configuration.getExpiryPolicyFactory();
-        this.expiryPolicyFactory = factory == null ? EternalExpiryPolicy.factoryOf() : factory;
+        factory = (factory == null) ? EternalExpiryPolicy.factoryOf() : factory;
+        this.expiryPolicyFactory = DeferredValue.withValue(factory);
 
         this.isReadThrough = configuration.isReadThrough();
         this.isWriteThrough = configuration.isWriteThrough();
@@ -145,7 +161,7 @@ abstract class AbstractCacheConfig<K, V> implements CacheConfiguration<K, V>, Da
             CacheEntryListenerConfiguration<K, V> cacheEntryListenerConfiguration) {
 
         checkNotNull(cacheEntryListenerConfiguration, "CacheEntryListenerConfiguration can't be null");
-        if (!listenerConfigurations.add(cacheEntryListenerConfiguration)) {
+        if (!getListenerConfigurations().add(cacheEntryListenerConfiguration)) {
             throw new IllegalArgumentException("A CacheEntryListenerConfiguration can "
                     + "be registered only once");
         }
@@ -162,13 +178,15 @@ abstract class AbstractCacheConfig<K, V> implements CacheConfiguration<K, V>, Da
     public CacheConfiguration<K, V> removeCacheEntryListenerConfiguration(
             CacheEntryListenerConfiguration<K, V> cacheEntryListenerConfiguration) {
         checkNotNull(cacheEntryListenerConfiguration, "CacheEntryListenerConfiguration can't be null");
-        listenerConfigurations.remove(cacheEntryListenerConfiguration);
+        DeferredValue<CacheEntryListenerConfiguration<K, V>> lazyConfig =
+                DeferredValue.withValue(cacheEntryListenerConfiguration);
+        listenerConfigurations.remove(lazyConfig);
         return this;
     }
 
     @Override
     public Iterable<CacheEntryListenerConfiguration<K, V>> getCacheEntryListenerConfigurations() {
-        return listenerConfigurations;
+        return getListenerConfigurations();
     }
 
     @Override
@@ -200,11 +218,10 @@ abstract class AbstractCacheConfig<K, V> implements CacheConfiguration<K, V>, Da
 
     /**
      * Sets whether or not statistics gathering is enabled on this cache.
-     * <p/>
-     * Statistics may be enabled or disabled at runtime via
-     * {@link javax.cache.CacheManager#enableStatistics(String, boolean)}.
+     * <p>
+     * Statistics may be enabled or disabled at runtime via {@link javax.cache.CacheManager#enableStatistics(String, boolean)}.
      *
-     * @param enabled true to enable statistics, false to disable.
+     * @param enabled {@code true} to enable statistics, {@code false} to disable
      * @return the {@link CacheConfig}
      */
     @Override
@@ -220,11 +237,10 @@ abstract class AbstractCacheConfig<K, V> implements CacheConfiguration<K, V>, Da
 
     /**
      * Sets whether or not management is enabled on this cache.
-     * <p/>
-     * Management may be enabled or disabled at runtime via
-     * {@link javax.cache.CacheManager#enableManagement(String, boolean)}.
+     * <p>
+     * Management may be enabled or disabled at runtime via {@link javax.cache.CacheManager#enableManagement(String, boolean)}.
      *
-     * @param enabled true to enable statistics, false to disable.
+     * @param enabled {@code true} to enable statistics, {@code false} to disable
      * @return the {@link CacheConfig}
      */
     @Override
@@ -235,6 +251,7 @@ abstract class AbstractCacheConfig<K, V> implements CacheConfiguration<K, V>, Da
 
     /**
      * Gets the {@code HotRestartConfig} for this {@code CacheConfiguration}
+     *
      * @return hot restart config
      */
     public HotRestartConfig getHotRestartConfig() {
@@ -243,6 +260,7 @@ abstract class AbstractCacheConfig<K, V> implements CacheConfiguration<K, V>, Da
 
     /**
      * Sets the {@code HotRestartConfig} for this {@code CacheConfiguration}
+     *
      * @param hotRestartConfig hot restart config
      * @return this {@code CacheConfiguration} instance
      */
@@ -253,57 +271,100 @@ abstract class AbstractCacheConfig<K, V> implements CacheConfiguration<K, V>, Da
 
     @Override
     public Factory<CacheLoader<K, V>> getCacheLoaderFactory() {
-        return cacheLoaderFactory;
+        return cacheLoaderFactory.get(serializationService);
     }
 
     @Override
     public CacheConfiguration<K, V> setCacheLoaderFactory(Factory<? extends CacheLoader<K, V>> cacheLoaderFactory) {
-        this.cacheLoaderFactory = (Factory<CacheLoader<K, V>>) cacheLoaderFactory;
+        this.cacheLoaderFactory = DeferredValue.withValue((Factory<CacheLoader<K, V>>) cacheLoaderFactory);
         return this;
     }
 
     @Override
     public CacheConfiguration<K, V> setExpiryPolicyFactory(Factory<? extends ExpiryPolicy> expiryPolicyFactory) {
-        this.expiryPolicyFactory = (Factory<ExpiryPolicy>) expiryPolicyFactory;
+        this.expiryPolicyFactory = DeferredValue.withValue((Factory<ExpiryPolicy>) expiryPolicyFactory);
         return this;
     }
 
     @Override
     public CacheConfiguration<K, V> setCacheWriterFactory(
             Factory<? extends CacheWriter<? super K, ? super V>> cacheWriterFactory) {
-        this.cacheWriterFactory = (Factory<CacheWriter<? super K, ? super V>>) cacheWriterFactory;
+        this.cacheWriterFactory = DeferredValue.withValue((Factory<CacheWriter<? super K, ? super V>>) cacheWriterFactory);
         return this;
     }
 
     @Override
     public Factory<CacheWriter<? super K, ? super V>> getCacheWriterFactory() {
-        return cacheWriterFactory;
+        return cacheWriterFactory.get(serializationService);
     }
 
     @Override
     public Factory<ExpiryPolicy> getExpiryPolicyFactory() {
-        return expiryPolicyFactory;
+        return expiryPolicyFactory.get(serializationService);
     }
 
     @Override
     public Class<K> getKeyType() {
-        return keyType;
+        return keyType != null ? keyType : resolveKeyType();
+    }
+
+    public String getKeyClassName() {
+        return keyClassName;
+    }
+
+    public CacheConfiguration<K, V> setKeyClassName(String keyClassName) {
+        this.keyClassName = keyClassName;
+        return this;
     }
 
     @Override
     public Class<V> getValueType() {
+        return valueType != null ? valueType : resolveValueType();
+    }
+
+    public String getValueClassName() {
+        return valueClassName;
+    }
+
+    public CacheConfiguration<K, V> setValueClassName(String valueClassName) {
+        this.valueClassName = valueClassName;
+        return this;
+    }
+
+    private Class<K> resolveKeyType() {
+        keyType = resolve(keyClassName);
+        return keyType;
+    }
+
+    private Class<V> resolveValueType() {
+        valueType = resolve(valueClassName);
         return valueType;
+    }
+
+    private Class resolve(String className) {
+        Class type = null;
+        if (className != null) {
+            try {
+                type = ClassLoaderUtil.loadClass(classLoader, className);
+            } catch (ClassNotFoundException e) {
+                throw new HazelcastException("Could not resolve type " + className, e);
+            }
+        }
+        if (type == null) {
+            type = Object.class;
+        }
+        return type;
     }
 
     /**
      * Sets the expected type of keys and values for a {@link javax.cache.Cache}
-     * configured with this {@link javax.cache.configuration.Configuration}. Setting both to
-     * <code>Object.class</code> means type-safety checks are not required.
-     * <p/>
+     * configured with this {@link javax.cache.configuration.Configuration}.
+     * Setting both to {@code Object.class} means type-safety checks are not required.
+     * <p>
      * This is used by {@link javax.cache.CacheManager} to ensure that the key and value
      * types are the same as those configured for the {@link javax.cache.Cache} prior to
      * returning a requested cache from this method.
-     * <p/>
+     * <p>
      * Implementations may further perform type checking on mutative cache operations
      * and throw a {@link ClassCastException} if these checks fail.
      *
@@ -318,8 +379,8 @@ abstract class AbstractCacheConfig<K, V> implements CacheConfiguration<K, V>, Da
         if (keyType == null || valueType == null) {
             throw new NullPointerException("keyType and/or valueType can't be null");
         }
-        this.keyType = keyType;
-        this.valueType = valueType;
+        setKeyType(keyType);
+        setValueType(valueType);
         return this;
     }
 
@@ -332,8 +393,8 @@ abstract class AbstractCacheConfig<K, V> implements CacheConfiguration<K, V>, Da
      * Set if a configured cache should use store-by-value or store-by-reference
      * semantics.
      *
-     * @param storeByValue <code>true</code> if store-by-value is required,
-     *                     <code>false</code> for store-by-reference
+     * @param storeByValue {@code true} if store-by-value is required,
+     *                     {@code false} for store-by-reference
      * @return the {@link CacheConfig}
      */
     @Override
@@ -342,23 +403,42 @@ abstract class AbstractCacheConfig<K, V> implements CacheConfiguration<K, V>, Da
         return this;
     }
 
-    protected Set<CacheEntryListenerConfiguration<K, V>> createConcurrentSet() {
-        return Collections.newSetFromMap(new ConcurrentHashMap<CacheEntryListenerConfiguration<K, V>, Boolean>());
+    protected Set<DeferredValue<CacheEntryListenerConfiguration<K, V>>> createConcurrentSet() {
+        return Collections.newSetFromMap(new ConcurrentHashMap<DeferredValue<CacheEntryListenerConfiguration<K, V>>, Boolean>());
     }
 
     public CacheConfiguration<K, V> setKeyType(Class<K> keyType) {
         this.keyType = keyType;
+        if (keyType != null) {
+            this.keyClassName = keyType.getName();
+        }
         return this;
     }
 
     public CacheConfiguration<K, V> setValueType(Class<V> valueType) {
         this.valueType = valueType;
+        if (valueType != null) {
+            this.valueClassName = valueType.getName();
+        }
         return this;
     }
 
     public CacheConfiguration<K, V> setListenerConfigurations() {
         this.listenerConfigurations = createConcurrentSet();
         return this;
+    }
+
+    protected CacheConfiguration<K, V> setListenerConfigurations(Set<CacheEntryListenerConfiguration<K, V>> listeners) {
+        this.listenerConfigurations = DeferredValue.concurrentSetOfValues(listeners);
+        return this;
+    }
+
+    public Set<CacheEntryListenerConfiguration<K, V>> getListenerConfigurations() {
+        return DeferredValue.asPassThroughSet(listenerConfigurations, serializationService);
+    }
+
+    protected boolean hasListenerConfiguration() {
+        return listenerConfigurations != null && !listenerConfigurations.isEmpty();
     }
 
     @Override
@@ -402,23 +482,47 @@ abstract class AbstractCacheConfig<K, V> implements CacheConfiguration<K, V>, Da
         if (isWriteThrough != that.isWriteThrough) {
             return false;
         }
-        if (cacheLoaderFactory != null ? !cacheLoaderFactory.equals(that.cacheLoaderFactory) : that.cacheLoaderFactory != null) {
+        Factory<CacheLoader<K, V>> thisCacheLoaderFactory = this.getCacheLoaderFactory();
+        Factory<CacheLoader<K, V>> thatCacheLoaderFactory = that.getCacheLoaderFactory();
+        if (thisCacheLoaderFactory != null ? !thisCacheLoaderFactory.equals(thatCacheLoaderFactory)
+                : thatCacheLoaderFactory != null) {
             return false;
         }
-        if (cacheWriterFactory != null ? !cacheWriterFactory.equals(that.cacheWriterFactory) : that.cacheWriterFactory != null) {
+
+        Factory<CacheWriter<? super K, ? super V>> thisCacheWriterFactory = this.getCacheWriterFactory();
+        Factory<CacheWriter<? super K, ? super V>> thatCacheWriterFactory = that.getCacheWriterFactory();
+        if (thisCacheWriterFactory != null ? !thisCacheWriterFactory.equals(thatCacheWriterFactory)
+                : thatCacheWriterFactory != null) {
             return false;
         }
-        if (expiryPolicyFactory != null
-                ? !expiryPolicyFactory.equals(that.expiryPolicyFactory) : that.expiryPolicyFactory != null) {
+
+        Factory<ExpiryPolicy> thisExpiryPolicyFactory = this.getExpiryPolicyFactory();
+        Factory<ExpiryPolicy> thatExpiryPolicyFactory = that.getExpiryPolicyFactory();
+        if (thisExpiryPolicyFactory != null
+                ? !thisExpiryPolicyFactory.equals(thatExpiryPolicyFactory) : thatExpiryPolicyFactory != null) {
             return false;
         }
-        if (!keyType.equals(that.keyType)) {
+
+        Set<CacheEntryListenerConfiguration<K, V>> thisListenerConfigs = this.getListenerConfigurations();
+        Set<CacheEntryListenerConfiguration<K, V>> thatListenerConfigs = that.getListenerConfigurations();
+        if (!thisListenerConfigs.equals(thatListenerConfigs)) {
             return false;
         }
-        if (!listenerConfigurations.equals(that.listenerConfigurations)) {
+
+        return keyValueTypesEqual(that);
+    }
+
+    protected void setClassLoader(ClassLoader classLoader) {
+        this.classLoader = classLoader;
+    }
+
+    @SuppressWarnings("checkstyle:illegaltype")
+    protected boolean keyValueTypesEqual(AbstractCacheConfig that) {
+        if (!getKeyType().equals(that.getKeyType())) {
             return false;
         }
-        if (!valueType.equals(that.valueType)) {
+
+        if (!getValueType().equals(that.getValueType())) {
             return false;
         }
 

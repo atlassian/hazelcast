@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,18 +17,19 @@
 package com.hazelcast.spi;
 
 import com.hazelcast.monitor.LocalInstanceStats;
-import com.hazelcast.spi.annotation.Beta;
 
 import java.util.Map;
 
 /**
+ * A service implementating this interface provides local instance statistics.
  *
- * This interface is in BETA stage and is subject to change in upcoming releases.
- *
+ * @param <T> type of returned
  */
-@Beta
-public interface StatisticsAwareService {
-
-    <T extends LocalInstanceStats> Map<String, T> getStats();
-
+public interface StatisticsAwareService<T extends LocalInstanceStats> {
+    /**
+     * Return the service statistics for the local instance.
+     *
+     * @return the statistics, grouped by distributed object name
+     */
+    Map<String, T> getStats();
 }

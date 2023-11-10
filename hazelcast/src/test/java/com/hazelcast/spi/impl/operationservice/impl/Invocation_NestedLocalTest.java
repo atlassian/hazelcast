@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.spi.impl.operationservice.impl;
 
 import com.hazelcast.config.Config;
@@ -34,7 +50,9 @@ public class Invocation_NestedLocalTest extends Invocation_NestedAbstractTest {
         OuterOperation outerOperation = new OuterOperation(innerOperation, GENERIC_OPERATION);
 
         expected.expect(Exception.class);
-        operationService.invokeOnPartition(null, outerOperation, outerOperation.getPartitionId());
+        InternalCompletableFuture<Object> future =
+                operationService.invokeOnPartition(null, outerOperation, outerOperation.getPartitionId());
+        future.join();
     }
 
     @Test
@@ -91,7 +109,8 @@ public class Invocation_NestedLocalTest extends Invocation_NestedAbstractTest {
         int innerPartitionId = 0;
         InnerOperation innerOperation = new InnerOperation(RESPONSE, innerPartitionId);
         OuterOperation outerOperation = new OuterOperation(innerOperation, outerPartitionId);
-        InternalCompletableFuture future = operationService.invokeOnPartition(null, outerOperation, outerOperation.getPartitionId());
+        InternalCompletableFuture future
+                = operationService.invokeOnPartition(null, outerOperation, outerOperation.getPartitionId());
 
         expected.expect(IllegalThreadStateException.class);
         expected.expectMessage("cannot make remote call");

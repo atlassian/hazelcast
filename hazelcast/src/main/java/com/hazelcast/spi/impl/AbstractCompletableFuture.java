@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,6 @@ import com.hazelcast.core.ICompletableFuture;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.spi.ExecutionService;
 import com.hazelcast.spi.NodeEngine;
-import com.hazelcast.util.EmptyStatement;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import java.util.concurrent.CancellationException;
@@ -31,6 +30,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
+import static com.hazelcast.util.EmptyStatement.ignore;
 import static com.hazelcast.util.ExceptionUtil.sneakyThrow;
 import static com.hazelcast.util.Preconditions.isNotNull;
 import static java.util.concurrent.atomic.AtomicReferenceFieldUpdater.newUpdater;
@@ -192,11 +192,10 @@ public abstract class AbstractCompletableFuture<V> implements ICompletableFuture
             } catch (TimeoutException ignored) {
                 // A timeout here can only be a spurious artifact.
                 // It should never happen and even if it does, we must retry.
-                EmptyStatement.ignore(ignored);
+                ignore(ignored);
             }
         }
     }
-
 
     /**
      * PLEASE NOTE: It's legal to override this method, but please bear in mind that you should call super.get() or
@@ -233,12 +232,19 @@ public abstract class AbstractCompletableFuture<V> implements ICompletableFuture
         }
     }
 
-    protected void setResult(Object result) {
+    /**
+     * Sets the result. If {@code result} is an instance of Throwable, this
+     * future will be completed exceptionally. That is, {@link #get} will throw
+     * the exception rather than return it.
+     *
+     * @return true, if this call made this future to complete
+     */
+    protected boolean setResult(Object result) {
         for (; ; ) {
             Object currentState = this.state;
 
             if (isDoneState(currentState)) {
-                return;
+                return false;
             }
 
             if (STATE.compareAndSet(this, currentState, result)) {
@@ -248,6 +254,7 @@ public abstract class AbstractCompletableFuture<V> implements ICompletableFuture
                 break;
             }
         }
+        return true;
     }
 
     /**
@@ -340,7 +347,7 @@ public abstract class AbstractCompletableFuture<V> implements ICompletableFuture
                 }
             } catch (Throwable cause) {
                 logger.severe("Failed asynchronous execution of execution callback: " + callback
-                        + "for call " + caller, cause);
+                        + " for call " + caller, cause);
             }
         }
     }

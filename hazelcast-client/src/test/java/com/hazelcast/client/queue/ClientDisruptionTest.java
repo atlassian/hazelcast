@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.client.queue;
 
 import com.hazelcast.client.test.TestHazelcastFactory;
@@ -47,9 +63,9 @@ public class ClientDisruptionTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void queueServerOfferClientsPoll_withNodeShutdown() throws InterruptedException {
-
-        final int initial = 2000, max = 8000;
+    public void queueServerOfferClientsPoll_withNodeShutdown() {
+        final int initial = 2000;
+        final int max = 8000;
 
         for (int i = 0; i < initial; i++) {
             getNode(1).getQueue("Q1").offer(i);
@@ -66,14 +82,14 @@ public class ClientDisruptionTest extends HazelcastTestSupport {
 
             assertExactlyOneSuccessfulRun(new AssertTask() {
                 @Override
-                public void run() throws Exception {
+                public void run() {
                     assertTrue(getNode(1).getQueue("Q1").offer(index));
                 }
             });
 
             assertExactlyOneSuccessfulRun(new AssertTask() {
                 @Override
-                public void run() throws Exception {
+                public void run() {
                     assertTrue(getNode(3).getQueue("Q2").offer(index));
                 }
             });
@@ -82,14 +98,14 @@ public class ClientDisruptionTest extends HazelcastTestSupport {
 
             assertExactlyOneSuccessfulRun(new AssertTask() {
                 @Override
-                public void run() throws Exception {
+                public void run() {
                     assertEquals(expected, client1.getQueue("Q1").poll());
                 }
             });
 
             assertExactlyOneSuccessfulRun(new AssertTask() {
                 @Override
-                public void run() throws Exception {
+                public void run() {
                     assertEquals(expected, client2.getQueue("Q2").poll());
                 }
             });
@@ -104,8 +120,9 @@ public class ClientDisruptionTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void mapServerPutClientsGet_withNodeShutdown() throws InterruptedException {
-        final int initial = 200, max = 800;
+    public void mapServerPutClientsGet_withNodeShutdown() {
+        final int initial = 200;
+        final int max = 800;
 
         for (int i = 0; i < initial; i++) {
             getNode(2).getMap("m").put(i, i);
@@ -121,7 +138,7 @@ public class ClientDisruptionTest extends HazelcastTestSupport {
 
             assertExactlyOneSuccessfulRun(new AssertTask() {
                 @Override
-                public void run() throws Exception {
+                public void run() {
                     assertNull(getNode(2).getMap("m").put(index, index));
                 }
             });
@@ -130,14 +147,14 @@ public class ClientDisruptionTest extends HazelcastTestSupport {
 
             assertExactlyOneSuccessfulRun(new AssertTask() {
                 @Override
-                public void run() throws Exception {
+                public void run() {
                     assertEquals(expected, client1.getMap("m").get(expected));
                 }
             });
 
             assertExactlyOneSuccessfulRun(new AssertTask() {
                 @Override
-                public void run() throws Exception {
+                public void run() {
                     assertEquals(expected, client2.getMap("m").get(expected));
                 }
             });

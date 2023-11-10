@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,11 +18,13 @@ package com.hazelcast.query;
 
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.BinaryInterface;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
-import com.hazelcast.nio.serialization.impl.BinaryInterface;
+import com.hazelcast.query.impl.Indexes;
 import com.hazelcast.query.impl.QueryContext;
 import com.hazelcast.query.impl.QueryableEntry;
 import com.hazelcast.query.impl.predicates.PredicateDataSerializerHook;
+import com.hazelcast.query.impl.predicates.Visitor;
 import com.hazelcast.util.IterationType;
 import com.hazelcast.util.SortingUtil;
 
@@ -75,7 +77,7 @@ import static com.hazelcast.internal.serialization.impl.FactoryIdHelper.PREDICAT
  * @param <V>
  */
 @BinaryInterface
-public class PagingPredicate<K, V> implements IndexAwarePredicate<K, V>, IdentifiedDataSerializable {
+public class PagingPredicate<K, V> implements IndexAwarePredicate<K, V>, VisitablePredicate, IdentifiedDataSerializable {
 
     private static final Map.Entry<Integer, Map.Entry> NULL_ANCHOR = new SimpleImmutableEntry(-1, null);
 
@@ -102,7 +104,7 @@ public class PagingPredicate<K, V> implements IndexAwarePredicate<K, V>, Identif
      */
     public PagingPredicate(int pageSize) {
         if (pageSize <= 0) {
-            throw new IllegalArgumentException("pageSize should be greater than 0 !!!");
+            throw new IllegalArgumentException("pageSize should be greater than 0!");
         }
         this.pageSize = pageSize;
         anchorList = new ArrayList<Map.Entry<Integer, Map.Entry<K, V>>>();
@@ -155,6 +157,32 @@ public class PagingPredicate<K, V> implements IndexAwarePredicate<K, V>, Identif
     }
 
     /**
+     * Creates a shallow copy of the given original paging predicate while
+     * replacing its inner predicate with the given predicate.
+     *
+     * @param originalPagingPredicate the original paging predicate to copy.
+     * @param predicateReplacement    the inner predicate replacement.
+     */
+    @SuppressWarnings("unchecked")
+    private PagingPredicate(PagingPredicate originalPagingPredicate, Predicate predicateReplacement) {
+        this.anchorList = originalPagingPredicate.anchorList;
+        this.comparator = originalPagingPredicate.comparator;
+        this.pageSize = originalPagingPredicate.pageSize;
+        this.page = originalPagingPredicate.page;
+        this.iterationType = originalPagingPredicate.iterationType;
+        setInnerPredicate(predicateReplacement);
+    }
+
+    @Override
+    public Predicate accept(Visitor visitor, Indexes indexes) {
+        if (predicate instanceof VisitablePredicate) {
+            Predicate transformed = ((VisitablePredicate) predicate).accept(visitor, indexes);
+            return transformed == predicate ? this : new PagingPredicate(this, transformed);
+        }
+        return this;
+    }
+
+    /**
      * Sets an inner predicate.
      * throws {@link IllegalArgumentException} if inner predicate is also {@link PagingPredicate}
      *
@@ -163,7 +191,7 @@ public class PagingPredicate<K, V> implements IndexAwarePredicate<K, V>, Identif
 
     private void setInnerPredicate(Predicate<K, V> predicate) {
         if (predicate instanceof PagingPredicate) {
-            throw new IllegalArgumentException("Nested PagingPredicate is not supported!!!");
+            throw new IllegalArgumentException("Nested PagingPredicate is not supported!");
         }
         this.predicate = predicate;
     }
@@ -182,7 +210,7 @@ public class PagingPredicate<K, V> implements IndexAwarePredicate<K, V>, Identif
 
         Set<QueryableEntry<K, V>> set = ((IndexAwarePredicate<K, V>) predicate).filter(queryContext);
         if (set == null || set.isEmpty()) {
-            return null;
+            return set;
         }
         List<QueryableEntry<K, V>> resultList = new ArrayList<QueryableEntry<K, V>>();
         Map.Entry<Integer, Map.Entry> nearestAnchorEntry = getNearestAnchorEntry();

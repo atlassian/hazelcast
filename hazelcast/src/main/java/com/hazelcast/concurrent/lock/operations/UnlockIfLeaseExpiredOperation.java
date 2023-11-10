@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.hazelcast.concurrent.lock.operations;
 
+import com.hazelcast.concurrent.lock.LockDataSerializerHook;
 import com.hazelcast.concurrent.lock.LockStoreImpl;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Address;
@@ -24,21 +25,17 @@ import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.ObjectNamespace;
+import com.hazelcast.spi.impl.QuorumCheckAwareOperation;
 import com.hazelcast.spi.partition.IPartition;
 import com.hazelcast.spi.partition.IPartitionService;
 
 import java.io.IOException;
 
-public final class UnlockIfLeaseExpiredOperation extends UnlockOperation {
+public final class UnlockIfLeaseExpiredOperation extends UnlockOperation implements QuorumCheckAwareOperation {
 
-    private final int version;
+    private int version;
 
-    /**
-     * This constructor should not be used to obtain an instance of this class; it exists to fulfill IdentifiedDataSerializable
-     * coding conventions.
-     */
     public UnlockIfLeaseExpiredOperation() {
-        version = 0;
     }
 
     public UnlockIfLeaseExpiredOperation(ObjectNamespace namespace, Data key, int version) {
@@ -47,7 +44,7 @@ public final class UnlockIfLeaseExpiredOperation extends UnlockOperation {
     }
 
     @Override
-    public void run() throws Exception {
+    public void run() {
         LockStoreImpl lockStore = getLockStore();
         int lockVersion = lockStore.getVersion(key);
         ILogger logger = getLogger();
@@ -67,6 +64,7 @@ public final class UnlockIfLeaseExpiredOperation extends UnlockOperation {
     /**
      * This operation runs on both primary and backup
      * If it is running on backup we should not send a backup operation
+     *
      * @return
      */
     @Override
@@ -83,16 +81,23 @@ public final class UnlockIfLeaseExpiredOperation extends UnlockOperation {
 
     @Override
     protected void writeInternal(ObjectDataOutput out) throws IOException {
-        throw new UnsupportedOperationException("This operation is intended to be executed on local member only!");
+        super.writeInternal(out);
+        out.writeInt(version);
     }
 
     @Override
     protected void readInternal(ObjectDataInput in) throws IOException {
-        throw new UnsupportedOperationException("This operation is intended to be executed on local member only!");
+        super.readInternal(in);
+        version = in.readInt();
     }
 
     @Override
     public int getId() {
-        throw new UnsupportedOperationException("This operation is intended to be executed on local member only!");
+        return LockDataSerializerHook.UNLOCK_IF_LEASE_EXPIRED;
+    }
+
+    @Override
+    public boolean shouldCheckQuorum() {
+        return false;
     }
 }

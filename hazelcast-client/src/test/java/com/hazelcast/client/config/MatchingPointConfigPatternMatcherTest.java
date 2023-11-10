@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ import org.junit.runner.RunWith;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNull;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
@@ -126,9 +127,9 @@ public class MatchingPointConfigPatternMatcherTest {
         config.addNearCacheConfig(nearCacheConfig3);
 
         // we should not match any of the configs (startsWith)
-        assertEquals(null, config.getNearCacheConfig("com.hazelcast.myNearCache"));
-        assertEquals(null, config.getNearCacheConfig("com.hazelcast.test.myNearCache"));
-        assertEquals(null, config.getNearCacheConfig("com.hazelcast.test.sub.myNearCache"));
+        assertNull(config.getNearCacheConfig("com.hazelcast.myNearCache"));
+        assertNull(config.getNearCacheConfig("com.hazelcast.test.myNearCache"));
+        assertNull(config.getNearCacheConfig("com.hazelcast.test.sub.myNearCache"));
     }
 
     @Test
@@ -144,9 +145,9 @@ public class MatchingPointConfigPatternMatcherTest {
         config.addNearCacheConfig(nearCacheConfig3);
 
         // we should not match any of the configs (endsWith)
-        assertEquals(null, config.getNearCacheConfig("com.hazelFast.Fast.sub.myNearCache"));
-        assertEquals(null, config.getNearCacheConfig("hazelFast.test.sub.myNearCache"));
-        assertEquals(null, config.getNearCacheConfig("test.sub.myNearCache"));
+        assertNull(config.getNearCacheConfig("com.hazelFast.Fast.sub.myNearCache"));
+        assertNull(config.getNearCacheConfig("hazelFast.test.sub.myNearCache"));
+        assertNull(config.getNearCacheConfig("test.sub.myNearCache"));
     }
 
     @Test

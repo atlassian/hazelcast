@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,16 +38,20 @@ public class DataRecordFactory implements RecordFactory<Data> {
     }
 
     @Override
-    public Record<Data> newRecord(Object value) {
+    public Record<Data> newRecord(Data key, Object value) {
         assert value != null : "value can not be null";
 
         final Data data = serializationService.toData(value, partitionStrategy);
+        Record<Data> record;
         switch (cacheDeserializedValues) {
             case NEVER:
-                return statisticsEnabled ? new DataRecordWithStats(data) : new DataRecord(data);
+                record = statisticsEnabled ? new DataRecordWithStats(data) : new DataRecord(data);
+                break;
             default:
-                return statisticsEnabled ? new CachedDataRecordWithStats(data) : new CachedDataRecord(data);
+                record = statisticsEnabled ? new CachedDataRecordWithStats(data) : new CachedDataRecord(data);
         }
+        record.setKey(key);
+        return record;
     }
 
     @Override
@@ -61,20 +65,5 @@ public class DataRecordFactory implements RecordFactory<Data> {
             v = serializationService.toData(value, partitionStrategy);
         }
         record.setValue(v);
-    }
-
-    @Override
-    public boolean isEquals(Object value1, Object value2) {
-        if (value1 == null && value2 == null) {
-            return true;
-        }
-        if (value1 == null) {
-            return false;
-        }
-        if (value2 == null) {
-            return false;
-        }
-
-        return serializationService.toData(value1).equals(serializationService.toData(value2));
     }
 }

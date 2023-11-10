@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,8 +26,8 @@ import java.io.IOException;
 
 
 /**
- * HigherHitsMapMergePolicy causes the merging entry to be merged from source to destination map
- * if source entry has more hits than the destination one.
+ * Merges map entries from source to destination map if the source entry
+ * has more hits than the destination one.
  */
 public class HigherHitsMapMergePolicy implements MapMergePolicy, IdentifiedDataSerializable {
 

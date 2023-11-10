@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.client.map;
 
 import com.hazelcast.client.test.TestHazelcastFactory;
@@ -10,8 +26,8 @@ import com.hazelcast.map.QueryResultSizeExceededException;
 import com.hazelcast.map.impl.query.QueryResultSizeLimiter;
 import com.hazelcast.query.TruePredicate;
 import com.hazelcast.spi.properties.GroupProperty;
+import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.transaction.TransactionContext;
-import com.hazelcast.util.EmptyStatement;
 import com.hazelcast.util.ExceptionUtil;
 import org.junit.After;
 
@@ -22,7 +38,7 @@ import static java.lang.String.valueOf;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
-public abstract class ClientMapUnboundReturnValuesTestSupport {
+public abstract class ClientMapUnboundReturnValuesTestSupport extends HazelcastTestSupport {
 
     protected static final int PARTITION_COUNT = 271;
 
@@ -109,7 +125,7 @@ public abstract class ClientMapUnboundReturnValuesTestSupport {
     }
 
     private Config createConfig(int partitionCount, int limit, int preCheckTrigger) {
-        Config config = new Config();
+        Config config = getConfig();
         config.setProperty(GroupProperty.PARTITION_COUNT.getName(), valueOf(partitionCount));
         config.setProperty(GroupProperty.QUERY_RESULT_SIZE_LIMIT.getName(), valueOf(limit));
         config.setProperty(GroupProperty.QUERY_MAX_LOCAL_PARTITION_LIMIT_FOR_PRE_CHECK.getName(), valueOf(preCheckTrigger));
@@ -220,7 +236,7 @@ public abstract class ClientMapUnboundReturnValuesTestSupport {
             queryMap.localKeySet();
             failExpectedException("IMap.localKeySet()");
         } catch (UnsupportedOperationException e) {
-            EmptyStatement.ignore(e);
+            ignore(e);
         } catch (QueryResultSizeExceededException e) {
             failUnwantedException("IMap.localKeySet()");
         }
@@ -229,7 +245,7 @@ public abstract class ClientMapUnboundReturnValuesTestSupport {
             queryMap.localKeySet(TruePredicate.INSTANCE);
             failExpectedException("IMap.localKeySet(predicate)");
         } catch (UnsupportedOperationException e) {
-            EmptyStatement.ignore(e);
+            ignore(e);
         } catch (QueryResultSizeExceededException e) {
             failUnwantedException("IMap.localKeySet()");
         }

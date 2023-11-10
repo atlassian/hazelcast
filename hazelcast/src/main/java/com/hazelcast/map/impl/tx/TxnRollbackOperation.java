@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,13 +19,11 @@ package com.hazelcast.map.impl.tx;
 import com.hazelcast.concurrent.lock.LockWaitNotifyKey;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.map.impl.MapDataSerializerHook;
-import com.hazelcast.map.impl.MapService;
-import com.hazelcast.map.impl.operation.MutatingKeyBasedMapOperation;
+import com.hazelcast.map.impl.operation.KeyBasedMapOperation;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.BackupAwareOperation;
-import com.hazelcast.spi.DefaultObjectNamespace;
 import com.hazelcast.spi.Notifier;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.WaitNotifyKey;
@@ -36,7 +34,7 @@ import java.io.IOException;
 /**
  * An operation to rollback transaction by unlocking the key on key owner.
  */
-public class TxnRollbackOperation extends MutatingKeyBasedMapOperation implements BackupAwareOperation, Notifier {
+public class TxnRollbackOperation extends KeyBasedMapOperation implements BackupAwareOperation, Notifier {
 
     private String ownerUuid;
 
@@ -101,7 +99,7 @@ public class TxnRollbackOperation extends MutatingKeyBasedMapOperation implement
 
     @Override
     public WaitNotifyKey getNotifiedKey() {
-        return new LockWaitNotifyKey(new DefaultObjectNamespace(MapService.SERVICE_NAME, name), dataKey);
+        return new LockWaitNotifyKey(getServiceNamespace(), dataKey);
     }
 
     @Override

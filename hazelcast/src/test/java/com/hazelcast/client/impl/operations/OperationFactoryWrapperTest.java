@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static com.hazelcast.map.impl.MapService.SERVICE_NAME;
-import static java.util.Arrays.asList;
+import static java.util.Collections.singletonList;
 import static org.junit.Assert.assertEquals;
 
 @RunWith(HazelcastParallelClassRunner.class)
@@ -56,13 +56,12 @@ public class OperationFactoryWrapperTest extends HazelcastTestSupport {
         GetCallersUUIDOperationFactory operationFactory = new GetCallersUUIDOperationFactory();
         OperationFactoryWrapper wrapper = new OperationFactoryWrapper(operationFactory, expectedCallersUUID);
 
-        int partitionID = 0;
-        Map<Integer, Object> responses = operationService.invokeOnPartitions(SERVICE_NAME, wrapper, asList(partitionID));
+        int partitionId = 0;
+        Map<Integer, Object> responses = operationService.invokeOnPartitions(SERVICE_NAME, wrapper, singletonList(partitionId));
 
-        String actualCallersUUID = (String) responses.get(partitionID);
+        String actualCallersUUID = (String) responses.get(partitionId);
         assertEquals("Callers UUID should not be changed", expectedCallersUUID, actualCallersUUID);
     }
-
 
     private class GetCallersUUIDOperationFactory implements OperationFactory {
 
@@ -95,7 +94,6 @@ public class OperationFactoryWrapperTest extends HazelcastTestSupport {
         }
     }
 
-
     private class GetCallersUUIDOperation extends Operation {
 
         public GetCallersUUIDOperation() {
@@ -109,7 +107,5 @@ public class OperationFactoryWrapperTest extends HazelcastTestSupport {
         public Object getResponse() {
             return getCallerUuid();
         }
-
     }
-
 }

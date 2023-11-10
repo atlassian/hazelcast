@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -83,7 +83,7 @@ public class PartitionServiceSafetyCheckTest extends PartitionCorrectnessTestSup
 
         Collection<HazelcastInstance> instances = factory.getAllHazelcastInstances();
 
-        assertSafe(instances);
+        assertSafeEventually(instances);
     }
 
     @Test
@@ -189,8 +189,7 @@ public class PartitionServiceSafetyCheckTest extends PartitionCorrectnessTestSup
         waitAllForSafeState(hz1, hz2, hz3);
 
         hz2.getLifecycleService().terminate();
-        assertClusterSizeEventually(2, hz1);
-        assertClusterSizeEventually(2, hz3);
+        assertClusterSizeEventually(2, hz1, hz3);
         waitAllForSafeState(hz1, hz3);
         assertPartitionAssignments(factory);
 

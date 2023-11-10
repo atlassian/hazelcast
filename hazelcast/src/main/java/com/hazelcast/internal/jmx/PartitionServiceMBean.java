@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,10 +20,10 @@ import com.hazelcast.instance.HazelcastInstanceImpl;
 import com.hazelcast.internal.partition.InternalPartitionService;
 import com.hazelcast.nio.Address;
 
-import java.net.InetSocketAddress;
-import java.util.Hashtable;
+import java.util.Map;
 
 import static com.hazelcast.internal.jmx.ManagementService.quote;
+import static com.hazelcast.util.MapUtil.createHashMap;
 
 /**
  * Management bean for {@link com.hazelcast.core.PartitionService}
@@ -39,7 +39,7 @@ public class PartitionServiceMBean extends HazelcastMBean<InternalPartitionServi
         super(partitionService, service);
 
         this.hazelcastInstance = hazelcastInstance;
-        Hashtable<String, String> properties = new Hashtable<String, String>(INITIAL_CAPACITY);
+        final Map<String, String> properties = createHashMap(INITIAL_CAPACITY);
         properties.put("type", quote("HazelcastInstance.PartitionServiceMBean"));
         properties.put("name", quote(hazelcastInstance.getName()));
         properties.put("instance", quote(hazelcastInstance.getName()));
@@ -56,8 +56,8 @@ public class PartitionServiceMBean extends HazelcastMBean<InternalPartitionServi
     @ManagedAnnotation("activePartitionCount")
     @ManagedDescription("Number of active partitions")
     public int getActivePartitionCount() {
-        InetSocketAddress address = hazelcastInstance.getCluster().getLocalMember().getSocketAddress();
-        return managedObject.getMemberPartitions(new Address(address)).size();
+        Address thisAddress = hazelcastInstance.getCluster().getLocalMember().getAddress();
+        return managedObject.getMemberPartitionsIfAssigned(thisAddress).size();
     }
 
     @ManagedAnnotation("isClusterSafe")

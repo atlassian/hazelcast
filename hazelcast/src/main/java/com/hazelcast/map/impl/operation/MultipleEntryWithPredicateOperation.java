@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,6 @@ import com.hazelcast.query.Predicate;
 import com.hazelcast.spi.Operation;
 
 import java.io.IOException;
-import java.util.Map;
 import java.util.Set;
 
 import static com.hazelcast.util.Preconditions.checkNotNull;
@@ -45,18 +44,14 @@ public class MultipleEntryWithPredicateOperation extends MultipleEntryOperation 
     }
 
     @Override
-    protected boolean isEntryProcessable(Map.Entry entry) {
-        return super.isEntryProcessable(entry) && predicate.apply(entry);
+    public Predicate getPredicate() {
+        return predicate;
     }
 
     @Override
     public Operation getBackupOperation() {
         EntryBackupProcessor backupProcessor = entryProcessor.getBackupProcessor();
-        MultipleEntryWithPredicateBackupOperation backupOperation
-                = new MultipleEntryWithPredicateBackupOperation(name, keys, backupProcessor, predicate);
-        backupOperation.setWanEventList(wanEventList);
-
-        return backupOperation;
+        return new MultipleEntryWithPredicateBackupOperation(name, keys, backupProcessor, predicate);
     }
 
     @Override

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,7 +52,9 @@ public class StateMachine<T extends Enum<T>> {
 
     /**
      * Transition to next state
+     *
      * @throws IllegalStateException if transition is not allowed
+     * @throws NullPointerException  if the {@code nextState} is {@code null}
      */
     public StateMachine<T> next(T nextState) throws IllegalStateException {
         Set<T> allowed = transitions.get(currentState);
@@ -64,6 +66,9 @@ public class StateMachine<T extends Enum<T>> {
 
     /**
      * Transition to next state if not already there
+     *
+     * @throws IllegalStateException if transition is not allowed
+     * @throws NullPointerException  if the {@code nextState} is {@code null}
      */
     public void nextOrStay(T nextState) {
         if (!is(nextState)) {
@@ -74,7 +79,7 @@ public class StateMachine<T extends Enum<T>> {
     /**
      * Check if current state is one of given states
      */
-    public boolean is(T state, T ... otherStates) {
+    public boolean is(T state, T... otherStates) {
         return EnumSet.of(state, otherStates).contains(currentState);
     }
 

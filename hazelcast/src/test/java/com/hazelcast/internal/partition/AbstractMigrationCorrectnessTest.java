@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,12 +19,17 @@ package com.hazelcast.internal.partition;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.nio.Address;
+import com.hazelcast.spi.properties.GroupProperty;
 import org.junit.Test;
+import org.junit.runners.Parameterized;
 
 import java.util.Collection;
 import java.util.Collections;
 
 public abstract class AbstractMigrationCorrectnessTest extends PartitionCorrectnessTestSupport {
+
+    @Parameterized.Parameter(2)
+    public boolean fragmentedMigrationEnabled;
 
     @Test
     public void testPartitionData_whenNodesStartedSequentially() throws InterruptedException {
@@ -123,5 +128,12 @@ public abstract class AbstractMigrationCorrectnessTest extends PartitionCorrectn
             addresses = terminateNodes(backupCount);
             size -= backupCount;
         }
+    }
+
+    @Override
+    Config getConfig(boolean withService, boolean antiEntropyEnabled) {
+        Config config = super.getConfig(withService, antiEntropyEnabled);
+        config.setProperty(GroupProperty.PARTITION_FRAGMENTED_MIGRATION_ENABLED.getName(), String.valueOf(fragmentedMigrationEnabled));
+        return config;
     }
 }

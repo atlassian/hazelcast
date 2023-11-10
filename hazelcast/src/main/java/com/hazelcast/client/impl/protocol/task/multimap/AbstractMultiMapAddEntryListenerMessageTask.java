@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,9 @@
 
 package com.hazelcast.client.impl.protocol.task.multimap;
 
-import com.hazelcast.client.ClientEndpoint;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.task.AbstractCallableMessageTask;
+import com.hazelcast.client.impl.protocol.task.ListenerMessageTask;
 import com.hazelcast.core.EntryAdapter;
 import com.hazelcast.core.EntryEvent;
 import com.hazelcast.core.EntryEventType;
@@ -33,7 +33,8 @@ import com.hazelcast.security.permission.MultiMapPermission;
 
 import java.security.Permission;
 
-public abstract class AbstractMultiMapAddEntryListenerMessageTask<P> extends AbstractCallableMessageTask<P> {
+public abstract class AbstractMultiMapAddEntryListenerMessageTask<P> extends AbstractCallableMessageTask<P>
+        implements ListenerMessageTask {
 
     public AbstractMultiMapAddEntryListenerMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
@@ -41,7 +42,6 @@ public abstract class AbstractMultiMapAddEntryListenerMessageTask<P> extends Abs
 
     @Override
     protected Object call() throws Exception {
-        final ClientEndpoint endpoint = getEndpoint();
         final MultiMapService service = getService(MultiMapService.SERVICE_NAME);
         EntryAdapter listener = new MultiMapListener();
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,21 +16,14 @@
 
 package com.hazelcast.cache.impl;
 
-import com.hazelcast.cache.CacheEntryView;
-import com.hazelcast.cache.CacheMergePolicy;
-import com.hazelcast.cache.StorageTypeAwareCacheMergePolicy;
-import com.hazelcast.internal.eviction.MaxSizeChecker;
-import com.hazelcast.cache.impl.merge.entry.LazyCacheEntryView;
+import com.hazelcast.cache.impl.operation.KeyBasedCacheOperation;
 import com.hazelcast.cache.impl.record.CacheRecord;
-import com.hazelcast.cache.impl.record.CacheRecordFactory;
 import com.hazelcast.cache.impl.record.CacheRecordHashMap;
 import com.hazelcast.config.EvictionConfig.MaxSizePolicy;
+import com.hazelcast.internal.eviction.EvictionChecker;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.serialization.SerializationService;
-import com.hazelcast.util.Clock;
-
-import static com.hazelcast.cache.impl.operation.MutableOperation.IGNORE_COMPLETION;
 
 /**
  * <h1>On-Heap implementation of the {@link ICacheRecordStore} </h1>
@@ -50,25 +43,22 @@ import static com.hazelcast.cache.impl.operation.MutableOperation.IGNORE_COMPLET
  *         cache.get(key, expiryPolicy);
  *         </code>
  *     </pre>
- * See {@link com.hazelcast.cache.impl.operation.AbstractCacheOperation} subclasses for actual examples.
+ * See {@link KeyBasedCacheOperation} subclasses for actual examples.
  * </p>
  *
  * @see com.hazelcast.cache.impl.CachePartitionSegment
  * @see com.hazelcast.cache.impl.CacheService
- * @see com.hazelcast.cache.impl.operation.AbstractCacheOperation
+ * @see KeyBasedCacheOperation
  */
 public class CacheRecordStore
-        extends AbstractCacheRecordStore<CacheRecord, CacheRecordHashMap>
-        implements SplitBrainAwareCacheRecordStore {
+        extends AbstractCacheRecordStore<CacheRecord, CacheRecordHashMap> {
 
     protected SerializationService serializationService;
-    protected CacheRecordFactory cacheRecordFactory;
 
-    public CacheRecordStore(String name, int partitionId, NodeEngine nodeEngine,
+    public CacheRecordStore(String cacheNameWithPrefix, int partitionId, NodeEngine nodeEngine,
                             AbstractCacheService cacheService) {
-        super(name, partitionId, nodeEngine, cacheService);
+        super(cacheNameWithPrefix, partitionId, nodeEngine, cacheService);
         this.serializationService = nodeEngine.getSerializationService();
-        this.cacheRecordFactory = createCacheRecordFactory();
     }
 
     /**
@@ -84,7 +74,7 @@ public class CacheRecordStore
      *                                  is null
      */
     @Override
-    protected MaxSizeChecker createCacheMaxSizeChecker(int size, MaxSizePolicy maxSizePolicy) {
+    protected EvictionChecker createCacheEvictionChecker(int size, MaxSizePolicy maxSizePolicy) {
         if (maxSizePolicy == null) {
             throw new IllegalArgumentException("Max-Size policy cannot be null");
         }
@@ -94,7 +84,7 @@ public class CacheRecordStore
                     + '(' + maxSizePolicy + ") for " + getClass().getName() + "! Only "
                     + MaxSizePolicy.ENTRY_COUNT + " is supported.");
         } else {
-            return super.createCacheMaxSizeChecker(size, maxSizePolicy);
+            return super.createCacheEvictionChecker(size, maxSizePolicy);
         }
     }
 
@@ -109,15 +99,11 @@ public class CacheRecordStore
         return new CacheEntryProcessorEntry(key, record, this, now, completionId);
     }
 
-    protected CacheRecordFactory createCacheRecordFactory() {
-        return new CacheRecordFactory(cacheConfig.getInMemoryFormat(),
-                                      nodeEngine.getSerializationService());
-    }
-
     @Override
     protected CacheRecord createRecord(Object value, long creationTime, long expiryTime) {
         evictIfRequired();
 
+        markExpirable(expiryTime);
         return cacheRecordFactory.newRecordWithExpiry(value, creationTime, expiryTime);
     }
 
@@ -177,75 +163,8 @@ public class CacheRecordStore
         }
     }
 
-    private CacheEntryView createCacheEntryView(Object key, Object value, long creationTime,
-                                                long expirationTime, long lastAccessTime,
-                                                long accessHit, CacheMergePolicy mergePolicy) {
-        SerializationService ss =
-                mergePolicy instanceof StorageTypeAwareCacheMergePolicy
-                        // Null serialization service means that use as storage type without convertion
-                        ? null
-                        //  Non-null serialization service means that convertion is required
-                        : serializationService;
-        return new LazyCacheEntryView(key, value, creationTime, expirationTime, lastAccessTime, accessHit, ss);
-    }
-
-    public CacheRecord merge(CacheEntryView<Data, Data> cacheEntryView, CacheMergePolicy mergePolicy) {
-        final long now = Clock.currentTimeMillis();
-        final long start = isStatisticsEnabled() ? System.nanoTime() : 0;
-
-        boolean merged = false;
-        Data key = cacheEntryView.getKey();
-        Data value = cacheEntryView.getValue();
-        long expiryTime = cacheEntryView.getExpirationTime();
-        CacheRecord record = records.get(key);
-        boolean isExpired = processExpiredEntry(key, record, now);
-
-        if (record == null || isExpired) {
-            Object newValue =
-                    mergePolicy.merge(name,
-                                      createCacheEntryView(
-                                            key,
-                                            value,
-                                            cacheEntryView.getCreationTime(),
-                                            cacheEntryView.getExpirationTime(),
-                                            cacheEntryView.getLastAccessTime(),
-                                            cacheEntryView.getAccessHit(),
-                                            mergePolicy),
-                                      null);
-            if (newValue != null) {
-                record = createRecordWithExpiry(key, newValue, expiryTime, now, true, IGNORE_COMPLETION);
-                merged = record != null;
-            }
-        } else {
-            Object existingValue = record.getValue();
-            Object newValue =
-                    mergePolicy.merge(name,
-                                      createCacheEntryView(
-                                            key,
-                                            value,
-                                            cacheEntryView.getCreationTime(),
-                                            cacheEntryView.getExpirationTime(),
-                                            cacheEntryView.getLastAccessTime(),
-                                            cacheEntryView.getAccessHit(),
-                                            mergePolicy),
-                                      createCacheEntryView(
-                                            key,
-                                            existingValue,
-                                            cacheEntryView.getCreationTime(),
-                                            record.getExpirationTime(),
-                                            record.getLastAccessTime(),
-                                            record.getAccessHit(),
-                                            mergePolicy));
-            if (existingValue != newValue) {
-                merged = updateRecordWithExpiry(key, newValue, record, expiryTime, now, true, IGNORE_COMPLETION);
-            }
-        }
-
-        if (merged && isStatisticsEnabled()) {
-            statistics.increaseCachePuts(1);
-            statistics.addPutTimeNanos(System.nanoTime() - start);
-        }
-
-        return merged ? record : null;
+    @Override
+    public void disposeDeferredBlocks() {
+        // NOP
     }
 }

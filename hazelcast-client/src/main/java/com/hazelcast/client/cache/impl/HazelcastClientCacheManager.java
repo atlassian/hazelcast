@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,46 +20,49 @@ import com.hazelcast.cache.HazelcastCachingProvider;
 import com.hazelcast.cache.impl.AbstractHazelcastCacheManager;
 import com.hazelcast.cache.impl.ICacheInternal;
 import com.hazelcast.cache.impl.ICacheService;
-import com.hazelcast.internal.nearcache.NearCacheManager;
-import com.hazelcast.client.impl.HazelcastClientInstanceImpl;
-import com.hazelcast.client.impl.HazelcastClientProxy;
+import com.hazelcast.client.impl.clientside.ClientICacheManager;
+import com.hazelcast.client.impl.clientside.HazelcastClientInstanceImpl;
+import com.hazelcast.client.impl.clientside.HazelcastClientProxy;
+import com.hazelcast.client.spi.ProxyManager;
 import com.hazelcast.config.CacheConfig;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.util.ExceptionUtil;
+import com.hazelcast.internal.nearcache.NearCacheManager;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import java.net.URI;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Properties;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
+import static com.hazelcast.internal.config.ConfigValidator.checkCacheConfig;
+import static com.hazelcast.util.ExceptionUtil.rethrow;
 import static com.hazelcast.util.Preconditions.checkNotNull;
 
 /**
  * {@link javax.cache.CacheManager} implementation for client side.
- *
+ * <p>
  * Provides client side CacheManager functionality.
  */
 public final class HazelcastClientCacheManager extends AbstractHazelcastCacheManager {
 
     private final HazelcastClientInstanceImpl client;
     private final ClientCacheProxyFactory clientCacheProxyFactory;
-    private final ConcurrentMap<String, CacheConfig> configs = new ConcurrentHashMap<String, CacheConfig>();
 
     public HazelcastClientCacheManager(HazelcastClientCachingProvider cachingProvider, HazelcastInstance hazelcastInstance,
                                        URI uri, ClassLoader classLoader, Properties properties) {
         super(cachingProvider, hazelcastInstance, uri, classLoader, properties);
 
         /*
-         * TODO
+         * TODO:
          *
-         * A new interface, such as `InternalHazelcastInstance` (has `getOriginalInstance()` method),
-         * might be introduced. Then underlying actual (original) Hazelcast instance is retrieved through this.
+         * A new interface, such as `InternalHazelcastInstance` (with a
+         * `getOriginalInstance()` method), might be introduced. Then the
+         * underlying actual (original) Hazelcast instance can be retrieved
+         * through this.
          *
-         * Original Hazelcast instance is used for getting `NearCacheManager` and .
-         * passing full cache name directly by this cache manager itself.
+         * The original Hazelcast instance is used for getting access to
+         * internals. It's also used for passing the full cache name directly
+         * by this cache manager itself.
          */
         if (hazelcastInstance instanceof HazelcastClientProxy) {
             client = ((HazelcastClientProxy) hazelcastInstance).client;
@@ -67,8 +70,8 @@ public final class HazelcastClientCacheManager extends AbstractHazelcastCacheMan
             client = ((HazelcastClientInstanceImpl) hazelcastInstance);
         }
 
-        clientCacheProxyFactory =
-                (ClientCacheProxyFactory) client.getProxyManager().getClientProxyFactory(ICacheService.SERVICE_NAME);
+        ProxyManager proxyManager = client.getProxyManager();
+        clientCacheProxyFactory = (ClientCacheProxyFactory) proxyManager.getClientProxyFactory(ICacheService.SERVICE_NAME);
     }
 
     @Override
@@ -82,23 +85,20 @@ public final class HazelcastClientCacheManager extends AbstractHazelcastCacheMan
     }
 
     private void enableStatisticManagementOnNodes(String cacheName, boolean statOrMan, boolean enabled) {
-        checkIfManagerNotClosed();
+        ensureOpen();
         checkNotNull(cacheName, "cacheName cannot be null");
-        ClientCacheHelper.enableStatisticManagementOnNodes(client, getCacheNameWithPrefix(cacheName),
-                statOrMan, enabled);
+        ClientCacheHelper.enableStatisticManagementOnNodes(client, getCacheNameWithPrefix(cacheName), statOrMan, enabled);
     }
 
     @SuppressFBWarnings("RV_RETURN_VALUE_OF_PUTIFABSENT_IGNORED")
     @Override
     protected <K, V> void addCacheConfigIfAbsent(CacheConfig<K, V> cacheConfig) {
-        configs.putIfAbsent(cacheConfig.getNameWithPrefix(), cacheConfig);
         clientCacheProxyFactory.addCacheConfig(cacheConfig.getNameWithPrefix(), cacheConfig);
     }
 
     @Override
-    protected void removeCacheConfigFromLocal(String cacheName) {
-        configs.remove(cacheName);
-        clientCacheProxyFactory.removeCacheConfig(cacheName);
+    protected void removeCacheConfigFromLocal(String cacheNameWithPrefix) {
+        clientCacheProxyFactory.removeCacheConfig(cacheNameWithPrefix);
     }
 
     @Override
@@ -110,40 +110,42 @@ public final class HazelcastClientCacheManager extends AbstractHazelcastCacheMan
     protected <K, V> ICacheInternal<K, V> createCacheProxy(CacheConfig<K, V> cacheConfig) {
         clientCacheProxyFactory.addCacheConfig(cacheConfig.getNameWithPrefix(), cacheConfig);
         try {
-            ClientCacheProxy<K, V> clientCacheProxy =
-                    (ClientCacheProxy<K, V>) client.getCacheManager()
-                            .getCacheByFullName(cacheConfig.getNameWithPrefix());
-            clientCacheProxy.setCacheManager(this);
-            return clientCacheProxy;
+            ClientICacheManager cacheManager = client.getCacheManager();
+            String nameWithPrefix = cacheConfig.getNameWithPrefix();
+            ICacheInternal<K, V> cache = (ICacheInternal<K, V>) cacheManager.getCacheByFullName(nameWithPrefix);
+            cache.setCacheManager(this);
+            return cache;
         } catch (Throwable t) {
             clientCacheProxyFactory.removeCacheConfig(cacheConfig.getNameWithPrefix());
-            throw ExceptionUtil.rethrow(t);
+            throw rethrow(t);
         }
     }
 
     @Override
-    protected <K, V> CacheConfig<K, V> findCacheConfig(String cacheName, String simpleCacheName, boolean createAlsoOnOthers,
-                                                       boolean syncCreate) {
-        CacheConfig<K, V> config = configs.get(cacheName);
+    @SuppressWarnings("unchecked")
+    protected <K, V> CacheConfig<K, V> findCacheConfig(String cacheName, String simpleCacheName) {
+        if (simpleCacheName == null) {
+            return null;
+        }
+        CacheConfig<K, V> config = clientCacheProxyFactory.getCacheConfig(cacheName);
         if (config == null) {
-            // If cache config not found, try to find it from partition
+            // if cache config not found, try to find it from partition
             config = getCacheConfig(cacheName, simpleCacheName);
             if (config != null) {
-                // Cache config possibly is not exist on other nodes, so create also on them if absent
-                createCacheConfig(cacheName, config, createAlsoOnOthers, syncCreate);
+                // cache config possibly is not exist on other nodes, so create also on them if absent
+                createCacheConfig(cacheName, config);
             }
         }
         return config;
     }
 
     @Override
-    protected <K, V> CacheConfig<K, V> createCacheConfig(String cacheName, CacheConfig<K, V> config,
-                                                         boolean createAlsoOnOthers, boolean syncCreate) {
-        return ClientCacheHelper.createCacheConfig(client, configs, cacheName, config,
-                createAlsoOnOthers, syncCreate);
+    protected <K, V> void createCacheConfig(String cacheName, CacheConfig<K, V> config) {
+        ClientCacheHelper.createCacheConfig(client, config, false);
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public <T> T unwrap(Class<T> clazz) {
         if (HazelcastClientCacheManager.class.isAssignableFrom(clazz)) {
             return (T) this;
@@ -160,13 +162,18 @@ public final class HazelcastClientCacheManager extends AbstractHazelcastCacheMan
 
     @Override
     protected void postDestroy() {
-        Iterator<Map.Entry<String, CacheConfig>> iter = configs.entrySet().iterator();
-        while (iter.hasNext()) {
-            Map.Entry<String, CacheConfig> entry = iter.next();
+        Iterator<Map.Entry<String, CacheConfig>> iterator = clientCacheProxyFactory.configs().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<String, CacheConfig> entry = iterator.next();
             String cacheName = entry.getKey();
             clientCacheProxyFactory.removeCacheConfig(cacheName);
-            iter.remove();
+            iterator.remove();
         }
+    }
+
+    @Override
+    protected <K, V> void validateCacheConfig(CacheConfig<K, V> cacheConfig) {
+        checkCacheConfig(cacheConfig, null);
     }
 
     @Override

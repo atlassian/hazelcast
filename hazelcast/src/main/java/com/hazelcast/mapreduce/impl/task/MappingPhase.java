@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,7 +52,7 @@ public abstract class MappingPhase<KeyIn, ValueIn, KeyOut, ValueOut> {
 
     public MappingPhase(Collection<? extends KeyIn> keys, KeyPredicate<? super KeyIn> predicate) {
         this.predicate = predicate;
-        this.keys = keys != null ? keys.toArray(new Object[keys.size()]) : null;
+        this.keys = keys != null ? keys.toArray(new Object[0]) : null;
     }
 
     public void cancel() {
@@ -112,7 +112,7 @@ public abstract class MappingPhase<KeyIn, ValueIn, KeyOut, ValueOut> {
         for (int i = 0; i < cache.length; i++) {
             List<Object> keys = mapping[i];
             if (keys != null) {
-                cache[i] = keys.toArray(new Object[keys.size()]);
+                cache[i] = keys.toArray(new Object[0]);
             }
         }
         return cache;

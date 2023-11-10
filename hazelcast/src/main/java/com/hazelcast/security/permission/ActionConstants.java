@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,19 +27,29 @@ import com.hazelcast.concurrent.countdownlatch.CountDownLatchService;
 import com.hazelcast.concurrent.idgen.IdGeneratorService;
 import com.hazelcast.concurrent.lock.LockService;
 import com.hazelcast.concurrent.semaphore.SemaphoreService;
+import com.hazelcast.cp.internal.datastructures.atomiclong.RaftAtomicLongService;
+import com.hazelcast.cp.internal.datastructures.atomicref.RaftAtomicRefService;
+import com.hazelcast.cp.internal.datastructures.countdownlatch.RaftCountDownLatchService;
+import com.hazelcast.cp.internal.datastructures.lock.RaftLockService;
+import com.hazelcast.cp.internal.datastructures.semaphore.RaftSemaphoreService;
+import com.hazelcast.crdt.pncounter.PNCounterService;
 import com.hazelcast.durableexecutor.impl.DistributedDurableExecutorService;
 import com.hazelcast.executor.impl.DistributedExecutorService;
+import com.hazelcast.flakeidgen.impl.FlakeIdGeneratorService;
+import com.hazelcast.internal.usercodedeployment.UserCodeDeploymentService;
 import com.hazelcast.map.impl.MapService;
 import com.hazelcast.mapreduce.impl.MapReduceService;
 import com.hazelcast.multimap.impl.MultiMapService;
 import com.hazelcast.replicatedmap.impl.ReplicatedMapService;
 import com.hazelcast.ringbuffer.impl.RingbufferService;
 import com.hazelcast.topic.impl.TopicService;
+import com.hazelcast.topic.impl.reliable.ReliableTopicService;
 
 import java.security.Permission;
 import java.util.HashMap;
 import java.util.Map;
 
+@SuppressWarnings({"checkstyle:executablestatementcount"})
 public final class ActionConstants {
 
     public static final String ACTION_ALL = "all";
@@ -59,6 +69,7 @@ public final class ActionConstants {
     public static final String ACTION_PUBLISH = "publish";
     public static final String ACTION_AGGREGATE = "aggregate";
     public static final String ACTION_PROJECTION = "projection";
+    public static final String ACTION_USER_CODE_DEPLOY = "deploy";
 
     public static final String LISTENER_INSTANCE = "instance";
     public static final String LISTENER_MEMBER = "member";
@@ -103,13 +114,31 @@ public final class ActionConstants {
                 return new AtomicLongPermission(name, actions);
             }
         });
+        PERMISSION_FACTORY_MAP.put(RaftAtomicLongService.SERVICE_NAME, new PermissionFactory() {
+            @Override
+            public Permission create(String name, String... actions) {
+                return new AtomicLongPermission(name, actions);
+            }
+        });
         PERMISSION_FACTORY_MAP.put(CountDownLatchService.SERVICE_NAME, new PermissionFactory() {
             @Override
             public Permission create(String name, String... actions) {
                 return new CountDownLatchPermission(name, actions);
             }
         });
+        PERMISSION_FACTORY_MAP.put(RaftCountDownLatchService.SERVICE_NAME, new PermissionFactory() {
+            @Override
+            public Permission create(String name, String... actions) {
+                return new CountDownLatchPermission(name, actions);
+            }
+        });
         PERMISSION_FACTORY_MAP.put(SemaphoreService.SERVICE_NAME, new PermissionFactory() {
+            @Override
+            public Permission create(String name, String... actions) {
+                return new SemaphorePermission(name, actions);
+            }
+        });
+        PERMISSION_FACTORY_MAP.put(RaftSemaphoreService.SERVICE_NAME, new PermissionFactory() {
             @Override
             public Permission create(String name, String... actions) {
                 return new SemaphorePermission(name, actions);
@@ -127,6 +156,12 @@ public final class ActionConstants {
                 return new LockPermission(name, actions);
             }
         });
+        PERMISSION_FACTORY_MAP.put(RaftLockService.SERVICE_NAME, new PermissionFactory() {
+            @Override
+            public Permission create(String name, String... actions) {
+                return new LockPermission(name, actions);
+            }
+        });
         PERMISSION_FACTORY_MAP.put(DistributedExecutorService.SERVICE_NAME, new PermissionFactory() {
             @Override
             public Permission create(String name, String... actions) {
@@ -137,6 +172,12 @@ public final class ActionConstants {
             @Override
             public Permission create(String name, String... actions) {
                 return new AtomicLongPermission(IdGeneratorService.ATOMIC_LONG_NAME + name, actions);
+            }
+        });
+        PERMISSION_FACTORY_MAP.put(FlakeIdGeneratorService.SERVICE_NAME, new PermissionFactory() {
+            @Override
+            public Permission create(String name, String... actions) {
+                return new FlakeIdGeneratorPermission(name, actions);
             }
         });
         PERMISSION_FACTORY_MAP.put(MapReduceService.SERVICE_NAME, new PermissionFactory() {
@@ -152,6 +193,12 @@ public final class ActionConstants {
             }
         });
         PERMISSION_FACTORY_MAP.put(AtomicReferenceService.SERVICE_NAME, new PermissionFactory() {
+            @Override
+            public Permission create(String name, String... actions) {
+                return new AtomicReferencePermission(name, actions);
+            }
+        });
+        PERMISSION_FACTORY_MAP.put(RaftAtomicRefService.SERVICE_NAME, new PermissionFactory() {
             @Override
             public Permission create(String name, String... actions) {
                 return new AtomicReferencePermission(name, actions);
@@ -181,6 +228,24 @@ public final class ActionConstants {
                 return new CardinalityEstimatorPermission(name, actions);
             }
         });
+        PERMISSION_FACTORY_MAP.put(UserCodeDeploymentService.SERVICE_NAME, new PermissionFactory() {
+            @Override
+            public Permission create(String name, String... actions) {
+                return new UserCodeDeploymentPermission(actions);
+            }
+        });
+        PERMISSION_FACTORY_MAP.put(PNCounterService.SERVICE_NAME, new PermissionFactory() {
+            @Override
+            public Permission create(String name, String... actions) {
+                return new PNCounterPermission(name, actions);
+            }
+        });
+        PERMISSION_FACTORY_MAP.put(ReliableTopicService.SERVICE_NAME, new PermissionFactory() {
+            @Override
+            public Permission create(String name, String... actions) {
+                return new ReliableTopicPermission(name, actions);
+            }
+        });
     }
 
     private ActionConstants() {
@@ -193,9 +258,9 @@ public final class ActionConstants {
     /**
      * Creates a permission
      *
-     * @param name
-     * @param serviceName
-     * @param actions
+     * @param name        the permission name
+     * @param serviceName the service name
+     * @param actions     the actions
      * @return the created Permission
      * @throws java.lang.IllegalArgumentException if there is no service found with the given serviceName.
      */

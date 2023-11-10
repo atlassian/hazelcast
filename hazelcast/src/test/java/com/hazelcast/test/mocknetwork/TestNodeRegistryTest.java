@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,7 +33,7 @@ import static org.junit.Assert.assertEquals;
 public class TestNodeRegistryTest extends HazelcastTestSupport {
 
     @Test
-    public void testTerminate_clearsNodeReferences() throws Exception {
+    public void testTerminate_clearsNodeReferences() {
         TestHazelcastInstanceFactory factory = new TestHazelcastInstanceFactory();
         HazelcastInstance hazelcastInstance = factory.newHazelcastInstance();
 

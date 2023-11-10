@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,19 +16,28 @@
 
 package com.hazelcast.cardinality.impl;
 
+import com.hazelcast.cardinality.impl.hyperloglog.HyperLogLog;
+import com.hazelcast.cardinality.impl.operations.MergeOperation;
 import com.hazelcast.cardinality.impl.operations.ReplicationOperation;
+import com.hazelcast.config.CardinalityEstimatorConfig;
 import com.hazelcast.spi.ManagedService;
 import com.hazelcast.spi.MigrationAwareService;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.PartitionMigrationEvent;
 import com.hazelcast.spi.PartitionReplicationEvent;
+import com.hazelcast.spi.QuorumAwareService;
 import com.hazelcast.spi.RemoteService;
+import com.hazelcast.spi.SplitBrainHandlerService;
+import com.hazelcast.spi.impl.merge.AbstractContainerMerger;
+import com.hazelcast.spi.merge.SplitBrainMergePolicy;
+import com.hazelcast.spi.merge.SplitBrainMergeTypes.CardinalityEstimatorMergeTypes;
 import com.hazelcast.spi.partition.IPartitionService;
 import com.hazelcast.spi.partition.MigrationEndpoint;
 import com.hazelcast.util.ConstructorFunction;
+import com.hazelcast.util.ContextMutexFactory;
 
-import java.util.HashMap;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Properties;
@@ -37,12 +46,22 @@ import java.util.concurrent.ConcurrentMap;
 
 import static com.hazelcast.partition.strategy.StringPartitioningStrategy.getPartitionKey;
 import static com.hazelcast.util.ConcurrencyUtil.getOrPutIfAbsent;
+import static com.hazelcast.util.ConcurrencyUtil.getOrPutSynchronized;
+import static com.hazelcast.util.MapUtil.createHashMap;
 import static com.hazelcast.util.Preconditions.checkNotNull;
 
 public class CardinalityEstimatorService
-        implements ManagedService, RemoteService, MigrationAwareService {
+        implements ManagedService, RemoteService, MigrationAwareService, QuorumAwareService, SplitBrainHandlerService {
 
     public static final String SERVICE_NAME = "hz:impl:cardinalityEstimatorService";
+
+    /**
+     * Speculative factor to be used when initialising collections
+     * of an approximate final size.
+     */
+    private static final double SIZING_FUDGE_FACTOR = 1.3;
+
+    private static final Object NULL_OBJECT = new Object();
 
     private NodeEngine nodeEngine;
     private final ConcurrentMap<String, CardinalityEstimatorContainer> containers =
@@ -50,10 +69,22 @@ public class CardinalityEstimatorService
     private final ConstructorFunction<String, CardinalityEstimatorContainer> cardinalityEstimatorContainerConstructorFunction =
             new ConstructorFunction<String, CardinalityEstimatorContainer>() {
                 @Override
-                public CardinalityEstimatorContainer createNew(String arg) {
-                    return new CardinalityEstimatorContainer();
+                public CardinalityEstimatorContainer createNew(String name) {
+                    CardinalityEstimatorConfig config = nodeEngine.getConfig().findCardinalityEstimatorConfig(name);
+                    return new CardinalityEstimatorContainer(config.getBackupCount(), config.getAsyncBackupCount());
                 }
             };
+
+    private final ConcurrentMap<String, Object> quorumConfigCache = new ConcurrentHashMap<String, Object>();
+    private final ContextMutexFactory quorumConfigCacheMutexFactory = new ContextMutexFactory();
+    private final ConstructorFunction<String, Object> quorumConfigConstructor = new ConstructorFunction<String, Object>() {
+        @Override
+        public Object createNew(String name) {
+            CardinalityEstimatorConfig config = nodeEngine.getConfig().findCardinalityEstimatorConfig(name);
+            String quorumName = config.getQuorumName();
+            return quorumName == null ? NULL_OBJECT : quorumName;
+        }
+    };
 
     public void addCardinalityEstimator(String name, CardinalityEstimatorContainer container) {
         checkNotNull(name, "Name can't be null");
@@ -89,6 +120,7 @@ public class CardinalityEstimatorService
     @Override
     public void destroyDistributedObject(String objectName) {
         containers.remove(objectName);
+        quorumConfigCache.remove(objectName);
     }
 
     @Override
@@ -97,15 +129,15 @@ public class CardinalityEstimatorService
 
     @Override
     public Operation prepareReplicationOperation(PartitionReplicationEvent event) {
-        if (event.getReplicaIndex() > 1) {
-            return null;
-        }
-
-        Map<String, CardinalityEstimatorContainer> data = new HashMap<String, CardinalityEstimatorContainer>();
+        final IPartitionService partitionService = nodeEngine.getPartitionService();
+        final int roughSize = (int) ((containers.size() * SIZING_FUDGE_FACTOR) / partitionService.getPartitionCount());
+        Map<String, CardinalityEstimatorContainer> data = createHashMap(roughSize);
         int partitionId = event.getPartitionId();
         for (Map.Entry<String, CardinalityEstimatorContainer> containerEntry : containers.entrySet()) {
             String name = containerEntry.getKey();
-            if (partitionId == getPartitionId(name)) {
+            CardinalityEstimatorContainer container = containerEntry.getValue();
+
+            if (partitionId == getPartitionId(name) && event.getReplicaIndex() <= container.getTotalBackupCount()) {
                 data.put(name, containerEntry.getValue());
             }
         }
@@ -116,28 +148,24 @@ public class CardinalityEstimatorService
     @Override
     public void commitMigration(PartitionMigrationEvent event) {
         if (event.getMigrationEndpoint() == MigrationEndpoint.SOURCE) {
-            int thresholdReplicaIndex = event.getNewReplicaIndex();
-            if (thresholdReplicaIndex == -1 || thresholdReplicaIndex > 1) {
-                clearPartitionReplica(event.getPartitionId());
-            }
+            clearPartitionReplica(event.getPartitionId(), event.getNewReplicaIndex());
         }
     }
 
     @Override
     public void rollbackMigration(PartitionMigrationEvent event) {
         if (event.getMigrationEndpoint() == MigrationEndpoint.DESTINATION) {
-            int thresholdReplicaIndex = event.getCurrentReplicaIndex();
-            if (thresholdReplicaIndex == -1 || thresholdReplicaIndex > 1) {
-                clearPartitionReplica(event.getPartitionId());
-            }
+            clearPartitionReplica(event.getPartitionId(), event.getCurrentReplicaIndex());
         }
     }
 
-    private void clearPartitionReplica(int partitionId) {
-        final Iterator<String> iterator = containers.keySet().iterator();
+    private void clearPartitionReplica(int partitionId, int durabilityThreshold) {
+        final Iterator<Map.Entry<String, CardinalityEstimatorContainer>> iterator = containers.entrySet().iterator();
         while (iterator.hasNext()) {
-            String name = iterator.next();
-            if (getPartitionId(name) == partitionId) {
+            Map.Entry<String, CardinalityEstimatorContainer> entry = iterator.next();
+
+            if (getPartitionId(entry.getKey()) == partitionId
+                    && (durabilityThreshold == -1 || durabilityThreshold > entry.getValue().getTotalBackupCount())) {
                 iterator.remove();
             }
         }
@@ -147,5 +175,51 @@ public class CardinalityEstimatorService
         IPartitionService partitionService = nodeEngine.getPartitionService();
         String partitionKey = getPartitionKey(name);
         return partitionService.getPartitionId(partitionKey);
+    }
+
+    @Override
+    public String getQuorumName(String name) {
+        Object quorumName = getOrPutSynchronized(quorumConfigCache, name, quorumConfigCacheMutexFactory, quorumConfigConstructor);
+        return quorumName == NULL_OBJECT ? null : (String) quorumName;
+    }
+
+    @Override
+    public Runnable prepareMergeRunnable() {
+        CardinalityEstimatorContainerCollector collector = new CardinalityEstimatorContainerCollector(nodeEngine, containers);
+        collector.run();
+        return new Merger(collector);
+    }
+
+    private class Merger
+            extends AbstractContainerMerger<CardinalityEstimatorContainer, HyperLogLog, CardinalityEstimatorMergeTypes> {
+
+        Merger(CardinalityEstimatorContainerCollector collector) {
+            super(collector, nodeEngine);
+        }
+
+        @Override
+        protected String getLabel() {
+            return "cardinality estimator";
+        }
+
+        @Override
+        public void runInternal() {
+            CardinalityEstimatorContainerCollector collector = (CardinalityEstimatorContainerCollector) this.collector;
+            Map<Integer, Collection<CardinalityEstimatorContainer>> containerMap = collector.getCollectedContainers();
+            for (Map.Entry<Integer, Collection<CardinalityEstimatorContainer>> entry : containerMap.entrySet()) {
+                // TODO: batching support (tkountis)
+                int partitionId = entry.getKey();
+                Collection<CardinalityEstimatorContainer> containerList = entry.getValue();
+
+                for (CardinalityEstimatorContainer container : containerList) {
+                    String containerName = collector.getContainerName(container);
+                    SplitBrainMergePolicy<HyperLogLog, CardinalityEstimatorMergeTypes> mergePolicy
+                            = getMergePolicy(collector.getMergePolicyConfig(container));
+
+                    MergeOperation operation = new MergeOperation(containerName, mergePolicy, container.hll);
+                    invoke(SERVICE_NAME, operation, partitionId);
+                }
+            }
+        }
     }
 }

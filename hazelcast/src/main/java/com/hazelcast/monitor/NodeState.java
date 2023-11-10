@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,9 +18,12 @@ package com.hazelcast.monitor;
 
 import com.hazelcast.cluster.ClusterState;
 import com.hazelcast.internal.management.JsonSerializable;
-import com.hazelcast.version.ClusterVersion;
 import com.hazelcast.version.MemberVersion;
+import com.hazelcast.version.Version;
 
+/**
+ * Local node statistics to be used by {@link MemberState} implementations.
+ */
 public interface NodeState extends JsonSerializable {
 
     /**
@@ -36,7 +39,7 @@ public interface NodeState extends JsonSerializable {
     /**
      * @return the current version of the Cluster
      */
-    ClusterVersion getClusterVersion();
+    Version getClusterVersion();
 
     /**
      * @return the codebase version of the Node

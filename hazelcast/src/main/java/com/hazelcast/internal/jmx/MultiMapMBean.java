@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,9 +31,10 @@ public class MultiMapMBean extends HazelcastMBean<MultiMap> {
 
     protected MultiMapMBean(final MultiMap managedObject, ManagementService service) {
         super(managedObject, service);
-        objectName = service.createObjectName("MultiMap", managedObject.getName());
+        this.objectName = service.createObjectName("MultiMap", managedObject.getName());
         StatsSupplier<LocalMultiMapStats> localMultiMapStatsSupplier = new LocalMultiMapStatsSupplier(managedObject);
-        localMultiMapStatsDelegate = new LocalStatsDelegate<LocalMultiMapStats>(localMultiMapStatsSupplier, updateIntervalSec);
+        this.localMultiMapStatsDelegate
+                = new LocalStatsDelegate<LocalMultiMapStats>(localMultiMapStatsSupplier, updateIntervalSec);
     }
 
     @ManagedAnnotation("localOwnedEntryCount")
@@ -187,5 +188,11 @@ public class MultiMapMBean extends HazelcastMBean<MultiMap> {
     @ManagedAnnotation("size")
     public int getSize() {
         return managedObject.size();
+    }
+
+    @ManagedAnnotation("config")
+    @ManagedDescription("MultiMapConfig")
+    public String getConfig() {
+        return service.instance.getConfig().findMultiMapConfig(managedObject.getName()).toString();
     }
 }

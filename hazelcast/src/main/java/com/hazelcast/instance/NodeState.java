@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,8 +39,8 @@ public enum NodeState {
 
     /**
      * Initial state of the Node. An {@code ACTIVE} node is allowed to execute/process
-     * all kinds of operations. A node is in {@code ACTIVE} state while cluster state is
-     * {@link ClusterState#ACTIVE} or {@link ClusterState#FROZEN}.
+     * all kinds of operations. A node is in {@code ACTIVE} state while cluster state is one of
+     * {@link ClusterState#ACTIVE}, {@link ClusterState#NO_MIGRATION} or {@link ClusterState#FROZEN}.
      */
     ACTIVE,
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,18 @@
 
 package com.hazelcast.config;
 
+import com.hazelcast.internal.util.RuntimeAvailableProcessors;
 import com.hazelcast.mapreduce.TopologyChangedStrategy;
 
 /**
  * Contains the configuration for an {@link com.hazelcast.mapreduce.JobTracker}.
  */
-public class JobTrackerConfig {
+public class JobTrackerConfig implements NamedConfig {
 
     /**
      * Default size of thread.
      */
-    public static final int DEFAULT_MAX_THREAD_SIZE = Runtime.getRuntime().availableProcessors();
+    public static final int DEFAULT_MAX_THREAD_SIZE = RuntimeAvailableProcessors.get();
     /**
      * Default value of retry counter.
      */
@@ -73,8 +74,8 @@ public class JobTrackerConfig {
     /**
      * Sets the name of this {@link com.hazelcast.mapreduce.JobTracker}.
      *
-     * @param name the name of the {@link com.hazelcast.mapreduce.JobTracker}.
-     * @return The current job tracker config instance.
+     * @param name the name of the {@link com.hazelcast.mapreduce.JobTracker}
+     * @return the current job tracker config instance
      */
     public JobTrackerConfig setName(String name) {
         this.name = name;
@@ -84,7 +85,7 @@ public class JobTrackerConfig {
     /**
      * Gets the name of this {@link com.hazelcast.mapreduce.JobTracker}.
      *
-     * @return the name of the {@link com.hazelcast.mapreduce.JobTracker}.
+     * @return the name of the {@link com.hazelcast.mapreduce.JobTracker}
      */
     public String getName() {
         return name;
@@ -93,7 +94,7 @@ public class JobTrackerConfig {
     /**
      * Gets the maximum thread pool size of this {@link com.hazelcast.mapreduce.JobTracker}.
      *
-     * @return the maximum thread pool size of the {@link com.hazelcast.mapreduce.JobTracker}.
+     * @return the maximum thread pool size of the {@link com.hazelcast.mapreduce.JobTracker}
      */
     public int getMaxThreadSize() {
         return maxThreadSize;
@@ -102,7 +103,7 @@ public class JobTrackerConfig {
     /**
      * Sets the maximum thread pool size of this {@link com.hazelcast.mapreduce.JobTracker}.
      *
-     * @param maxThreadSize the maximum thread pool size of the {@link com.hazelcast.mapreduce.JobTracker}.
+     * @param maxThreadSize the maximum thread pool size of the {@link com.hazelcast.mapreduce.JobTracker}
      */
     public void setMaxThreadSize(int maxThreadSize) {
         this.maxThreadSize = maxThreadSize;
@@ -134,7 +135,7 @@ public class JobTrackerConfig {
      * heap memory before being sent to reducers. To prevent this, you might want to use a combiner
      * to pre-reduce values on mapping nodes.
      *
-     * @return The number of emitted values before a chunk is sent to the reducers.
+     * @return the number of emitted values before a chunk is sent to the reducers
      */
     public int getChunkSize() {
         return chunkSize;
@@ -150,12 +151,18 @@ public class JobTrackerConfig {
      * heap memory before being sent to reducers. To prevent this, you might want to use a combiner
      * to pre-reduce values on mapping nodes.
      *
-     * @param chunkSize The number of emitted values before a chunk is sent to the reducers.
+     * @param chunkSize the number of emitted values before a chunk is sent to the reducers
      */
     public void setChunkSize(int chunkSize) {
         this.chunkSize = chunkSize;
     }
 
+    /**
+     * Gets immutable version of this configuration.
+     *
+     * @return immutable version of this configuration
+     * @deprecated this method will be removed in 4.0; it is meant for internal usage only
+     */
     public JobTrackerConfig getAsReadOnly() {
         return new JobTrackerConfigReadOnly(this);
     }
@@ -164,7 +171,7 @@ public class JobTrackerConfig {
      * Gets the maximum size of the queue; the maximum number of tasks that can wait to be processed. A
      * value of 0 means an unbounded queue.
      *
-     * @return The maximum size of the queue.
+     * @return the maximum size of the queue
      */
     public int getQueueSize() {
         return queueSize;
@@ -174,7 +181,7 @@ public class JobTrackerConfig {
      * Sets the maximum size of the queue; the maximum number of tasks that can wait to be processed. A
      * value of 0 means an unbounded queue.
      *
-     * @param queueSize The maximum size of the queue.
+     * @param queueSize the maximum size of the queue
      */
     public void setQueueSize(int queueSize) {
         this.queueSize = queueSize;
@@ -186,8 +193,8 @@ public class JobTrackerConfig {
      * users inside of UI systems, but this produces additional traffic. If statistics are not needed, you might
      * want to deactivate this.
      *
-     * @return True if statistics (for example, about processed entries) are transmitted to the job emitter,
-     * false otherwise.
+     * @return {@code true} if statistics (for example, about processed entries) are transmitted to the job emitter,
+     * {@code false} otherwise.
      */
     public boolean isCommunicateStats() {
         return communicateStats;
@@ -199,8 +206,8 @@ public class JobTrackerConfig {
      * users inside of UI systems, but this produces additional traffic. If statistics are not needed, you might
      * want to deactivate this.
      *
-     * @param communicateStats True if statistics (for example, about processed entries) are transmitted to the job emitter,
-     *                         false otherwise.
+     * @param communicateStats {@code true} if statistics (for example, about processed entries) are transmitted to the job
+     *                         emitter, {@code false} otherwise.
      */
     public void setCommunicateStats(boolean communicateStats) {
         this.communicateStats = communicateStats;

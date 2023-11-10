@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
 
 package com.hazelcast.client.impl.protocol.task.transaction;
 
-import com.hazelcast.client.ClientEndpoint;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.XATransactionClearRemoteCodec;
 import com.hazelcast.client.impl.protocol.task.AbstractCallableMessageTask;
@@ -56,7 +55,6 @@ public class XAClearRemoteTransactionMessageTask
     protected Object call() throws Exception {
         InternalOperationService operationService = nodeEngine.getOperationService();
         InternalPartitionService partitionService = nodeEngine.getPartitionService();
-        ClientEndpoint endpoint = getEndpoint();
 
         Data xidData = serializationService.toData(parameters.xid);
         Operation op = new ClearRemoteTransactionOperation(xidData);

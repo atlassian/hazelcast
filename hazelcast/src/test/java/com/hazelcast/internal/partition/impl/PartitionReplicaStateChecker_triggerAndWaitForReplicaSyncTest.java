@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,18 @@
 
 package com.hazelcast.internal.partition.impl;
 
+import com.hazelcast.cluster.ClusterState;
 import com.hazelcast.instance.Node;
 import com.hazelcast.internal.cluster.impl.ClusterServiceImpl;
 import com.hazelcast.internal.partition.InternalPartition;
+import com.hazelcast.internal.partition.PartitionReplica;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Address;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
-import org.apache.log4j.Level;
-import org.junit.After;
+import com.hazelcast.util.UuidUtil;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -65,11 +66,9 @@ public class PartitionReplicaStateChecker_triggerAndWaitForReplicaSyncTest exten
 
     @Before
     public void setUp() {
-        setLoggingLog4j();
-        setLogLevel(Level.TRACE);
-
         ILogger logger = getLogger(PartitionReplicaStateChecker_triggerAndWaitForReplicaSyncTest.class);
         ClusterServiceImpl clusterService = mock(ClusterServiceImpl.class);
+        when(clusterService.getClusterState()).thenReturn(ClusterState.ACTIVE);
 
         node = mock(Node.class);
         when(node.getLogger(any(Class.class))).thenReturn(logger);
@@ -93,11 +92,6 @@ public class PartitionReplicaStateChecker_triggerAndWaitForReplicaSyncTest exten
         replicaStateChecker = new PartitionReplicaStateChecker(node, partitionService);
     }
 
-    @After
-    public void tearDown() {
-        resetLogLevel();
-    }
-
     @Test
     public void whenCalledWithZeroTimeout_thenDoNothing() {
         assertFalse(replicaStateChecker.triggerAndWaitForReplicaSync(0, TimeUnit.MILLISECONDS));
@@ -108,7 +102,7 @@ public class PartitionReplicaStateChecker_triggerAndWaitForReplicaSyncTest exten
         configureNeedsReplicaStateCheckResponse();
 
         Address address = new Address("127.0.0.1", 5701);
-        InternalPartition partition = new DummyInternalPartition(new Address[]{address}, 1);
+        InternalPartition partition = new DummyInternalPartition(new PartitionReplica[]{new PartitionReplica(address, UuidUtil.newUnsecureUuidString())}, 1);
         partitions.add(partition);
 
         assertEquals(REPLICA_NOT_OWNED, replicaStateChecker.getPartitionServiceState());
@@ -119,7 +113,7 @@ public class PartitionReplicaStateChecker_triggerAndWaitForReplicaSyncTest exten
     public void whenHasMissingReplicaOwners_withoutAddress_thenWaitForMissingReplicaOwners() {
         configureNeedsReplicaStateCheckResponse();
 
-        InternalPartition partition = new DummyInternalPartition(new Address[0], 1);
+        InternalPartition partition = new DummyInternalPartition(new PartitionReplica[0], 1);
         partitions.add(partition);
 
         assertEquals(REPLICA_NOT_OWNED, replicaStateChecker.getPartitionServiceState());
@@ -137,17 +131,17 @@ public class PartitionReplicaStateChecker_triggerAndWaitForReplicaSyncTest exten
     @Test
     public void whenHasOngoingMigration_withMigrationOnMaster_thenWaitForOngoingMigrations() {
         when(node.getMasterAddress()).thenReturn(null);
-        when(node.joined()).thenReturn(true);
+        when(node.getClusterService().isJoined()).thenReturn(true);
 
         assertEquals(MIGRATION_ON_MASTER, replicaStateChecker.getPartitionServiceState());
         assertFalse(replicaStateChecker.triggerAndWaitForReplicaSync(10, TimeUnit.MILLISECONDS, 5));
     }
 
     @Test
-    public void whenCheckAndTriggerReplicaSync() throws Exception {
+    public void whenCheckAndTriggerReplicaSync() {
         configureNeedsReplicaStateCheckResponseOnEachSecondCall();
 
-        InternalPartition partition = new DummyInternalPartition(new Address[]{null}, 1);
+        InternalPartition partition = new DummyInternalPartition(new PartitionReplica[]{null}, 1);
         partitions.add(partition);
 
         assertEquals(REPLICA_NOT_SYNC, replicaStateChecker.getPartitionServiceState());
@@ -186,7 +180,7 @@ public class PartitionReplicaStateChecker_triggerAndWaitForReplicaSyncTest exten
         private boolean state = true;
 
         @Override
-        public Boolean answer(InvocationOnMock invocationOnMock) throws Throwable {
+        public Boolean answer(InvocationOnMock invocationOnMock) {
             state = !state;
             return state;
         }

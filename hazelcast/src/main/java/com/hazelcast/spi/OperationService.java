@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.hazelcast.spi;
 
+import com.hazelcast.core.ICompletableFuture;
 import com.hazelcast.nio.Address;
 
 import java.util.Collection;
@@ -25,9 +26,11 @@ import java.util.Map;
  * The OperationService is responsible for executing operations.
  * <p/>
  * A single operation can be executed locally using {@link #run(Operation)}
- * and {@link #execute(Operation)}. Or it can executed remotely using one of the send methods.
+ * and {@link #execute(Operation)}. Or it can executed remotely using one of
+ * the send methods.
  * <p/>
- * It also is possible to execute multiple operation on multiple partitions using one of the invoke methods.
+ * It also is possible to execute multiple operation on multiple partitions
+ * using one of the invoke methods.
  */
 public interface OperationService {
 
@@ -63,41 +66,87 @@ public interface OperationService {
     InvocationBuilder createInvocationBuilder(String serviceName, Operation op, Address target);
 
     /**
-     * Invokes a set of operation on each partition.
-     * <p/>
-     * This method blocks until the operation completes.
+     * Invokes a set of operations on each partition.
+     * <p>
+     * This method blocks until the operations complete.
+     * <p>
+     * If the operations have sync backups, this method will <b>not</b> wait for their completion.
+     * Instead, it will return once the operations are completed on primary replicas of the
+     * given {@code partitions}.
      *
      * @param serviceName      the name of the service.
      * @param operationFactory the factory responsible for creating operations
-     * @return a Map with partitionId as key and the outcome of the operation as value.
+     * @return a Map with partitionId as a key and the outcome of the operation
+     * as a value.
      * @throws Exception
      */
     Map<Integer, Object> invokeOnAllPartitions(String serviceName, OperationFactory operationFactory)
             throws Exception;
 
     /**
-     * Invokes an set of operation on selected set of partitions
-     * * <p/>
-     * This method blocks until all operations complete.
+     * Invokes a set of operations on selected set of all partitions in an async way.
+     * <p>
+     * If the operations have sync backups, the returned {@link ICompletableFuture} does <b>not</b>
+     * wait for their completion. Instead, the {@link ICompletableFuture} is completed once the
+     * operations are completed on primary replicas of the given {@code partitions}.
      *
      * @param serviceName      the name of the service
      * @param operationFactory the factory responsible for creating operations
-     * @param partitions       the partitions the operation should be executed on.
-     * @return a Map with partitionId as key and the outcome of the operation as value.
-     * @throws Exception
+     * @param <T>              type of result of operations returned by {@code operationFactory}
+     * @return a future returning a Map with partitionId as a key and the
+     * outcome of the operation as a value.
      */
-    Map<Integer, Object> invokeOnPartitions(String serviceName, OperationFactory operationFactory,
-                                            Collection<Integer> partitions) throws Exception;
+    <T> ICompletableFuture<Map<Integer, T>> invokeOnAllPartitionsAsync(String serviceName, OperationFactory operationFactory);
 
     /**
-     * Invokes an set of operation on selected set of partitions
-     * * <p/>
+     * Invokes a set of operations on selected set of partitions.
+     * <p>
      * This method blocks until all operations complete.
+     * <p>
+     * If the operations have sync backups, this method will <b>not</b> wait for their completion.
+     * Instead, it will return once the operations are completed on primary replicas of the given {@code partitions}.
      *
      * @param serviceName      the name of the service
      * @param operationFactory the factory responsible for creating operations
      * @param partitions       the partitions the operation should be executed on.
-     * @return a Map with partitionId as key and the outcome of the operation as value.
+     * @param <T>              type of result of operations returned by {@code operationFactory}
+     * @return a Map with partitionId as a key and the outcome of the operation as
+     * a value.
+     * @throws Exception if there was an exception while waiting for the results
+     *                   of the partition invocations
+     */
+    <T> Map<Integer, T> invokeOnPartitions(String serviceName, OperationFactory operationFactory,
+                                           Collection<Integer> partitions) throws Exception;
+
+    /**
+     * Invokes a set of operations on selected set of partitions in an async way.
+     * <p>
+     * If the operations have sync backups, the returned {@link ICompletableFuture} does <b>not</b>
+     * wait for their completion. Instead, the {@link ICompletableFuture} is completed once the
+     * operations are completed on primary replicas of the given {@code partitions}.
+     *
+     * @param serviceName      the name of the service
+     * @param operationFactory the factory responsible for creating operations
+     * @param partitions       the partitions the operation should be executed on.
+     * @param <T>              type of result of operations returned by {@code operationFactory}
+     * @return a future returning a Map with partitionId as a key and the
+     * outcome of the operation as a value.
+     */
+    <T> ICompletableFuture<Map<Integer, T>> invokeOnPartitionsAsync(
+            String serviceName, OperationFactory operationFactory, Collection<Integer> partitions);
+
+    /**
+     * Invokes a set of operations on selected set of partitions.
+     * <p>
+     * This method blocks until all operations complete.
+     * <p>
+     * If the operations have sync backups, this method will <b>not</b> wait for their completion.
+     * Instead, it will return once the operations are completed on primary replicas of the given {@code partitions}.
+     *
+     * @param serviceName      the name of the service
+     * @param operationFactory the factory responsible for creating operations
+     * @param partitions       the partitions the operation should be executed on.
+     * @return a Map with partitionId as a key and the outcome of the operation as a value.
      * @throws Exception
      */
     Map<Integer, Object> invokeOnPartitions(String serviceName, OperationFactory operationFactory,

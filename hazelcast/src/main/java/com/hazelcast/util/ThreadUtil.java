@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,10 @@
 
 package com.hazelcast.util;
 
+import static com.hazelcast.util.Preconditions.checkNotNull;
+
 /**
- * Utility class to manipulate and query thread id
+ * Utility class to manipulate and query thread ID.
  */
 public final class ThreadUtil {
 
@@ -27,9 +29,9 @@ public final class ThreadUtil {
     }
 
     /**
-     * Get the thread id
+     * Get the thread ID.
      *
-     * @return the thread id
+     * @return the thread ID
      */
     public static long getThreadId() {
         final Long threadId = THREAD_LOCAL.get();
@@ -40,18 +42,48 @@ public final class ThreadUtil {
     }
 
     /**
-     * Set the thread id
+     * Set the thread ID.
      *
-     * @param threadId thread id to set
+     * @param threadId thread ID to set
      */
     public static void setThreadId(long threadId) {
         THREAD_LOCAL.set(threadId);
     }
 
     /**
-     * Remove the thread id
+     * Remove the thread ID.
      */
     public static void removeThreadId() {
         THREAD_LOCAL.remove();
+    }
+
+
+    /**
+     * Creates the threadname with prefix and notation.
+     *
+     * @param hzName the name of the hazelcast instance
+     * @param name   the basic name of the thread
+     * @return the threadname .
+     * @throws java.lang.NullPointerException if name is null.
+     */
+    public static String createThreadName(String hzName, String name) {
+        checkNotNull(name, "name can't be null");
+        return "hz." + hzName + "." + name;
+    }
+
+    /**
+     * Creates the threadpool name with prefix and notation.
+     *
+     * @param hzName   the name of the hazelcast instance
+     * @param poolName the name of the pool.
+     * @return the threadpool name.
+     * @throws java.lang.NullPointerException if poolname is null.
+     */
+    public static String createThreadPoolName(String hzName, String poolName) {
+        return createThreadName(hzName, poolName) + ".thread-";
+    }
+
+    public static void assertRunningOnPartitionThread() {
+        assert Thread.currentThread().getName().contains("partition-operation");
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,10 @@
 
 package com.hazelcast.client.impl.protocol.task.queue;
 
-import com.hazelcast.client.ClientEndpoint;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.QueueAddListenerCodec;
 import com.hazelcast.client.impl.protocol.task.AbstractCallableMessageTask;
+import com.hazelcast.client.impl.protocol.task.ListenerMessageTask;
 import com.hazelcast.collection.impl.common.DataAwareItemEvent;
 import com.hazelcast.collection.impl.queue.QueueService;
 import com.hazelcast.core.ItemEvent;
@@ -33,11 +33,11 @@ import com.hazelcast.security.permission.QueuePermission;
 import java.security.Permission;
 
 /**
- * Client Protocol Task for handling messages with type id:
+ * Client Protocol Task for handling messages with type ID:
  * {@link com.hazelcast.client.impl.protocol.codec.QueueMessageType#QUEUE_ADDLISTENER}
  */
 public class QueueAddListenerMessageTask
-        extends AbstractCallableMessageTask<QueueAddListenerCodec.RequestParameters> {
+        extends AbstractCallableMessageTask<QueueAddListenerCodec.RequestParameters> implements ListenerMessageTask {
 
     public QueueAddListenerMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
@@ -45,7 +45,6 @@ public class QueueAddListenerMessageTask
 
     @Override
     protected Object call() {
-        final ClientEndpoint endpoint = getEndpoint();
         final QueueService service = getService(QueueService.SERVICE_NAME);
         final Data partitionKey = serializationService.toData(parameters.name);
         ItemListener listener = new ItemListener() {

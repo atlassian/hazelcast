@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,9 +37,11 @@ import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -76,6 +78,47 @@ public class QueueStoreTest extends HazelcastTestSupport {
 
         IQueue<Object> queue = instance.getQueue("testQueueStore");
         assertEquals("Queue Size should be equal to max size", maxSize, queue.size());
+    }
+
+    @Test
+    public void testQueueStoreDrainTo() {
+        int maxSize = 10000;
+        TestQueueStore queueStore = new TestQueueStore(0, 0, 0, 0, 2 * maxSize, 0);
+        Config config = getConfigForDrainToTest(maxSize, 1, queueStore);
+
+        HazelcastInstance instance = createHazelcastInstance(config);
+        // initialize queue store with 2 * maxSize
+        for (int i = 0; i < maxSize * 2; i++) {
+            queueStore.store.put((long) i, i);
+        }
+
+        IQueue<Object> queue = instance.getQueue("testQueueStore");
+        List<Object> items = new ArrayList<Object>();
+        int count = queue.drainTo(items);
+        assertEquals(2 * maxSize, count);
+        assertOpenEventually(queueStore.latchLoad);
+    }
+
+    @Test
+    public void testQueueStoreDrainTo_whenBulkLoadEnabled() {
+        int maxSize = 10000;
+        int queueStoreSize = 2 * maxSize;
+        int bulkLoadSize = 10;
+        TestQueueStore queueStore = new TestQueueStore(0, 0, 0,
+                0, 0, queueStoreSize / bulkLoadSize);
+        Config config = getConfigForDrainToTest(maxSize, bulkLoadSize, queueStore);
+
+        HazelcastInstance instance = createHazelcastInstance(config);
+        // setup queue store with 2 * maxSize
+        for (int i = 0; i < queueStoreSize; i++) {
+            queueStore.store.put((long) i, i);
+        }
+
+        IQueue<Object> queue = instance.getQueue("testQueueStore");
+        List<Object> items = new ArrayList<Object>();
+        int count = queue.drainTo(items);
+        assertEquals(queueStoreSize, count);
+        assertOpenEventually(queueStore.latchLoadAll);
     }
 
     @Test
@@ -235,8 +278,8 @@ public class QueueStoreTest extends HazelcastTestSupport {
         TestQueueStore testQueueStore = (TestQueueStore) queueStore;
         int size = testQueueStore.store.size();
 
-        assertEquals("Expected not queue store operation" +
-                " since we disabled it in QueueStoreConfig but found initialized ", 0, size);
+        assertEquals("Expected not queue store operation since we disabled it in QueueStoreConfig, but found initialized ",
+                0, size);
     }
 
     @Test
@@ -272,8 +315,24 @@ public class QueueStoreTest extends HazelcastTestSupport {
         return queueStoreConfig;
     }
 
+
+    private Config getConfigForDrainToTest(int maxSize, int bulkLoadSize, QueueStore queueStore) {
+        Config config = new Config();
+        QueueConfig queueConfig = config.getQueueConfig("testQueueStore");
+        queueConfig.setMaxSize(maxSize);
+
+        QueueStoreConfig queueStoreConfig = new QueueStoreConfig();
+        queueStoreConfig.setStoreImplementation(queueStore);
+        queueConfig.setQueueStoreConfig(queueStoreConfig);
+        if (bulkLoadSize > 0) {
+            queueConfig.getQueueStoreConfig().setProperty("bulk-load", Integer.toString(bulkLoadSize));
+        }
+        return config;
+    }
+
     private static class MyQueueStore implements QueueStore<Object>, Serializable {
         static final Map<Long, Object> map = new HashMap<Long, Object>();
+
         static {
             map.put(1L, "hola");
             map.put(3L, "dias");
@@ -453,7 +512,9 @@ public class QueueStoreTest extends HazelcastTestSupport {
         public Set<Long> loadAllKeys() {
             callCount.incrementAndGet();
             latchLoadAllKeys.countDown();
-            if (!loadAllKeys) return null;
+            if (!loadAllKeys) {
+                return null;
+            }
             return store.keySet();
         }
 

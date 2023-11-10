@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,23 +22,23 @@ import com.hazelcast.multimap.impl.MultiMapDataSerializerHook;
 import com.hazelcast.multimap.impl.MultiMapRecord;
 import com.hazelcast.multimap.impl.MultiMapService;
 import com.hazelcast.multimap.impl.MultiMapValue;
-import com.hazelcast.multimap.impl.operations.MultiMapKeyBasedOperation;
+import com.hazelcast.multimap.impl.operations.AbstractKeyBasedMultiMapOperation;
 import com.hazelcast.multimap.impl.operations.MultiMapResponse;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.BlockingOperation;
-import com.hazelcast.spi.DefaultObjectNamespace;
+import com.hazelcast.spi.DistributedObjectNamespace;
 import com.hazelcast.spi.WaitNotifyKey;
+import com.hazelcast.spi.impl.MutatingOperation;
 import com.hazelcast.transaction.TransactionException;
 
 import java.io.IOException;
 import java.util.Collection;
 
-public class TxnLockAndGetOperation extends MultiMapKeyBasedOperation implements BlockingOperation {
+public class TxnLockAndGetOperation extends AbstractKeyBasedMultiMapOperation implements BlockingOperation, MutatingOperation {
 
     private long ttl;
-
     private boolean blockReads;
 
     public TxnLockAndGetOperation() {
@@ -58,7 +58,7 @@ public class TxnLockAndGetOperation extends MultiMapKeyBasedOperation implements
         if (!container.txnLock(dataKey, getCallerUuid(), threadId, getCallId(), ttl, blockReads)) {
             throw new TransactionException("Transaction couldn't obtain lock!");
         }
-        MultiMapValue multiMapValue = getMultiMapValueOrNull();
+        MultiMapValue multiMapValue = container.getMultiMapValueOrNull(dataKey);
         boolean isLocal = executedLocally();
         Collection<MultiMapRecord> collection = multiMapValue == null ? null : multiMapValue.getCollection(isLocal);
         MultiMapResponse multiMapResponse = new MultiMapResponse(collection, getValueCollectionType(container));
@@ -68,7 +68,7 @@ public class TxnLockAndGetOperation extends MultiMapKeyBasedOperation implements
 
     @Override
     public WaitNotifyKey getWaitKey() {
-        return new LockWaitNotifyKey(new DefaultObjectNamespace(MultiMapService.SERVICE_NAME, name), dataKey);
+        return new LockWaitNotifyKey(new DistributedObjectNamespace(MultiMapService.SERVICE_NAME, name), dataKey);
     }
 
     @Override

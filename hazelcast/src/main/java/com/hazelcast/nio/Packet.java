@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,56 +16,97 @@
 
 package com.hazelcast.nio;
 
+import com.hazelcast.internal.networking.OutboundFrame;
 import com.hazelcast.internal.serialization.impl.HeapData;
 import com.hazelcast.spi.annotation.PrivateApi;
 
-import java.nio.ByteBuffer;
-
-import static com.hazelcast.nio.Bits.BYTE_SIZE_IN_BYTES;
-import static com.hazelcast.nio.Bits.INT_SIZE_IN_BYTES;
-import static com.hazelcast.nio.Bits.SHORT_SIZE_IN_BYTES;
+import static com.hazelcast.nio.PacketIOHelper.HEADER_SIZE;
 
 /**
- * A Packet is a piece of data send over the line. The Packet is used for member to member communication.
+ * A Packet is a piece of data sent over the wire. The Packet is used for member to member communication.
  *
- * The Packet extends HeapData instead of wrapping it. From a design point of view this is often not the preferred solution (
- * prefer composition over inheritance), but in this case that would mean more object litter.
+ * The Packet extends HeapData instead of wrapping it. From a design point of view this is often
+ * not the preferred solution (prefer composition over inheritance), but in this case that
+ * would mean more object litter.
  *
  * Since the Packet isn't used throughout the system, this design choice is visible locally.
  */
 @PrivateApi
+// Declaration order suppressed due to private static int FLAG_TYPEx declarations
+@SuppressWarnings("checkstyle:declarationorder")
 public final class Packet extends HeapData implements OutboundFrame {
 
     public static final byte VERSION = 4;
 
-    public static final int FLAG_OP = 1 << 0;
-    public static final int FLAG_RESPONSE = 1 << 1;
-    public static final int FLAG_EVENT = 1 << 2;
-    public static final int FLAG_URGENT = 1 << 4;
-    public static final int FLAG_BIND = 1 << 5;
+
+    //             PACKET HEADER FLAGS
+    //
+    // Flags are dispatched against in a cascade:
+    // 1. URGENT (bit 4)
+    // 2. Packet type (bits 0, 2, 5)
+    // 3. Flags specific to a given packet type (bits 1, 6)
+
+
+    // 1. URGENT flag
 
     /**
-     * A flag to indicate this is a special control packet for the operation system like invocation-heartbeats.
+     * Marks the packet as Urgent
+     */
+    public static final int FLAG_URGENT = 1 << 4;
+
+
+    // 2. Packet type flags, encode up to 7 packet types.
+    //
+    // When adding a new packet type, DO NOT ADD MORE TYPE FLAGS. Instead rename one of the
+    // Packet.Type.UNDEFINEDx members to represent the new type.
+    //
+    // Historically the first three packet types were encoded as separate, mutually exclusive flags.
+    // These are given below. The enum Packet.Type should be used to encode/decode the type from the
+    // header flags bitfield.
+
+    /**
+     * Packet type bit 0. Historically the OPERATION type flag.
+     */
+    private static final int FLAG_TYPE0 = 1 << 0;
+    /**
+     * Packet type bit 1. Historically the EVENT type flag.
+     */
+    private static final int FLAG_TYPE1 = 1 << 2;
+    /**
+     * Packet type bit 2. Historically the BIND type flag.
+     */
+    private static final int FLAG_TYPE2 = 1 << 5;
+
+    // 3. Type-specific flags. Same bits can be reused within each type
+
+    // 3.a Operation packet flags
+
+    /**
+     * Marks an Operation packet as Response
+     */
+    public static final int FLAG_OP_RESPONSE = 1 << 1;
+    /**
+     * Marks an Operation packet as Operation control (like invocation-heartbeats)
      */
     public static final int FLAG_OP_CONTROL = 1 << 6;
 
+
+    // 3.b Jet packet flags
+
     /**
-     * Flag to indicate this will be a Jet packet
+     * Marks a Jet packet as Flow control
      */
-    public static final int FLAG_JET = 1 << 7;
+    public static final int FLAG_JET_FLOW_CONTROL = 1 << 1;
 
 
-    private static final int HEADER_SIZE = BYTE_SIZE_IN_BYTES + SHORT_SIZE_IN_BYTES + INT_SIZE_IN_BYTES + INT_SIZE_IN_BYTES;
+    //            END OF HEADER FLAG SECTION
 
-    private short flags;
+
+    // char is a 16-bit unsigned integer. Here we use it as a bitfield.
+    private char flags;
+
     private int partitionId;
     private transient Connection conn;
-
-    // These 2 fields are only used during read/write. Otherwise they have no meaning.
-    private int valueOffset;
-    private int size;
-    // Stores the current 'phase' of read/write. This is needed so that repeated calls can be made to read/write.
-    private boolean headerComplete;
 
     public Packet() {
     }
@@ -95,183 +136,89 @@ public final class Packet extends HeapData implements OutboundFrame {
      * the sender of the Packet.
      *
      * @param conn the connection.
+     * @return {@code this} (for fluent interface)
      */
-    public void setConn(Connection conn) {
+    public Packet setConn(Connection conn) {
         this.conn = conn;
+        return this;
+    }
+
+    public Type getPacketType() {
+        return Type.fromFlags(flags);
     }
 
     /**
-     * Sets a particular flag. The other flags will not be touched.
+     * Sets the packet type by updating the packet type bits in the {@code flags} bitfield. Other bits
+     * are unaffected.
      *
-     * @param flag the flag to set
-     * @return this (for fluent interface)
+     * @param type the type to set
+     * @return {@code this} (for fluent interface)
      */
-    public Packet setFlag(int flag) {
-        flags = (short) (flags | flag);
+    public Packet setPacketType(Packet.Type type) {
+        int nonTypeFlags = flags & (~FLAG_TYPE0 & ~FLAG_TYPE1 & ~FLAG_TYPE2);
+        resetFlagsTo(type.headerEncoding | nonTypeFlags);
         return this;
     }
 
     /**
-     * Sets all flags at once. The old flags will be completely overwritten by the new flags.
+     * Raises all the flags raised in the argument. Does not lower any flags.
      *
-     * The reason this method accepts an int instead of a short is that Java immediately converts to ints,
-     * so you would have to do bit shifting logic to down cast to a short all the time.*
-     *
-     * @param flags the flags.
-     * @return this (for fluent interface)
+     * @param flagsToRaise the flags to raise
+     * @return {@code this} (for fluent interface)
      */
-    public Packet setAllFlags(int flags) {
-        this.flags = (short) flags;
+    public Packet raiseFlags(int flagsToRaise) {
+        flags |= flagsToRaise;
         return this;
     }
 
     /**
-     * Checks if a flag is set.
+     * Resets the entire {@code flags} bitfield to the supplied value. This also affects the packet type bits.
      *
-     * @param flag the flag to check
-     * @return true if the flag is set, false otherwise.
+     * @param flagsToSet the flags. Only the least significant two bytes of the argument are used.
+     * @return {@code this} (for fluent interface)
      */
-    public boolean isFlagSet(int flag) {
-        return (flags & flag) != 0;
+    public Packet resetFlagsTo(int flagsToSet) {
+        flags = (char) flagsToSet;
+        return this;
     }
 
     /**
-     * Returns the flags of the Packet. The flags is used to figure out what the content is of this Packet before
-     * the actual payload needs to be processed.
+     * Returns {@code true} if any of the flags supplied in the argument are set.
      *
-     * @return the flags.
+     * @param flagsToCheck the flags to check
+     * @return {@code true} if any of the flags is set, {@code false} otherwise.
      */
-    public short getFlags() {
+    public boolean isFlagRaised(int flagsToCheck) {
+        return isFlagRaised(flags, flagsToCheck);
+    }
+
+    private static boolean isFlagRaised(char flags, int flagsToCheck) {
+        return (flags & flagsToCheck) != 0;
+    }
+
+    /**
+     * @return the complete flags bitfield as a {@code char}.
+     */
+    public char getFlags() {
         return flags;
     }
 
     /**
-     * Returns the partition id of this packet. If this packet is not for a particular partition, -1 is returned.
+     * Returns the partition ID of this packet. If this packet is not for a particular partition, -1 is returned.
      *
-     * @return the partition id.
+     * @return the partition ID.
      */
     public int getPartitionId() {
         return partitionId;
     }
 
-    public void reset() {
-        headerComplete = false;
+    @Override
+    public boolean isUrgent() {
+        return isFlagRaised(FLAG_URGENT);
     }
 
     @Override
-    public boolean isUrgent() {
-        return isFlagSet(FLAG_URGENT);
-    }
-
-    public boolean writeTo(ByteBuffer dst) {
-        if (!headerComplete) {
-            if (dst.remaining() < HEADER_SIZE) {
-                return false;
-            }
-
-            dst.put(VERSION);
-            dst.putShort(flags);
-            dst.putInt(partitionId);
-            size = totalSize();
-            dst.putInt(size);
-            headerComplete = true;
-        }
-
-        return writeValue(dst);
-    }
-
-    public boolean readFrom(ByteBuffer src) {
-        if (!headerComplete) {
-            if (src.remaining() < HEADER_SIZE) {
-                return false;
-            }
-
-            byte version = src.get();
-            if (VERSION != version) {
-                throw new IllegalArgumentException("Packet versions are not matching! Expected -> "
-                        + VERSION + ", Incoming -> " + version);
-            }
-
-            flags = src.getShort();
-            partitionId = src.getInt();
-            size = src.getInt();
-            headerComplete = true;
-        }
-
-        return readValue(src);
-    }
-
-    // ========================= value =================================================
-
-    private boolean readValue(ByteBuffer src) {
-        if (payload == null) {
-            payload = new byte[size];
-        }
-
-        if (size > 0) {
-            int bytesReadable = src.remaining();
-
-            int bytesNeeded = size - valueOffset;
-
-            boolean done;
-            int bytesRead;
-            if (bytesReadable >= bytesNeeded) {
-                bytesRead = bytesNeeded;
-                done = true;
-            } else {
-                bytesRead = bytesReadable;
-                done = false;
-            }
-
-            // read the data from the byte-buffer into the bytes-array.
-            src.get(payload, valueOffset, bytesRead);
-            valueOffset += bytesRead;
-
-            if (!done) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private boolean writeValue(ByteBuffer dst) {
-        if (size > 0) {
-            // the number of bytes that can be written to the bb.
-            int bytesWritable = dst.remaining();
-
-            // the number of bytes that need to be written.
-            int bytesNeeded = size - valueOffset;
-
-            int bytesWrite;
-            boolean done;
-            if (bytesWritable >= bytesNeeded) {
-                // All bytes for the value are available.
-                bytesWrite = bytesNeeded;
-                done = true;
-            } else {
-                // Not all bytes for the value are available. So lets write as much as is available.
-                bytesWrite = bytesWritable;
-                done = false;
-            }
-
-            byte[] byteArray = toByteArray();
-            dst.put(byteArray, valueOffset, bytesWrite);
-            valueOffset += bytesWrite;
-
-            if (!done) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    /**
-     * Returns an estimation of the packet, including its payload, in bytes.
-     *
-     * @return the size of the packet.
-     */
-    public int packetSize() {
+    public int getFrameLength() {
         return (payload != null ? totalSize() : 0) + HEADER_SIZE;
     }
 
@@ -306,13 +253,111 @@ public final class Packet extends HeapData implements OutboundFrame {
 
     @Override
     public String toString() {
+        Type type = getPacketType();
         return "Packet{"
-                + "flags=" + flags
-                + ", isResponse=" + isFlagSet(Packet.FLAG_RESPONSE)
-                + ", isOperation=" + isFlagSet(Packet.FLAG_OP)
-                + ", isEvent=" + isFlagSet(Packet.FLAG_EVENT)
-                + ", partitionId=" + partitionId
+                + "partitionId=" + partitionId
+                + ", frameLength=" + getFrameLength()
                 + ", conn=" + conn
+                + ", rawFlags=" + Integer.toBinaryString(flags)
+                + ", isUrgent=" + isUrgent()
+                + ", packetType=" + type.name()
+                + ", typeSpecificFlags=" + type.describeFlags(flags)
                 + '}';
+    }
+
+
+    public enum Type {
+        /**
+         * Represents "missing packet type", consists of all zeros. A zeroed-out packet header would
+         * resolve to this type.
+         * <p>
+         * {@code ordinal = 0}
+         */
+        NULL,
+        /**
+         * The type of an Operation packet.
+         * <p>
+         * {@code ordinal = 1}
+         */
+        OPERATION {
+            @Override
+            public String describeFlags(char flags) {
+                return "[isResponse=" + isFlagRaised(flags, FLAG_OP_RESPONSE)
+                        + ", isOpControl=" + isFlagRaised(flags, FLAG_OP_CONTROL) + ']';
+            }
+        },
+        /**
+         * The type of an Event packet.
+         * <p>
+         * {@code ordinal = 2}
+         */
+        EVENT,
+        /**
+         * The type of a Jet packet.
+         * <p>
+         * {@code ordinal = 3}
+         */
+        JET {
+            @Override
+            public String describeFlags(char flags) {
+                return "[isFlowControl=" + isFlagRaised(flags, FLAG_JET_FLOW_CONTROL) + ']';
+            }
+        },
+        /**
+         * The type of a Bind Message packet.
+         * <p>
+         * {@code ordinal = 4}
+         */
+        BIND,
+        /**
+         * The type of Extended Bind packet, since Hazelcast 3.12.
+         * <p>
+         * {@code ordinal = 5}
+         */
+        EXTENDED_BIND,
+        /**
+         * Unused packet type. Available for future use.
+         * <p>
+         * {@code ordinal = 6}
+         */
+        UNDEFINED6,
+        /**
+         * Unused packet type. Available for future use.
+         * <p>
+         * {@code ordinal = 7}
+         */
+        UNDEFINED7;
+
+        final char headerEncoding;
+
+        private static final Type[] VALUES = values();
+
+        Type() {
+            headerEncoding = (char) encodeOrdinal();
+        }
+
+        public static Type fromFlags(int flags) {
+            return VALUES[headerDecode(flags)];
+        }
+
+        public String describeFlags(char flags) {
+            return "<NONE>";
+        }
+
+        @SuppressWarnings("checkstyle:booleanexpressioncomplexity")
+        private int encodeOrdinal() {
+            final int ordinal = ordinal();
+            assert ordinal < 8 : "Ordinal out of range for member " + name() + ": " + ordinal;
+            return (ordinal & 0x01)
+                    | (ordinal & 0x02) << 1
+                    | (ordinal & 0x04) << 3;
+        }
+
+        @SuppressWarnings("checkstyle:booleanexpressioncomplexity")
+        private static int headerDecode(int flags) {
+            return (flags & FLAG_TYPE0)
+                    | (flags & FLAG_TYPE1) >> 1
+                    | (flags & FLAG_TYPE2) >> 3;
+        }
     }
 }

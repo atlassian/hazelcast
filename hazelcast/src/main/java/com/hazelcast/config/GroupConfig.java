@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,18 +20,18 @@ import static com.hazelcast.util.Preconditions.isNotNull;
 
 /**
  * Contains the configuration for Hazelcast groups.
- * <p/>
+ * <p>
  * With groups it is possible to create multiple clusters where each cluster has its own group and doesn't
  * interfere with other clusters.
  */
 public final class GroupConfig {
 
     /**
-     * Default group password
+     * Default group password.
      */
     public static final String DEFAULT_GROUP_PASSWORD = "dev-pass";
     /**
-     * Default group name
+     * Default group name.
      */
     public static final String DEFAULT_GROUP_NAME = "dev";
 
@@ -48,7 +48,7 @@ public final class GroupConfig {
      * Creates a GroupConfig with the given group-name and default group-password
      *
      * @param name the name of the group
-     * @throws IllegalArgumentException if name is null.
+     * @throws IllegalArgumentException if name is {@code null}
      */
     public GroupConfig(final String name) {
         setName(name);
@@ -59,11 +59,21 @@ public final class GroupConfig {
      *
      * @param name     the name of the group
      * @param password the password of the group
-     * @throws IllegalArgumentException if name or password is null.
+     * @throws IllegalArgumentException if name or password is {@code null}
      */
     public GroupConfig(final String name, final String password) {
         setName(name);
         setPassword(password);
+    }
+
+    /**
+     * Copy constructor
+     *
+     * @param groupConfig to copy
+     */
+    public GroupConfig(GroupConfig groupConfig) {
+        name = groupConfig.name;
+        password = groupConfig.password;
     }
 
     /**
@@ -79,8 +89,8 @@ public final class GroupConfig {
      * Sets the group name of the group.
      *
      * @param name the name to set for the group
-     * @return the updated GroupConfig.
-     * @throws IllegalArgumentException if name is null.
+     * @return the updated GroupConfig
+     * @throws IllegalArgumentException if name is {@code null}
      */
     public GroupConfig setName(final String name) {
         this.name = isNotNull(name, "name");
@@ -91,7 +101,10 @@ public final class GroupConfig {
      * Gets the password of the group.
      *
      * @return the password of the group
+     * @deprecated since 3.11, password check is removed. Passwords are only checked in default LoginModule when Hazelcast
+     * {@link SecurityConfig security} is enabled (Enterprise edition only).
      */
+    @Deprecated
     public String getPassword() {
         return password;
     }
@@ -100,9 +113,12 @@ public final class GroupConfig {
      * Sets the password for the group.
      *
      * @param password the password to set for the group
-     * @return the updated GroupConfig.
-     * @throws IllegalArgumentException if password is null.
+     * @return the updated GroupConfig
+     * @throws IllegalArgumentException if password is {@code null}
+     * @deprecated since 3.11, password check is removed. Passwords are only checked in default LoginModule when Hazelcast
+     * {@link SecurityConfig security} is enabled (Enterprise edition only).
      */
+    @Deprecated
     public GroupConfig setPassword(final String password) {
         this.password = isNotNull(password, "group password");
         return this;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -51,25 +51,35 @@ public abstract class HazelcastMBean<T> implements DynamicMBean, MBeanRegistrati
 
     protected final long updateIntervalSec;
 
-    final T managedObject;
+    protected final T managedObject;
     final ManagementService service;
 
     String description;
     ObjectName objectName;
 
-
     protected HazelcastMBean(T managedObject, ManagementService service) {
         this.managedObject = managedObject;
         this.service = service;
-        updateIntervalSec = service.instance.node.getProperties().getLong(GroupProperty.JMX_UPDATE_INTERVAL_SECONDS);
+        this.updateIntervalSec = service.instance.node.getProperties().getLong(GroupProperty.JMX_UPDATE_INTERVAL_SECONDS);
     }
 
-    public void register(HazelcastMBean mbean) {
+    public static void register(HazelcastMBean mbean) {
         MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
         try {
             mbs.registerMBean(mbean, mbean.objectName);
         } catch (Exception e) {
             throw new RuntimeException(e);
+        }
+    }
+
+    public static void unregister(HazelcastMBean mbean) {
+        MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
+        if (mbs.isRegistered(mbean.objectName)) {
+            try {
+                mbs.unregisterMBean(mbean.objectName);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
         }
     }
 

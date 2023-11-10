@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,9 +42,7 @@ public class JobTaskConfiguration {
     private final boolean communicateStats;
     private final TopologyChangedStrategy topologyChangedStrategy;
 
-    //Deactivated checkstyle due to more than 10 parameters which is ok in this special case :)
-    //I want that class to be immutable to utilize the memory effect of it.
-    //CHECKSTYLE:OFF
+    @SuppressWarnings("checkstyle:parameternumber")
     public JobTaskConfiguration(Address jobOwner, NodeEngine nodeEngine, int chunkSize, String name, String jobId, Mapper mapper,
                                 CombinerFactory combinerFactory, ReducerFactory reducerFactory, KeyValueSource keyValueSource,
                                 boolean communicateStats, TopologyChangedStrategy topologyChangedStrategy) {
@@ -60,7 +58,6 @@ public class JobTaskConfiguration {
         this.communicateStats = communicateStats;
         this.topologyChangedStrategy = topologyChangedStrategy;
     }
-    //CHECKSTYLE:ON
 
     public Address getJobOwner() {
         return jobOwner;

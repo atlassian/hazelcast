@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,14 +17,17 @@
 package com.hazelcast.client.impl.protocol;
 
 import com.hazelcast.client.impl.protocol.exception.MaxMessageSizeExceeded;
+import com.hazelcast.client.impl.protocol.util.BufferBuilder;
 import com.hazelcast.client.impl.protocol.util.ClientProtocolBuffer;
 import com.hazelcast.client.impl.protocol.util.MessageFlyweight;
 import com.hazelcast.client.impl.protocol.util.SafeBuffer;
 import com.hazelcast.client.impl.protocol.util.UnsafeBuffer;
+import com.hazelcast.internal.networking.OutboundFrame;
 import com.hazelcast.nio.Bits;
-import com.hazelcast.nio.OutboundFrame;
+import com.hazelcast.nio.Connection;
 
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 
 /**
  * <p>
@@ -107,13 +110,24 @@ public class ClientMessage
 
     private transient int writeOffset;
     private transient boolean isRetryable;
+    private transient boolean acquiresResource;
+    private transient String operationName;
+    private Connection connection;
 
     protected ClientMessage() {
     }
 
+    public Connection getConnection() {
+        return connection;
+    }
+
+    public void setConnection(Connection connection) {
+        this.connection = connection;
+    }
+
     protected void wrapForEncode(ClientProtocolBuffer buffer, int offset) {
         ensureHeaderSize(offset, buffer.capacity());
-        super.wrap(buffer, offset);
+        super.wrap(buffer.byteArray(), offset, USE_UNSAFE);
         setDataOffset(HEADER_SIZE);
         setFrameLength(HEADER_SIZE);
         index(getDataOffset());
@@ -129,7 +143,7 @@ public class ClientMessage
 
     protected void wrapForDecode(ClientProtocolBuffer buffer, int offset) {
         ensureHeaderSize(offset, buffer.capacity());
-        super.wrap(buffer, offset);
+        super.wrap(buffer.byteArray(), offset, USE_UNSAFE);
         index(getDataOffset());
     }
 
@@ -223,19 +237,19 @@ public class ClientMessage
     }
 
     /**
-     * Returns the correlation id field.
+     * Returns the correlation ID field.
      *
-     * @return The correlation id field.
+     * @return The correlation ID field.
      */
     public long getCorrelationId() {
         return int64Get(CORRELATION_ID_FIELD_OFFSET);
     }
 
     /**
-     * Sets the correlation id field.
+     * Sets the correlation ID field.
      *
-     * @param correlationId The value to set in the correlation id field.
-     * @return The ClientMessage with the new correlation id field value.
+     * @param correlationId The value to set in the correlation ID field.
+     * @return The ClientMessage with the new correlation ID field value.
      */
     public ClientMessage setCorrelationId(final long correlationId) {
         int64Set(CORRELATION_ID_FIELD_OFFSET, correlationId);
@@ -243,19 +257,19 @@ public class ClientMessage
     }
 
     /**
-     * Returns the partition id field.
+     * Returns the partition ID field.
      *
-     * @return The partition id field.
+     * @return The partition ID field.
      */
     public int getPartitionId() {
         return int32Get(PARTITION_ID_FIELD_OFFSET);
     }
 
     /**
-     * Sets the partition id field.
+     * Sets the partition ID field.
      *
-     * @param partitionId The value to set in the partitions id field.
-     * @return The ClientMessage with the new partitions id field value.
+     * @param partitionId The value to set in the partitions ID field.
+     * @return The ClientMessage with the new partitions ID field value.
      */
     public ClientMessage setPartitionId(final int partitionId) {
         int32Set(PARTITION_ID_FIELD_OFFSET, partitionId);
@@ -328,27 +342,24 @@ public class ClientMessage
                 // we don't have even the frame length ready
                 return false;
             }
-            frameLength = Bits.readIntL(src.array(), src.position());
+            frameLength = Bits.readIntL(src);
+            // we need to restore the position; as if we didn't read the frame-length
+            src.position(src.position() - Bits.INT_SIZE_IN_BYTES);
             if (frameLength < HEADER_SIZE) {
                 throw new IllegalArgumentException("Client message frame length cannot be smaller than header size.");
             }
-            if (USE_UNSAFE) {
-                wrap(new UnsafeBuffer(new byte[frameLength]), 0);
-            } else {
-                wrap(new SafeBuffer(new byte[frameLength]), 0);
-            }
+            wrap(new byte[frameLength], 0, USE_UNSAFE);
         }
         frameLength = frameLength > 0 ? frameLength : getFrameLength();
         accumulate(src, frameLength - index());
         return isComplete();
     }
 
-    private int accumulate(ByteBuffer byteBuffer, int length) {
-        final int remaining = byteBuffer.remaining();
-        final int readLength = remaining < length ? remaining : length;
+    private int accumulate(ByteBuffer src, int length) {
+        int remaining = src.remaining();
+        int readLength = remaining < length ? remaining : length;
         if (readLength > 0) {
-            buffer.putBytes(index(), byteBuffer.array(), byteBuffer.position(), readLength);
-            byteBuffer.position(byteBuffer.position() + readLength);
+            buffer.putBytes(index(), src, readLength);
             index(index() + readLength);
             return readLength;
         }
@@ -373,17 +384,35 @@ public class ClientMessage
         return isRetryable;
     }
 
+    public boolean acquiresResource() {
+        return acquiresResource;
+    }
+
+    public void setAcquiresResource(boolean acquiresResource) {
+        this.acquiresResource = acquiresResource;
+    }
+
     public void setRetryable(boolean isRetryable) {
         this.isRetryable = isRetryable;
+    }
+
+    public void setOperationName(String operationName) {
+        this.operationName = operationName;
+    }
+
+    public String getOperationName() {
+        return operationName;
     }
 
     @Override
     public String toString() {
         int len = index();
         final StringBuilder sb = new StringBuilder("ClientMessage{");
-        sb.append("length=").append(len);
+        sb.append("connection=").append(connection);
+        sb.append(", length=").append(len);
         if (len >= HEADER_SIZE) {
             sb.append(", correlationId=").append(getCorrelationId());
+            sb.append(", operation=").append(operationName);
             sb.append(", messageType=").append(Integer.toHexString(getMessageType()));
             sb.append(", partitionId=").append(getPartitionId());
             sb.append(", isComplete=").append(isComplete());
@@ -400,19 +429,14 @@ public class ClientMessage
     }
 
     public static ClientMessage createForEncode(int initialCapacity) {
-        initialCapacity = findSuitableMessageSize(initialCapacity);
+        if (initialCapacity < 0) {
+            throw new MaxMessageSizeExceeded();
+        }
         if (USE_UNSAFE) {
             return createForEncode(new UnsafeBuffer(new byte[initialCapacity]), 0);
         } else {
             return createForEncode(new SafeBuffer(new byte[initialCapacity]), 0);
         }
-    }
-
-    public static int findSuitableMessageSize(int desiredMessageSize) {
-        if (desiredMessageSize < 0) {
-            throw new MaxMessageSizeExceeded();
-        }
-        return desiredMessageSize;
     }
 
     public static ClientMessage createForEncode(ClientProtocolBuffer buffer, int offset) {
@@ -425,6 +449,16 @@ public class ClientMessage
         ClientMessage clientMessage = new ClientMessage();
         clientMessage.wrapForDecode(buffer, offset);
         return clientMessage;
+    }
+
+    public ClientMessage copy() {
+        byte[] oldBinary = buffer().byteArray();
+        byte[] bytes = Arrays.copyOf(oldBinary, oldBinary.length);
+        ClientMessage newMessage = ClientMessage.createForDecode(BufferBuilder.createBuffer(bytes), 0);
+        newMessage.isRetryable = isRetryable;
+        newMessage.acquiresResource = acquiresResource;
+        newMessage.operationName = operationName;
+        return newMessage;
     }
 
     @Override

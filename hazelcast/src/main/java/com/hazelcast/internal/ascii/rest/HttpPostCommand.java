@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,30 +18,37 @@ package com.hazelcast.internal.ascii.rest;
 
 import com.hazelcast.internal.ascii.NoOpCommand;
 import com.hazelcast.nio.IOUtil;
-import com.hazelcast.nio.ascii.TextReadHandler;
+import com.hazelcast.nio.ascii.TextDecoder;
 import com.hazelcast.util.StringUtil;
 
+import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
 
 import static com.hazelcast.internal.ascii.TextCommandConstants.TextCommandType.HTTP_POST;
 import static com.hazelcast.util.StringUtil.stringToBytes;
 
 public class HttpPostCommand extends HttpCommand {
+
     private static final int RADIX = 16;
-    private static final int CAPACITY = 500;
+    @SuppressWarnings("checkstyle:magicnumber")
+    private static final int INITIAL_CAPACITY = 1 << 8;
+    // 65536, no specific reason, similar to UDP packet size limit
+    @SuppressWarnings("checkstyle:magicnumber")
+    private static final int MAX_CAPACITY = 1 << 16;
+    private static final byte LINE_FEED = 0x0A;
+    private static final byte CARRIAGE_RETURN = 0x0D;
 
-    boolean nextLine;
-    boolean readyToReadData;
+    private final TextDecoder decoder;
 
-    private ByteBuffer data;
-    private ByteBuffer line = ByteBuffer.allocate(CAPACITY);
-    private String contentType;
-    private final TextReadHandler readHandler;
     private boolean chunked;
+    private boolean readyToReadData;
+    private ByteBuffer data;
+    private String contentType;
+    private ByteBuffer lineBuffer = ByteBuffer.allocate(INITIAL_CAPACITY);
 
-    public HttpPostCommand(TextReadHandler readHandler, String uri) {
+    public HttpPostCommand(TextDecoder decoder, String uri) {
         super(HTTP_POST, uri);
-        this.readHandler = readHandler;
+        this.decoder = decoder;
     }
 
     /**
@@ -71,6 +78,51 @@ public class HttpPostCommand extends HttpCommand {
         return complete;
     }
 
+    private boolean doActualRead(ByteBuffer cb) {
+        setReadyToReadData(cb);
+        if (!readyToReadData) {
+            return false;
+        }
+        if (!isSpaceForData()) {
+            if (chunked) {
+                if (data != null && cb.hasRemaining()) {
+                    readCRLFOrPositionChunkSize(cb);
+                }
+                if (readChunkSize(cb)) {
+                    return true;
+                }
+            } else {
+                return true;
+            }
+        }
+        if (data != null) {
+            IOUtil.copyToHeapBuffer(cb, data);
+        }
+        return !chunked && !isSpaceForData();
+    }
+
+    private boolean isSpaceForData() {
+        return data != null && data.hasRemaining();
+    }
+
+    private void setReadyToReadData(ByteBuffer cb) {
+        while (!readyToReadData && cb.hasRemaining()) {
+            byte b = cb.get();
+            if (b == CARRIAGE_RETURN) {
+                readLF(cb);
+                processLine(StringUtil.lowerCaseInternal(toStringAndClear(lineBuffer)));
+                if (nextLine) {
+                    readyToReadData = true;
+                }
+                nextLine = true;
+                break;
+            }
+
+            nextLine = false;
+            appendToBuffer(b);
+        }
+    }
+
     public byte[] getData() {
         if (data == null) {
             return null;
@@ -79,7 +131,7 @@ public class HttpPostCommand extends HttpCommand {
         }
     }
 
-    public byte[] getContentType() {
+    byte[] getContentType() {
         if (contentType == null) {
             return null;
         } else {
@@ -87,50 +139,25 @@ public class HttpPostCommand extends HttpCommand {
         }
     }
 
-    private void dataNullCheck(int dataSize) {
-        if (data != null) {
-            ByteBuffer newData = ByteBuffer.allocate(data.capacity() + dataSize);
-            newData.put(data.array());
-            data = newData;
+    private void readCRLFOrPositionChunkSize(ByteBuffer cb) {
+        byte b = cb.get();
+        if (b == CARRIAGE_RETURN) {
+            readLF(cb);
         } else {
-            data = ByteBuffer.allocate(dataSize);
+            cb.position(cb.position() - 1);
         }
     }
 
-    private void setReadyToReadData(ByteBuffer cb) {
-        while (!readyToReadData && cb.hasRemaining()) {
-            byte b = cb.get();
-            char c = (char) b;
-            if (c == '\n') {
-                processLine(StringUtil.lowerCaseInternal(toStringAndClear(line)));
-                if (nextLine) {
-                    readyToReadData = true;
-                }
-                nextLine = true;
-            } else if (c != '\r') {
-                nextLine = false;
-                line.put(b);
-            }
+    private void readLF(ByteBuffer cb) {
+        assert cb.hasRemaining() : "'\\n' should follow '\\r'";
+
+        byte b = cb.get();
+        if (b != LINE_FEED) {
+            throw new IllegalStateException("'\\n' should follow '\\r', but got '" + (char) b + "'");
         }
     }
 
-    public boolean doActualRead(ByteBuffer cb) {
-        if (readyToReadData) {
-            if (chunked && (data == null || !data.hasRemaining())) {
-                boolean done = readLine(cb);
-                if (done) {
-                    return true;
-                }
-            }
-            IOUtil.copyToHeapBuffer(cb, data);
-        }
-
-        setReadyToReadData(cb);
-
-        return !chunked && ((data != null) && !data.hasRemaining());
-    }
-
-    String toStringAndClear(ByteBuffer bb) {
+    private String toStringAndClear(ByteBuffer bb) {
         if (bb == null) {
             return "";
         }
@@ -144,19 +171,20 @@ public class HttpPostCommand extends HttpCommand {
         return result;
     }
 
-    boolean readLine(ByteBuffer cb) {
+    private boolean readChunkSize(ByteBuffer cb) {
         boolean hasLine = false;
         while (cb.hasRemaining()) {
             byte b = cb.get();
-            char c = (char) b;
-            if (c == '\n') {
+            if (b == CARRIAGE_RETURN) {
+                readLF(cb);
                 hasLine = true;
-            } else if (c != '\r') {
-                line.put(b);
+                break;
             }
+            appendToBuffer(b);
         }
+
         if (hasLine) {
-            String lineStr = toStringAndClear(line).trim();
+            String lineStr = toStringAndClear(lineBuffer).trim();
 
             // hex string
             int dataSize = lineStr.length() == 0 ? 0 : Integer.parseInt(lineStr, RADIX);
@@ -168,6 +196,36 @@ public class HttpPostCommand extends HttpCommand {
         return false;
     }
 
+    private void dataNullCheck(int dataSize) {
+        if (data != null) {
+            ByteBuffer newData = ByteBuffer.allocate(data.capacity() + dataSize);
+            newData.put(data.array());
+            data = newData;
+        } else {
+            data = ByteBuffer.allocate(dataSize);
+        }
+    }
+
+    private void appendToBuffer(byte b) {
+        if (!lineBuffer.hasRemaining()) {
+            expandBuffer();
+        }
+        lineBuffer.put(b);
+    }
+
+    private void expandBuffer() {
+        if (lineBuffer.capacity() == MAX_CAPACITY) {
+            throw new BufferOverflowException();
+        }
+
+        int capacity = lineBuffer.capacity() << 1;
+
+        ByteBuffer newBuffer = ByteBuffer.allocate(capacity);
+        lineBuffer.flip();
+        newBuffer.put(lineBuffer);
+        lineBuffer = newBuffer;
+    }
+
     private void processLine(String currentLine) {
         if (contentType == null && currentLine.startsWith(HEADER_CONTENT_TYPE)) {
             contentType = currentLine.substring(currentLine.indexOf(' ') + 1);
@@ -176,7 +234,7 @@ public class HttpPostCommand extends HttpCommand {
         } else if (!chunked && currentLine.startsWith(HEADER_CHUNKED)) {
             chunked = true;
         } else if (currentLine.startsWith(HEADER_EXPECT_100)) {
-            readHandler.sendResponse(new NoOpCommand(RES_100));
+            decoder.sendResponse(new NoOpCommand(RES_100));
         }
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,9 +25,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
- * Converts an operation class into something readable. In most cases the class name is sufficient, but there are certain
- * operations like {@link Backup} and {@link PartitionIteratingOperation} where one needs to see inside the content
- * of an operation.
+ * Converts an operation class into something readable.
+ * <p>
+ * In most cases the class name is sufficient, but there are certain
+ * operations like {@link Backup} and {@link PartitionIteratingOperation} where
+ * one needs to see inside the content of an operation.
  */
 public final class OperationDescriptors {
 

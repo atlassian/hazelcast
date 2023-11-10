@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,28 @@ import org.hamcrest.TypeSafeMatcher;
 
 /**
  * Matcher for {@link org.junit.rules.ExpectedException#expectCause(Matcher)} to assert the root cause of an exception.
+ * <p>
+ * Optionally the exception message can be tested as well.
+ * <p>
+ * Example usage:
+ * <pre><code>
+ *  {@literal @}Rule
+ *   public ExpectedException expect = ExpectedException.none();
+ *
+ *  {@literal @}Test
+ *   public void testRootCause() {
+ *     expected.expect(ExecutionException.class);
+ *     expected.expectCause(new RootCauseMatcher(StaleTaskException.class));
+ *     throwException();
+ *   }
+ *
+ *  {@literal @}Test
+ *   public void testRootCause_withMessage() {
+ *     expected.expect(ExecutionException.class);
+ *     expected.expectCause(new RootCauseMatcher(IllegalStateException.class, "Expected message"));
+ *     throwException();
+ *   }
+ * </code></pre>
  */
 public class RootCauseMatcher extends TypeSafeMatcher<Throwable> {
 
@@ -59,7 +81,7 @@ public class RootCauseMatcher extends TypeSafeMatcher<Throwable> {
         super.describeMismatchSafely(getRootCause(item), mismatchDescription);
     }
 
-    private Throwable getRootCause(Throwable item) {
+    public static Throwable getRootCause(Throwable item) {
         while (item.getCause() != null) {
             item = item.getCause();
         }

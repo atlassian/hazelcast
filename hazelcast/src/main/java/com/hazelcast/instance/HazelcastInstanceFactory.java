@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,29 +22,28 @@ import com.hazelcast.core.DuplicateInstanceNameException;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.Member;
 import com.hazelcast.internal.jmx.ManagementService;
+import com.hazelcast.internal.util.ModularJavaUtils;
+import com.hazelcast.logging.Logger;
 import com.hazelcast.spi.annotation.PrivateApi;
 import com.hazelcast.spi.properties.GroupProperty;
-import com.hazelcast.util.EmptyStatement;
 import com.hazelcast.util.ExceptionUtil;
 
-import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.hazelcast.core.LifecycleEvent.LifecycleState.STARTED;
+import static com.hazelcast.util.EmptyStatement.ignore;
 import static com.hazelcast.util.Preconditions.checkHasText;
-import static com.hazelcast.util.Preconditions.checkNotNull;
+import static com.hazelcast.util.SetUtil.createHashSet;
 import static java.lang.String.format;
+import static java.lang.Thread.currentThread;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 /**
@@ -59,21 +58,26 @@ public final class HazelcastInstanceFactory {
     private static final int ADDITIONAL_SLEEP_SECONDS_FOR_NON_FIRST_MEMBERS = 4;
 
     private static final AtomicInteger FACTORY_ID_GEN = new AtomicInteger();
-    private static final ConcurrentMap<String, InstanceFuture> INSTANCE_MAP = new ConcurrentHashMap<String, InstanceFuture>(5);
+    private static final ConcurrentMap<String, InstanceFuture<HazelcastInstanceProxy>> INSTANCE_MAP
+            = new ConcurrentHashMap<String, InstanceFuture<HazelcastInstanceProxy>>(5);
+
+    static {
+        ModularJavaUtils.checkJavaInternalAccess(Logger.getLogger(HazelcastInstanceFactory.class));
+    }
 
     private HazelcastInstanceFactory() {
     }
 
     public static Set<HazelcastInstance> getAllHazelcastInstances() {
-        Set<HazelcastInstance> result = new HashSet<HazelcastInstance>();
-        for (InstanceFuture f : INSTANCE_MAP.values()) {
+        Set<HazelcastInstance> result = createHashSet(INSTANCE_MAP.size());
+        for (InstanceFuture<HazelcastInstanceProxy> f : INSTANCE_MAP.values()) {
             result.add(f.get());
         }
         return result;
     }
 
     public static HazelcastInstance getHazelcastInstance(String instanceName) {
-        InstanceFuture instanceFuture = INSTANCE_MAP.get(instanceName);
+        InstanceFuture<HazelcastInstanceProxy> instanceFuture = INSTANCE_MAP.get(instanceName);
         if (instanceFuture == null) {
             return null;
         }
@@ -86,18 +90,20 @@ public final class HazelcastInstanceFactory {
     }
 
     public static HazelcastInstance getOrCreateHazelcastInstance(Config config) {
-        checkNotNull(config, "config can't be null");
+        if (config == null) {
+            config = new XmlConfigBuilder().build();
+        }
 
         String name = config.getInstanceName();
         checkHasText(name, "instanceName must contain text");
 
-        InstanceFuture future = INSTANCE_MAP.get(name);
+        InstanceFuture<HazelcastInstanceProxy> future = INSTANCE_MAP.get(name);
         if (future != null) {
             return future.get();
         }
 
-        future = new InstanceFuture();
-        InstanceFuture found = INSTANCE_MAP.putIfAbsent(name, future);
+        future = new InstanceFuture<HazelcastInstanceProxy>();
+        InstanceFuture<HazelcastInstanceProxy> found = INSTANCE_MAP.putIfAbsent(name, future);
         if (found != null) {
             return found.get();
         }
@@ -120,7 +126,7 @@ public final class HazelcastInstanceFactory {
      */
     public static HazelcastInstance newHazelcastInstance(Config config) {
         if (config == null) {
-            config = new XmlConfigBuilder().build();
+            config = Config.load();
         }
 
         return newHazelcastInstance(
@@ -130,7 +136,7 @@ public final class HazelcastInstanceFactory {
         );
     }
 
-    private static String createInstanceName(Config config) {
+    public static String createInstanceName(Config config) {
         return "_hzInstance_" + FACTORY_ID_GEN.incrementAndGet() + "_" + config.getGroupConfig().getName();
     }
 
@@ -167,7 +173,7 @@ public final class HazelcastInstanceFactory {
 
         String name = getInstanceName(instanceName, config);
 
-        InstanceFuture future = new InstanceFuture();
+        InstanceFuture<HazelcastInstanceProxy> future = new InstanceFuture<HazelcastInstanceProxy>();
         if (INSTANCE_MAP.putIfAbsent(name, future) != null) {
             throw new DuplicateInstanceNameException("HazelcastInstance with name '" + name + "' already exists!");
         }
@@ -181,33 +187,12 @@ public final class HazelcastInstanceFactory {
         }
     }
 
-    public static Set<HazelcastInstanceImpl> getInstanceImpls(Collection<Member> members) {
-        Set<HazelcastInstanceImpl> set = new HashSet<HazelcastInstanceImpl>();
-        for (InstanceFuture future : INSTANCE_MAP.values()) {
-            try {
-                if (future.isSet()) {
-                    HazelcastInstanceProxy instanceProxy = future.get();
-                    HazelcastInstanceImpl impl = instanceProxy.original;
-                    if (impl != null) {
-                        final MemberImpl localMember = impl.node.getLocalMember();
-                        if (members.contains(localMember)) {
-                            set.add(impl);
-                        }
-                    }
-                }
-            } catch (RuntimeException ignored) {
-                EmptyStatement.ignore(ignored);
-            }
-        }
-        return set;
-    }
-
     private static HazelcastInstanceProxy newHazelcastProxy(HazelcastInstanceImpl hazelcastInstance) {
         return new HazelcastInstanceProxy(hazelcastInstance);
     }
 
     private static HazelcastInstanceProxy constructHazelcastInstance(Config config, String instanceName, NodeContext nodeContext,
-                                                                     InstanceFuture future) {
+                                                                     InstanceFuture<HazelcastInstanceProxy> future) {
         ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
 
         HazelcastInstanceProxy proxy;
@@ -234,7 +219,7 @@ public final class HazelcastInstanceFactory {
                         SECONDS.sleep(ADDITIONAL_SLEEP_SECONDS_FOR_NON_FIRST_MEMBERS);
                     }
                 } catch (InterruptedException ignored) {
-                    EmptyStatement.ignore(ignored);
+                    currentThread().interrupt();
                 }
             }
             awaitMinimalClusterSize(hazelcastInstance, node, firstMember);
@@ -263,7 +248,7 @@ public final class HazelcastInstanceFactory {
                 // noinspection BusyWait
                 SECONDS.sleep(1);
             } catch (InterruptedException ignored) {
-                EmptyStatement.ignore(ignored);
+                currentThread().interrupt();
             }
         }
         if (initialMinClusterSize > 1) {
@@ -287,12 +272,12 @@ public final class HazelcastInstanceFactory {
 
     private static void shutdownAll(boolean terminate) {
         List<HazelcastInstanceProxy> instances = new LinkedList<HazelcastInstanceProxy>();
-        for (InstanceFuture future : INSTANCE_MAP.values()) {
+        for (InstanceFuture<HazelcastInstanceProxy> future : INSTANCE_MAP.values()) {
             try {
                 HazelcastInstanceProxy instanceProxy = future.get();
                 instances.add(instanceProxy);
             } catch (RuntimeException ignored) {
-                EmptyStatement.ignore(ignored);
+                ignore(ignored);
             }
         }
 
@@ -314,25 +299,9 @@ public final class HazelcastInstanceFactory {
         }
     }
 
-    public static Map<MemberImpl, HazelcastInstanceImpl> getInstanceImplMap() {
-        Map<MemberImpl, HazelcastInstanceImpl> map = new HashMap<MemberImpl, HazelcastInstanceImpl>();
-        for (InstanceFuture future : INSTANCE_MAP.values()) {
-            try {
-                HazelcastInstanceProxy instanceProxy = future.get();
-                HazelcastInstanceImpl impl = instanceProxy.original;
-                if (impl != null) {
-                    map.put(impl.node.getLocalMember(), impl);
-                }
-            } catch (RuntimeException ignored) {
-                EmptyStatement.ignore(ignored);
-            }
-        }
-        return map;
-    }
-
     public static void remove(HazelcastInstanceImpl instance) {
         OutOfMemoryErrorDispatcher.deregisterServer(instance);
-        InstanceFuture future = INSTANCE_MAP.remove(instance.getName());
+        InstanceFuture<HazelcastInstanceProxy> future = INSTANCE_MAP.remove(instance.getName());
         if (future != null && future.isSet()) {
             future.get().original = null;
         }
@@ -341,12 +310,12 @@ public final class HazelcastInstanceFactory {
         }
     }
 
-    private static class InstanceFuture {
+    public static class InstanceFuture<T> {
 
-        private volatile HazelcastInstanceProxy hz;
+        private volatile T hz;
         private volatile Throwable throwable;
 
-        HazelcastInstanceProxy get() {
+        public T get() {
             if (hz != null) {
                 return hz;
             }
@@ -373,7 +342,7 @@ public final class HazelcastInstanceFactory {
             throw new IllegalStateException(throwable);
         }
 
-        void set(HazelcastInstanceProxy proxy) {
+        public void set(T proxy) {
             synchronized (this) {
                 this.hz = proxy;
                 notifyAll();
@@ -387,7 +356,7 @@ public final class HazelcastInstanceFactory {
             }
         }
 
-        boolean isSet() {
+        public boolean isSet() {
             return hz != null;
         }
     }

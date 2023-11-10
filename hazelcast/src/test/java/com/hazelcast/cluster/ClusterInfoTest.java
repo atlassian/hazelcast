@@ -1,9 +1,24 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.cluster;
 
 
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.instance.Node;
-import com.hazelcast.instance.TestUtil;
 import com.hazelcast.internal.cluster.impl.ClusterServiceImpl;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
@@ -39,26 +54,24 @@ public class ClusterInfoTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void test_start_time_single_node_cluster() throws Exception {
+    public void test_start_time_single_node_cluster() {
         HazelcastInstance h1 = factory.newHazelcastInstance();
-        Node node1 = TestUtil.getNode(h1);
+        Node node1 = getNode(h1);
         assertNotEquals(Long.MIN_VALUE, node1.getClusterService().getClusterClock().getClusterStartTime());
     }
 
     @Test
-    public void all_nodes_should_have_the_same_cluster_start_time_and_cluster_id() throws Exception {
-
+    public void all_nodes_should_have_the_same_cluster_start_time_and_cluster_id() {
         HazelcastInstance h1 = factory.newHazelcastInstance();
         HazelcastInstance h2 = factory.newHazelcastInstance();
         HazelcastInstance h3 = factory.newHazelcastInstance();
 
-        assertClusterSizeEventually(3, h1);
+        assertClusterSize(3, h1, h3);
         assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
 
-        Node node1 = TestUtil.getNode(h1);
-        Node node2 = TestUtil.getNode(h2);
-        Node node3 = TestUtil.getNode(h3);
+        Node node1 = getNode(h1);
+        Node node2 = getNode(h2);
+        Node node3 = getNode(h3);
 
         //All nodes should have same startTime
         final ClusterServiceImpl clusterService = node1.getClusterService();
@@ -75,22 +88,18 @@ public class ClusterInfoTest extends HazelcastTestSupport {
         assertNotNull(node1ClusterId);
         assertEquals(node1ClusterId, node2.getClusterService().getClusterId());
         assertEquals(node1ClusterId, node3.getClusterService().getClusterId());
-
-
     }
 
     @Test
     public void all_nodes_should_have_the_same_cluster_start_time_and_id_after_master_shutdown_and_new_node_join() {
-
         HazelcastInstance h1 = factory.newHazelcastInstance();
         HazelcastInstance h2 = factory.newHazelcastInstance();
         HazelcastInstance h3 = factory.newHazelcastInstance();
 
-        assertClusterSizeEventually(3, h1);
+        assertClusterSize(3, h1, h3);
         assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
 
-        Node node1 = TestUtil.getNode(h1);
+        Node node1 = getNode(h1);
         final ClusterServiceImpl clusterService = node1.getClusterService();
         long node1ClusterStartTime = clusterService.getClusterClock().getClusterStartTime();
         long clusterUpTime = clusterService.getClusterClock().getClusterUpTime();
@@ -103,9 +112,9 @@ public class ClusterInfoTest extends HazelcastTestSupport {
 
         HazelcastInstance h4 = factory.newHazelcastInstance();
 
-        Node node2 = TestUtil.getNode(h2);
-        Node node3 = TestUtil.getNode(h3);
-        Node node4 = TestUtil.getNode(h4);
+        Node node2 = getNode(h2);
+        Node node3 = getNode(h3);
+        Node node4 = getNode(h4);
 
         //All nodes should have the same cluster start time
         assertNotEquals(node1ClusterStartTime, Long.MIN_VALUE);
@@ -117,6 +126,5 @@ public class ClusterInfoTest extends HazelcastTestSupport {
         assertEquals(node1ClusterId, node2.getClusterService().getClusterId());
         assertEquals(node1ClusterId, node3.getClusterService().getClusterId());
         assertEquals(node1ClusterId, node4.getClusterService().getClusterId());
-
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,11 @@
 package com.hazelcast.map.impl;
 
 import com.hazelcast.internal.serialization.InternalSerializationService;
+import com.hazelcast.map.impl.operation.EntryOperator;
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.query.impl.CachedQueryEntry;
 import com.hazelcast.query.impl.getters.Extractors;
 
@@ -39,10 +43,12 @@ import java.util.Map;
  * does contain object representation only Data representations and SerializationService is set to null. In other
  * words: It's as usable just as a regular Map.Entry.
  *
- * @see com.hazelcast.map.impl.operation.EntryOperation#createMapEntry(Data, Object)
+ * @param <K> key
+ * @param <V> value
+ * @see EntryOperator#createMapEntry(Data, Object, Boolean)
  */
+public class LazyMapEntry<K, V> extends CachedQueryEntry<K, V> implements Serializable, IdentifiedDataSerializable {
 
-public class LazyMapEntry extends CachedQueryEntry implements Serializable {
     private static final long serialVersionUID = 0L;
 
     private transient boolean modified;
@@ -59,14 +65,31 @@ public class LazyMapEntry extends CachedQueryEntry implements Serializable {
     }
 
     @Override
-    public Object setValue(Object value) {
+    public V setValue(V value) {
         modified = true;
-        Object oldValue = getValue();
+        V oldValue = getValue();
         this.valueObject = value;
         this.valueData = null;
         return oldValue;
     }
 
+    /**
+     * Similar to calling {@link #setValue} with null but doesn't return old-value hence no extra deserialization.
+     */
+    public void remove() {
+        modified = true;
+        valueObject = null;
+        valueData = null;
+    }
+
+    /**
+     * Checks if this entry has null value without any deserialization.
+     *
+     * @return true if value is null, otherwise returns false.
+     */
+    public boolean hasNullValue() {
+        return valueObject == null && valueData == null;
+    }
 
     public boolean isModified() {
         return modified;
@@ -96,16 +119,38 @@ public class LazyMapEntry extends CachedQueryEntry implements Serializable {
         return getKey() + "=" + getValue();
     }
 
-    private void readObject(java.io.ObjectInputStream s) throws IOException, ClassNotFoundException {
-        s.defaultReadObject();
-        keyObject = s.readObject();
-        valueObject = s.readObject();
+    @SuppressWarnings("unchecked")
+    private void readObject(java.io.ObjectInputStream in) throws IOException, ClassNotFoundException {
+        in.defaultReadObject();
+        keyObject = (K) in.readObject();
+        valueObject = (V) in.readObject();
     }
 
-    private void writeObject(java.io.ObjectOutputStream s) throws IOException {
-        s.defaultWriteObject();
-        s.writeObject(getKey());
-        s.writeObject(getValue());
+    private void writeObject(java.io.ObjectOutputStream out) throws IOException {
+        out.defaultWriteObject();
+        out.writeObject(getKey());
+        out.writeObject(getValue());
+    }
+
+    @Override
+    public void readData(ObjectDataInput in) throws IOException {
+        keyObject = in.readObject();
+        valueObject = in.readObject();
+    }
+
+    @Override
+    public void writeData(ObjectDataOutput out) throws IOException {
+        out.writeObject(getKey());
+        out.writeObject(getValue());
+    }
+
+    @Override
+    public int getFactoryId() {
+        return MapDataSerializerHook.F_ID;
+    }
+
+    @Override
+    public int getId() {
+        return MapDataSerializerHook.LAZY_MAP_ENTRY;
     }
 }
-

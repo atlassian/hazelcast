@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -102,6 +102,8 @@ public interface MigrationAwareService {
      * and master member receives success response from all participants.
      * <p>
      * Commit is not expected to fail at this point, all exceptions will be suppressed and logged.
+     * Implementations of this method must be thread safe as this method may be called concurrently
+     * for different migrations on different partitions.
      *
      * @param event migration event
      */
@@ -114,6 +116,8 @@ public interface MigrationAwareService {
      * or failure(s) of any of the migration participants; either master or source or destination.
      * <p>
      * Rollback is not expected to fail at this point, all exceptions will be suppressed and logged.
+     * Implementations of this method must be thread safe as this method may be called concurrently
+     * for different migrations on different partitions.
      *
      * @param event migration event
      */

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,8 @@
 
 package com.hazelcast.internal.diagnostics;
 
+import com.hazelcast.config.ConfigurationException;
 import com.hazelcast.logging.ILogger;
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import java.io.BufferedWriter;
 import java.io.File;
@@ -32,12 +32,13 @@ import java.nio.charset.CharsetEncoder;
 import static com.hazelcast.internal.diagnostics.Diagnostics.MAX_ROLLED_FILE_COUNT;
 import static com.hazelcast.internal.diagnostics.Diagnostics.MAX_ROLLED_FILE_SIZE_MB;
 import static com.hazelcast.nio.IOUtil.closeResource;
+import static com.hazelcast.nio.IOUtil.deleteQuietly;
 import static java.lang.Math.round;
 import static java.lang.String.format;
 
 /**
  * Represents the PerformanceLogFile.
- *
+ * <p>
  * Should only be called from the {@link Diagnostics}.
  */
 final class DiagnosticsLogFile {
@@ -50,20 +51,18 @@ final class DiagnosticsLogFile {
     private final Diagnostics diagnostics;
     private final ILogger logger;
     private final String fileName;
+    private final DiagnosticsLogWriterImpl logWriter;
 
     private int index;
     private PrintWriter printWriter;
     private int maxRollingFileCount;
     private int maxRollingFileSizeBytes;
-    private final DiagnosticsLogWriter logWriter;
 
     DiagnosticsLogFile(Diagnostics diagnostics) {
         this.diagnostics = diagnostics;
-        this.logWriter = diagnostics.singleLine
-                ? new SingleLineDiagnosticsLogWriter()
-                : new MultiLineDiagnosticsLogWriter();
         this.logger = diagnostics.logger;
-        this.fileName = diagnostics.fileName + "-%03d.log";
+        this.fileName = diagnostics.baseFileName + "-%03d.log";
+        this.logWriter = new DiagnosticsLogWriterImpl(diagnostics.includeEpochTime);
 
         this.maxRollingFileCount = diagnostics.properties.getInteger(MAX_ROLLED_FILE_COUNT);
         // we accept a float so it becomes easier to testing to create a small file
@@ -76,7 +75,7 @@ final class DiagnosticsLogFile {
     public void write(DiagnosticsPlugin plugin) {
         try {
             if (file == null) {
-                file = new File(diagnostics.directory, format(fileName, index));
+                file = newFile(index);
                 printWriter = newWriter();
                 renderStaticPlugins();
             }
@@ -97,13 +96,33 @@ final class DiagnosticsLogFile {
         }
     }
 
-    private void renderStaticPlugins() throws IOException {
+    private File newFile(int index) {
+        createDirectoryIfDoesNotExist();
+        return new File(diagnostics.directory, format(fileName, index));
+    }
+
+    private void createDirectoryIfDoesNotExist() {
+        File dir = diagnostics.directory;
+        if (dir.exists()) {
+            if (!dir.isDirectory()) {
+                throw new ConfigurationException("Configured path for diagnostics log file '" + dir
+                        + "' exists, but it's not a directory");
+            }
+        } else {
+            if (!dir.mkdirs()) {
+                throw new ConfigurationException("Error while creating a directory '" + dir
+                        + "' for diagnostics log files. Are you having sufficient rights on the filesystem?");
+            }
+        }
+    }
+
+    private void renderStaticPlugins() {
         for (DiagnosticsPlugin plugin : diagnostics.staticTasks.get()) {
             renderPlugin(plugin);
         }
     }
 
-    private void renderPlugin(DiagnosticsPlugin plugin) throws IOException {
+    private void renderPlugin(DiagnosticsPlugin plugin) {
         logWriter.init(printWriter);
 
         plugin.run(logWriter);
@@ -115,15 +134,13 @@ final class DiagnosticsLogFile {
         return new PrintWriter(new BufferedWriter(new OutputStreamWriter(fos, encoder), Short.MAX_VALUE));
     }
 
-    @SuppressFBWarnings("RV_RETURN_VALUE_IGNORED_BAD_PRACTICE")
     private void rollover() {
         closeResource(printWriter);
         printWriter = null;
         file = null;
         index++;
 
-        File file = new File(format(fileName, index - maxRollingFileCount));
-        // we don't care if the file was deleted or not
-        file.delete();
+        File file = newFile(index - maxRollingFileCount);
+        deleteQuietly(file);
     }
 }

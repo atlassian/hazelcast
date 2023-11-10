@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,11 @@ import com.hazelcast.map.listener.EntryUpdatedListener;
 import com.hazelcast.map.listener.MapClearedListener;
 import com.hazelcast.map.listener.MapEvictedListener;
 import com.hazelcast.map.listener.MapListener;
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 
+import java.io.IOException;
 import java.util.EventListener;
 
 import static com.hazelcast.util.Preconditions.isNotNull;
@@ -72,6 +76,12 @@ public class EntryListenerConfig extends ListenerConfig {
         className = config.getClassName();
     }
 
+    /**
+     * Gets immutable version of this configuration.
+     *
+     * @return immutable version of this configuration
+     * @deprecated this method will be removed in 4.0; it is meant for internal usage only
+     */
     @Override
     public EntryListenerConfigReadOnly getAsReadOnly() {
         if (readOnly == null) {
@@ -96,11 +106,11 @@ public class EntryListenerConfig extends ListenerConfig {
     /**
      * This method provides a workaround by converting a MapListener to EntryListener
      * when it is added via EntryListenerConfig object.
-     * <p/>
+     * <p>
      * With this method, we are trying to fix two problems :
      * First, if we do not introduce the conversion in this method, {@link EntryListenerConfig#getImplementation}
      * will give {@link ClassCastException} with a MapListener implementation.
-     * <p/>
+     * <p>
      * Second goal of the conversion is to preserve backward compatibility.
      */
     private static EventListener toEntryListener(Object implementation) {
@@ -120,9 +130,14 @@ public class EntryListenerConfig extends ListenerConfig {
     /**
      * Wraps a MapListener into an EntryListener.
      */
-    public static class MapListenerToEntryListenerAdapter implements EntryListener, HazelcastInstanceAware {
+    public static class MapListenerToEntryListenerAdapter implements EntryListener, HazelcastInstanceAware,
+            IdentifiedDataSerializable {
 
-        private final MapListener mapListener;
+        private MapListener mapListener;
+
+        public MapListenerToEntryListenerAdapter() {
+
+        }
 
         public MapListenerToEntryListenerAdapter(MapListener mapListener) {
             this.mapListener = mapListener;
@@ -179,6 +194,44 @@ public class EntryListenerConfig extends ListenerConfig {
 
         public MapListener getMapListener() {
             return mapListener;
+        }
+
+        @Override
+        public int getFactoryId() {
+            return ConfigDataSerializerHook.F_ID;
+        }
+
+        @Override
+        public int getId() {
+            return ConfigDataSerializerHook.MAP_LISTENER_TO_ENTRY_LISTENER_ADAPTER;
+        }
+
+        @Override
+        public void writeData(ObjectDataOutput out) throws IOException {
+            out.writeObject(mapListener);
+        }
+
+        @Override
+        public void readData(ObjectDataInput in) throws IOException {
+            mapListener = in.readObject();
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+
+            MapListenerToEntryListenerAdapter that = (MapListenerToEntryListenerAdapter) o;
+            return mapListener.equals(that.mapListener);
+        }
+
+        @Override
+        public int hashCode() {
+            return mapListener.hashCode();
         }
     }
 
@@ -242,5 +295,24 @@ public class EntryListenerConfig extends ListenerConfig {
         result = 31 * result + (local ? 1 : 0);
         result = 31 * result + (includeValue ? 1 : 0);
         return result;
+    }
+
+    @Override
+    public int getId() {
+        return ConfigDataSerializerHook.ENTRY_LISTENER_CONFIG;
+    }
+
+    @Override
+    public void writeData(ObjectDataOutput out) throws IOException {
+        super.writeData(out);
+        out.writeBoolean(local);
+        out.writeBoolean(includeValue);
+    }
+
+    @Override
+    public void readData(ObjectDataInput in) throws IOException {
+        super.readData(in);
+        local = in.readBoolean();
+        includeValue = in.readBoolean();
     }
 }

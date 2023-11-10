@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,8 @@
 
 package com.hazelcast.internal.partition.operation;
 
-import com.hazelcast.internal.cluster.impl.operations.JoinOperation;
+import com.hazelcast.core.MemberLeftException;
+import com.hazelcast.internal.cluster.Versions;
 import com.hazelcast.internal.partition.InternalPartitionService;
 import com.hazelcast.internal.partition.MigrationCycleOperation;
 import com.hazelcast.internal.partition.PartitionRuntimeState;
@@ -26,21 +27,26 @@ import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.impl.Versioned;
+import com.hazelcast.spi.ExceptionAction;
+import com.hazelcast.spi.exception.TargetNotMemberException;
+import com.hazelcast.version.Version;
 
 import java.io.IOException;
 
-public final class PartitionStateOperation extends AbstractPartitionOperation
-        implements MigrationCycleOperation, JoinOperation {
+/**
+ * Sent from the master to publish or sync the partition table state to all cluster members.
+ *
+ * @see InternalPartitionServiceImpl#publishPartitionRuntimeState
+ * @see InternalPartitionServiceImpl#syncPartitionRuntimeState
+ */
+public final class PartitionStateOperation extends AbstractPartitionOperation implements MigrationCycleOperation, Versioned {
 
     private PartitionRuntimeState partitionState;
     private boolean sync;
     private boolean success;
 
     public PartitionStateOperation() {
-    }
-
-    public PartitionStateOperation(PartitionRuntimeState partitionState) {
-        this(partitionState, false);
     }
 
     public PartitionStateOperation(PartitionRuntimeState partitionState, boolean sync) {
@@ -51,14 +57,15 @@ public final class PartitionStateOperation extends AbstractPartitionOperation
     @Override
     public void run() {
         Address callerAddress = getCallerAddress();
-        partitionState.setEndpoint(callerAddress);
+        partitionState.setMaster(callerAddress);
         InternalPartitionServiceImpl partitionService = getService();
         success = partitionService.processPartitionRuntimeState(partitionState);
 
         ILogger logger = getLogger();
         if (logger.isFineEnabled()) {
-            logger.fine("Applied new partition state: " + success + ". Version: " + partitionState.getVersion()
-                    + ", caller: " + callerAddress);
+            String message = (success ? "Applied" : "Rejected")
+                    + " new partition state. Version: " + partitionState.getVersion() + ", caller: " + callerAddress;
+            logger.fine(message);
         }
     }
 
@@ -78,17 +85,38 @@ public final class PartitionStateOperation extends AbstractPartitionOperation
     }
 
     @Override
+    public ExceptionAction onInvocationException(Throwable throwable) {
+        if (throwable instanceof MemberLeftException
+                || throwable instanceof TargetNotMemberException) {
+            return ExceptionAction.THROW_EXCEPTION;
+        }
+        return super.onInvocationException(throwable);
+    }
+
+    @Override
     protected void readInternal(ObjectDataInput in) throws IOException {
         super.readInternal(in);
-        partitionState = new PartitionRuntimeState();
-        partitionState.readData(in);
+        // RU_COMPAT_3_11
+        Version version = in.getVersion();
+        if (version.isGreaterOrEqual(Versions.V3_12)) {
+            partitionState = in.readObject();
+        } else {
+            partitionState = new PartitionRuntimeState();
+            partitionState.readData(in);
+        }
         sync = in.readBoolean();
     }
 
     @Override
     protected void writeInternal(ObjectDataOutput out) throws IOException {
         super.writeInternal(out);
-        partitionState.writeData(out);
+        // RU_COMPAT_3_11
+        Version version = out.getVersion();
+        if (version.isGreaterOrEqual(Versions.V3_12)) {
+            out.writeObject(partitionState);
+        } else {
+            partitionState.writeData(out);
+        }
         out.writeBoolean(sync);
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -254,16 +254,16 @@ public abstract class BaseMemoryAccessorTest extends AbstractUnsafeDependentMemo
         final long address = baseAddress1;
 
         memoryAccessor.putBoolean(address, true);
-        assertEquals(true, memoryAccessor.getBoolean(address));
+        assertTrue(memoryAccessor.getBoolean(address));
 
         memoryAccessor.putBooleanVolatile(address, false);
-        assertEquals(false, memoryAccessor.getBooleanVolatile(address));
+        assertFalse(memoryAccessor.getBooleanVolatile(address));
 
         memoryAccessor.putBoolean(sampleObject, SampleObject.BOOLEAN_VALUE_OFFSET, true);
-        assertEquals(true, memoryAccessor.getBoolean(sampleObject, SampleObject.BOOLEAN_VALUE_OFFSET));
+        assertTrue(memoryAccessor.getBoolean(sampleObject, SampleObject.BOOLEAN_VALUE_OFFSET));
 
         memoryAccessor.putBooleanVolatile(sampleObject, SampleObject.BOOLEAN_VALUE_OFFSET, false);
-        assertEquals(false, memoryAccessor.getBooleanVolatile(sampleObject, SampleObject.BOOLEAN_VALUE_OFFSET));
+        assertFalse(memoryAccessor.getBooleanVolatile(sampleObject, SampleObject.BOOLEAN_VALUE_OFFSET));
     }
 
     ////////////////////////////////////////////////////////////////////////////////

@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.cluster;
 
 import com.hazelcast.cluster.memberselector.MemberSelectors;
@@ -24,8 +40,6 @@ import static com.hazelcast.cluster.memberselector.MemberSelectors.LITE_MEMBER_S
 import static com.hazelcast.cluster.memberselector.MemberSelectors.LOCAL_MEMBER_SELECTOR;
 import static com.hazelcast.cluster.memberselector.MemberSelectors.NON_LOCAL_MEMBER_SELECTOR;
 import static junit.framework.Assert.assertEquals;
-import static junit.framework.TestCase.assertFalse;
-import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
@@ -87,14 +101,14 @@ public class ClusterServiceMemberListTest
         final Collection<Member> liteMembers = clusterService.getMembers(LITE_MEMBER_SELECTOR);
         final Collection<Member> dataMembers = clusterService.getMembers(DATA_MEMBER_SELECTOR);
 
-        assertTrue(liteMembers.contains(localMember));
-        assertFalse(dataMembers.contains(localMember));
+        assertContains(liteMembers, localMember);
+        assertNotContains(dataMembers, localMember);
         final Collection<Member> liteMembersWithoutThis = clusterService
                 .getMembers(MemberSelectors.and(LITE_MEMBER_SELECTOR, NON_LOCAL_MEMBER_SELECTOR));
-        assertFalse(liteMembersWithoutThis.contains(localMember));
+        assertNotContains(liteMembersWithoutThis, localMember);
         final Collection<Member> dataMembersWithThis = clusterService
                 .getMembers(MemberSelectors.or(DATA_MEMBER_SELECTOR, LOCAL_MEMBER_SELECTOR));
-        assertTrue(dataMembersWithThis.contains(localMember));
+        assertContains(dataMembersWithThis, localMember);
     }
 
     private void verifyMembersFromDataMember(final HazelcastInstance instance) {
@@ -103,14 +117,14 @@ public class ClusterServiceMemberListTest
         final Collection<Member> liteMembers = clusterService.getMembers(LITE_MEMBER_SELECTOR);
         final Collection<Member> dataMembers = clusterService.getMembers(DATA_MEMBER_SELECTOR);
 
-        assertTrue(dataMembers.contains(localMember));
-        assertFalse(liteMembers.contains(localMember));
+        assertContains(dataMembers, localMember);
+        assertNotContains(liteMembers, localMember);
         final Collection<Member> dataMembersWithoutThis = clusterService
                 .getMembers(MemberSelectors.and(DATA_MEMBER_SELECTOR, NON_LOCAL_MEMBER_SELECTOR));
-        assertFalse(dataMembersWithoutThis.contains(localMember));
+        assertNotContains(dataMembersWithoutThis, localMember);
         final Collection<Member> liteMembersWithThis = clusterService
                 .getMembers(MemberSelectors.or(LITE_MEMBER_SELECTOR, LOCAL_MEMBER_SELECTOR));
-        assertTrue(liteMembersWithThis.contains(localMember));
+        assertContains(liteMembersWithThis, localMember);
     }
 
     private void verifySizeFromLiteMember(final HazelcastInstance instance) {

@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.topic.impl.reliable;
 
 import com.hazelcast.core.HazelcastInstance;
@@ -18,7 +34,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 import static java.util.Arrays.asList;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
@@ -37,7 +52,7 @@ public class DurableSubscriptionTest extends HazelcastTestSupport {
         assertTrueEventually(new AssertTask() {
             @Override
             public void run() throws Exception {
-                assertTrue(listener.objects.contains("item1"));
+                assertContains(listener.objects, "item1");
             }
         });
 
@@ -62,7 +77,7 @@ public class DurableSubscriptionTest extends HazelcastTestSupport {
     public void beginFromStart() {
     }
 
-    public class DurableMessageListener<V> implements ReliableMessageListener<V> {
+    public static class DurableMessageListener<V> implements ReliableMessageListener<V> {
 
         public final List<V> objects = new CopyOnWriteArrayList<V>();
         public final List<Long> sequences = new CopyOnWriteArrayList<Long>();

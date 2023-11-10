@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,8 @@ import com.hazelcast.collection.impl.queue.operations.OfferOperation;
 import com.hazelcast.collection.impl.queue.operations.PeekOperation;
 import com.hazelcast.collection.impl.queue.operations.PollBackupOperation;
 import com.hazelcast.collection.impl.queue.operations.PollOperation;
+import com.hazelcast.collection.impl.queue.operations.QueueMergeBackupOperation;
+import com.hazelcast.collection.impl.queue.operations.QueueMergeOperation;
 import com.hazelcast.collection.impl.queue.operations.QueueReplicationOperation;
 import com.hazelcast.collection.impl.queue.operations.RemainingCapacityOperation;
 import com.hazelcast.collection.impl.queue.operations.RemoveBackupOperation;
@@ -122,6 +124,8 @@ public final class QueueDataSerializerHook implements DataSerializerHook {
     public static final int TXN_COMMIT = 42;
     public static final int TXN_COMMIT_BACKUP = 43;
 
+    public static final int MERGE = 44;
+    public static final int MERGE_BACKUP = 45;
 
     public int getFactoryId() {
         return F_ID;
@@ -129,7 +133,8 @@ public final class QueueDataSerializerHook implements DataSerializerHook {
 
     public DataSerializableFactory createFactory() {
 
-        ConstructorFunction<Integer, IdentifiedDataSerializable>[] constructors = new ConstructorFunction[TXN_COMMIT_BACKUP + 1];
+        //noinspection unchecked
+        ConstructorFunction<Integer, IdentifiedDataSerializable>[] constructors = new ConstructorFunction[MERGE_BACKUP + 1];
         constructors[OFFER] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
             public IdentifiedDataSerializable createNew(Integer arg) {
                 return new OfferOperation();
@@ -349,6 +354,18 @@ public final class QueueDataSerializerHook implements DataSerializerHook {
             @Override
             public IdentifiedDataSerializable createNew(Integer arg) {
                 return new TxnCommitBackupOperation();
+            }
+        };
+        constructors[MERGE] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+            @Override
+            public IdentifiedDataSerializable createNew(Integer arg) {
+                return new QueueMergeOperation();
+            }
+        };
+        constructors[MERGE_BACKUP] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+            @Override
+            public IdentifiedDataSerializable createNew(Integer arg) {
+                return new QueueMergeBackupOperation();
             }
         };
 

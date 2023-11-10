@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -56,8 +56,13 @@ class LongGaugeImpl extends AbstractGauge implements LongGauge {
                 return Math.round(doubleResult);
             }
         } catch (Exception e) {
-            metricsRegistry.logger.warning("Failed to access probe:" + name, e);
+            metricsRegistry.logger.warning("Failed to access the probe: " + name, e);
             return DEFAULT_VALUE;
         }
+    }
+
+    @Override
+    public void render(StringBuilder stringBuilder) {
+        stringBuilder.append(read());
     }
 }

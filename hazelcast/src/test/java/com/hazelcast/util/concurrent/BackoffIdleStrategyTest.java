@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,20 @@ import static org.junit.Assert.assertEquals;
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
 public class BackoffIdleStrategyTest {
+
+    @Test
+    public void test_createBackoffIdleStrategy() {
+        BackoffIdleStrategy idleStrategy = BackoffIdleStrategy.createBackoffIdleStrategy("foo,1,2,10,15");
+        assertEquals(1, idleStrategy.yieldThreshold);
+        assertEquals(3, idleStrategy.parkThreshold);
+        assertEquals(10, idleStrategy.minParkPeriodNs);
+        assertEquals(15, idleStrategy.maxParkPeriodNs);
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void test_createBackoffIdleStrategy_invalidConfig() {
+        BackoffIdleStrategy.createBackoffIdleStrategy("foo,1");
+    }
 
     @Test
     public void when_proposedShiftLessThanAllowed_then_shiftProposed() {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,9 @@
 
 package com.hazelcast.internal.management.request;
 
-import com.eclipsesource.json.JsonObject;
 import com.hazelcast.internal.management.ManagementCenterService;
+import com.hazelcast.internal.json.JsonObject;
+
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
@@ -34,20 +35,10 @@ public class RunGcRequest implements ConsoleRequest {
     }
 
     @Override
-    public Object readResponse(JsonObject in) {
-        return "Successfully garbage collected.";
-    }
-
-    @Override
     @SuppressFBWarnings(value = "DM_GC", justification = "Explicit GC is the point of this class")
     public void writeResponse(ManagementCenterService mcs, JsonObject root) throws Exception {
         System.gc();
         root.add("result", new JsonObject());
-    }
-
-    @Override
-    public JsonObject toJson() {
-        return new JsonObject();
     }
 
     @Override

@@ -1,6 +1,23 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.monitor.impl;
 
-import com.eclipsesource.json.JsonObject;
+import com.hazelcast.internal.json.JsonObject;
+import com.hazelcast.config.WanPublisherState;
 import com.hazelcast.monitor.LocalWanPublisherStats;
 import com.hazelcast.monitor.LocalWanStats;
 import com.hazelcast.test.HazelcastParallelClassRunner;
@@ -25,11 +42,13 @@ public class LocalWanStatsImplTest {
         tokyo.setConnected(true);
         tokyo.incrementPublishedEventCount(10);
         tokyo.setOutboundQueueSize(100);
+        tokyo.setState(WanPublisherState.REPLICATING);
 
         LocalWanPublisherStatsImpl singapore = new LocalWanPublisherStatsImpl();
         singapore.setConnected(true);
         singapore.setOutboundQueueSize(200);
         singapore.incrementPublishedEventCount(20);
+        singapore.setState(WanPublisherState.REPLICATING);
 
         LocalWanStatsImpl localWanStats = new LocalWanStatsImpl();
         Map<String, LocalWanPublisherStats> localWanPublisherStatsMap = new HashMap<String, LocalWanPublisherStats>();

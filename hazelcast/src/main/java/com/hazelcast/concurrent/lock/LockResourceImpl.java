@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,6 @@ import com.hazelcast.util.Clock;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -36,6 +35,8 @@ import java.util.Set;
 
 import static com.hazelcast.concurrent.lock.LockDataSerializerHook.F_ID;
 import static com.hazelcast.concurrent.lock.LockDataSerializerHook.LOCK_RESOURCE;
+import static com.hazelcast.util.MapUtil.createHashMap;
+import static com.hazelcast.util.SetUtil.createHashSet;
 
 final class LockResourceImpl implements IdentifiedDataSerializable, LockResource {
 
@@ -48,6 +49,7 @@ final class LockResourceImpl implements IdentifiedDataSerializable, LockResource
     private long acquireTime = -1L;
     private boolean transactional;
     private boolean blockReads;
+    private boolean local;
     private Map<String, WaitersInfo> waiters;
     private Set<ConditionKey> conditionKeys;
     private List<AwaitOperation> expiredAwaitOps;
@@ -80,7 +82,8 @@ final class LockResourceImpl implements IdentifiedDataSerializable, LockResource
         return (this.threadId == threadId && owner != null && owner.equals(this.owner));
     }
 
-    boolean lock(String owner, long threadId, long referenceId, long leaseTime, boolean transactional, boolean blockReads) {
+    boolean lock(String owner, long threadId, long referenceId, long leaseTime, boolean transactional,
+                 boolean blockReads, boolean local) {
         if (lockCount == 0) {
             this.owner = owner;
             this.threadId = threadId;
@@ -90,9 +93,10 @@ final class LockResourceImpl implements IdentifiedDataSerializable, LockResource
             setExpirationTime(leaseTime);
             this.transactional = transactional;
             this.blockReads = blockReads;
+            this.local = local;
             return true;
         } else if (isLockedBy(owner, threadId)) {
-            if (!transactional && this.referenceId == referenceId) {
+            if (!transactional && !local && this.referenceId == referenceId) {
                 return true;
             }
             this.referenceId = referenceId;
@@ -100,6 +104,7 @@ final class LockResourceImpl implements IdentifiedDataSerializable, LockResource
             setExpirationTime(leaseTime);
             this.transactional = transactional;
             this.blockReads = blockReads;
+            this.local = local;
             return true;
         }
         return false;
@@ -150,7 +155,7 @@ final class LockResourceImpl implements IdentifiedDataSerializable, LockResource
             return false;
         }
 
-        if (!this.transactional && this.referenceId == referenceId) {
+        if (!this.transactional && !this.local && this.referenceId == referenceId) {
             return true;
         }
 
@@ -168,7 +173,7 @@ final class LockResourceImpl implements IdentifiedDataSerializable, LockResource
 
     void addAwait(String conditionId, String caller, long threadId) {
         if (waiters == null) {
-            waiters = new HashMap<String, WaitersInfo>(2);
+            waiters = createHashMap(2);
         }
 
         WaitersInfo condition = waiters.get(conditionId);
@@ -293,6 +298,7 @@ final class LockResourceImpl implements IdentifiedDataSerializable, LockResource
         version = 0;
         transactional = false;
         blockReads = false;
+        local = false;
     }
 
     void cancelEviction() {
@@ -314,6 +320,17 @@ final class LockResourceImpl implements IdentifiedDataSerializable, LockResource
     @Override
     public boolean isTransactional() {
         return transactional;
+    }
+
+    /**
+     * Local locks are local to the partition and replicaIndex where they have been acquired.
+     * That is the reason they are removed on any partition migration on the destination.
+     *
+     * @returns true if the lock is local, false otherwise
+     */
+    @Override
+    public boolean isLocal() {
+        return local;
     }
 
     @Override
@@ -439,7 +456,7 @@ final class LockResourceImpl implements IdentifiedDataSerializable, LockResource
 
         int len = in.readInt();
         if (len > 0) {
-            waiters = new HashMap<String, WaitersInfo>(len);
+            waiters = createHashMap(len);
             for (int i = 0; i < len; i++) {
                 WaitersInfo condition = new WaitersInfo();
                 condition.readData(in);
@@ -449,7 +466,7 @@ final class LockResourceImpl implements IdentifiedDataSerializable, LockResource
 
         len = in.readInt();
         if (len > 0) {
-            conditionKeys = new HashSet<ConditionKey>(len);
+            conditionKeys = createHashSet(len);
             for (int i = 0; i < len; i++) {
                 conditionKeys.add(new ConditionKey(in.readUTF(), key, in.readUTF(), in.readUTF(), in.readLong()));
             }

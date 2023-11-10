@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.nio.serialization.impl;
 
 import com.hazelcast.nio.serialization.Portable;
@@ -16,7 +32,6 @@ import static java.util.Arrays.asList;
 public class DefaultPortableReaderTestStructure {
 
     public enum Method {
-
         Byte("byte_"),
         Boolean("boolean_"),
         Char("char_"),
@@ -88,18 +103,38 @@ public class DefaultPortableReaderTestStructure {
 
     public static class PrimitivePortable implements Portable {
 
-        final static int FACTORY_ID = 1;
-        final static int ID = 10;
+        static final int FACTORY_ID = 1;
+        static final int ID = 10;
+
+        byte byte_;
+        short short_;
+        int int_;
+        long long_;
+        float float_;
+        double double_;
+        boolean boolean_;
+        char char_;
+        String string_;
+
+        byte[] bytes;
+        short[] shorts;
+        int[] ints;
+        long[] longs;
+        float[] floats;
+        double[] doubles;
+        boolean[] booleans;
+        char[] chars;
+        String[] strings;
 
         enum Init {
             FULL, NONE, NULL
         }
 
-        public int getSeed() {
+        int getSeed() {
             return byte_ - 10;
         }
 
-        public PrimitivePortable(int seed, Init init) {
+        PrimitivePortable(int seed, Init init) {
             byte_ = (byte) (seed + 10);
             short_ = (short) (seed + 20);
             int_ = seed + 30;
@@ -138,27 +173,7 @@ public class DefaultPortableReaderTestStructure {
             }
         }
 
-        byte byte_;
-        short short_;
-        int int_;
-        long long_;
-        float float_;
-        double double_;
-        boolean boolean_;
-        char char_;
-        String string_;
-
-        byte[] bytes;
-        short[] shorts;
-        int[] ints;
-        long[] longs;
-        float[] floats;
-        double[] doubles;
-        boolean[] booleans;
-        char[] chars;
-        String[] strings;
-
-        public PrimitivePortable() {
+        PrimitivePortable() {
         }
 
         @Override
@@ -219,8 +234,12 @@ public class DefaultPortableReaderTestStructure {
 
         @Override
         public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
             PrimitivePortable that = (PrimitivePortable) o;
             return byte_ == that.byte_;
         }
@@ -315,13 +334,13 @@ public class DefaultPortableReaderTestStructure {
 
     static class GroupPortable implements Portable {
 
-        final static int FACTORY_ID = 1;
-        final static int ID = 11;
+        static final int FACTORY_ID = 1;
+        static final int ID = 11;
 
         Portable portable;
         Portable[] portables;
 
-        public GroupPortable() {
+        GroupPortable() {
         }
 
         GroupPortable(Portable portable) {
@@ -359,8 +378,12 @@ public class DefaultPortableReaderTestStructure {
 
         @Override
         public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
             GroupPortable that = (GroupPortable) o;
             return Arrays.equals(portables, that.portables);
         }
@@ -396,13 +419,13 @@ public class DefaultPortableReaderTestStructure {
 
     static class NestedGroupPortable implements Portable {
 
-        final static int FACTORY_ID = 1;
-        final static int ID = 12;
+        static final int FACTORY_ID = 1;
+        static final int ID = 12;
 
         Portable portable;
         Portable[] portables;
 
-        public NestedGroupPortable() {
+        NestedGroupPortable() {
         }
 
         NestedGroupPortable(Portable portable) {
@@ -441,8 +464,12 @@ public class DefaultPortableReaderTestStructure {
 
         @Override
         public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
             GroupPortable that = (GroupPortable) o;
             return Arrays.equals(portables, that.portables);
         }
@@ -477,16 +504,17 @@ public class DefaultPortableReaderTestStructure {
     }
 
     static class TestPortableFactory implements PortableFactory {
-        final static int ID = 1;
+        static final int ID = 1;
 
         @Override
         public Portable create(int classId) {
-            if (PrimitivePortable.ID == classId)
+            if (PrimitivePortable.ID == classId) {
                 return new PrimitivePortable();
-            else if (GroupPortable.ID == classId)
+            } else if (GroupPortable.ID == classId) {
                 return new GroupPortable();
-            else if (NestedGroupPortable.ID == classId)
+            } else if (NestedGroupPortable.ID == classId) {
                 return new NestedGroupPortable();
+            }
             return null;
         }
     }

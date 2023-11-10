@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,6 +43,7 @@ import java.util.concurrent.Executor;
 
 import static com.hazelcast.ringbuffer.impl.RingbufferService.TOPIC_RB_PREFIX;
 import static com.hazelcast.spi.ExecutionService.ASYNC_EXECUTOR;
+import static com.hazelcast.util.ExceptionUtil.peel;
 import static com.hazelcast.util.Preconditions.checkNotNull;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 
@@ -50,7 +51,7 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
 /**
  * The serverside {@link com.hazelcast.core.ITopic} implementation for reliable topics.
  *
- * @param <E>
+ * @param <E> type of item contained in the topic
  */
 public class ReliableTopicProxy<E> extends AbstractDistributedObject<ReliableTopicService> implements ITopic<E> {
 
@@ -59,9 +60,14 @@ public class ReliableTopicProxy<E> extends AbstractDistributedObject<ReliableTop
 
     final Ringbuffer<ReliableTopicMessage> ringbuffer;
     final Executor executor;
-    final ConcurrentMap<String, ReliableMessageListenerRunner> runnersMap
-            = new ConcurrentHashMap<String, ReliableMessageListenerRunner>();
-    final LocalTopicStatsImpl localTopicStats = new LocalTopicStatsImpl();
+    final ConcurrentMap<String, MessageRunner<E>> runnersMap
+            = new ConcurrentHashMap<String, MessageRunner<E>>();
+
+    /**
+     * Local statistics for this reliable topic, including
+     * messages received on and published through this topic.
+     */
+    final LocalTopicStatsImpl localTopicStats;
     final ReliableTopicConfig topicConfig;
     final TopicOverloadPolicy overloadPolicy;
 
@@ -80,6 +86,7 @@ public class ReliableTopicProxy<E> extends AbstractDistributedObject<ReliableTop
         this.executor = initExecutor(nodeEngine, topicConfig);
         this.thisAddress = nodeEngine.getThisAddress();
         this.overloadPolicy = topicConfig.getTopicOverloadPolicy();
+        this.localTopicStats = service.getLocalTopicStats(name);
 
         for (ListenerConfig listenerConfig : topicConfig.getMessageListenerConfigs()) {
             addMessageListener(listenerConfig);
@@ -166,10 +173,9 @@ public class ReliableTopicProxy<E> extends AbstractDistributedObject<ReliableTop
             }
 
             localTopicStats.incrementPublishes();
-        } catch (RuntimeException e) {
-            throw e;
         } catch (Exception e) {
-            throw new HazelcastException("Failed to publish message: " + payload + " to topic:" + getName(), e);
+            throw (RuntimeException) peel(e, null,
+                    "Failed to publish message: " + payload + " to topic:" + getName());
         }
     }
 
@@ -212,7 +218,9 @@ public class ReliableTopicProxy<E> extends AbstractDistributedObject<ReliableTop
             reliableMessageListener = new ReliableMessageListenerAdapter<E>(listener);
         }
 
-        ReliableMessageListenerRunner<E> runner = new ReliableMessageListenerRunner<E>(id, reliableMessageListener, this);
+        MessageRunner<E> runner = new ReliableMessageRunner<E>(id, reliableMessageListener,
+                nodeEngine.getSerializationService(), executor, nodeEngine.getLogger(this.getClass()),
+                nodeEngine.getClusterService(), this);
         runnersMap.put(id, runner);
         runner.next();
         return id;
@@ -222,7 +230,7 @@ public class ReliableTopicProxy<E> extends AbstractDistributedObject<ReliableTop
     public boolean removeMessageListener(String registrationId) {
         checkNotNull(registrationId, "registrationId can't be null");
 
-        ReliableMessageListenerRunner runner = runnersMap.get(registrationId);
+        MessageRunner runner = runnersMap.get(registrationId);
         if (runner == null) {
             return false;
         }

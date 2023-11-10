@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,14 +16,25 @@
 
 package com.hazelcast.replicatedmap.merge;
 
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+import com.hazelcast.replicatedmap.impl.operation.ReplicatedMapDataSerializerHook;
 import com.hazelcast.replicatedmap.impl.record.ReplicatedMapEntryView;
 
-
 /**
- * HigherHitsMapMergePolicy causes the merging entry to be merged from source to destination map
- * if source entry has more hits than the destination one.
+ * Merges replicated map entries from source to destination map if the source entry
+ * has more hits than the destination one.
  */
-public class HigherHitsMapMergePolicy implements ReplicatedMapMergePolicy {
+public final class HigherHitsMapMergePolicy implements ReplicatedMapMergePolicy, IdentifiedDataSerializable {
+
+    /**
+     * Single instance of this class.
+     */
+    public static final HigherHitsMapMergePolicy INSTANCE = new HigherHitsMapMergePolicy();
+
+    private HigherHitsMapMergePolicy() {
+    }
 
     @Override
     public Object merge(String mapName, ReplicatedMapEntryView mergingEntry, ReplicatedMapEntryView existingEntry) {
@@ -33,4 +44,21 @@ public class HigherHitsMapMergePolicy implements ReplicatedMapMergePolicy {
         return existingEntry.getValue();
     }
 
+    @Override
+    public int getFactoryId() {
+        return ReplicatedMapDataSerializerHook.F_ID;
+    }
+
+    @Override
+    public int getId() {
+        return ReplicatedMapDataSerializerHook.HIGHER_HITS_MERGE_POLICY;
+    }
+
+    @Override
+    public void writeData(ObjectDataOutput out) {
+    }
+
+    @Override
+    public void readData(ObjectDataInput in) {
+    }
 }

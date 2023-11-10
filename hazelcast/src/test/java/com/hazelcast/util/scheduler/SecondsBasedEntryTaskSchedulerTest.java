@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.util.scheduler;
 
 import com.hazelcast.spi.TaskScheduler;
@@ -10,19 +26,30 @@ import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import static com.hazelcast.util.scheduler.ScheduleType.FOR_EACH;
 import static com.hazelcast.util.scheduler.ScheduleType.POSTPONE;
 import static com.hazelcast.util.scheduler.SecondsBasedEntryTaskScheduler.findRelativeSecond;
+import static java.util.Arrays.asList;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.isIn;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyLong;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.same;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -30,159 +57,251 @@ import static org.mockito.Mockito.when;
  */
 @RunWith(HazelcastParallelClassRunner.class)
 @Category(QuickTest.class)
+@SuppressWarnings("ConstantConditions")
 public class SecondsBasedEntryTaskSchedulerTest {
 
     @Mock
-    private TaskScheduler executorService = mock(TaskScheduler.class);
+    private TaskScheduler taskScheduler = mock(TaskScheduler.class);
 
     @Mock
     @SuppressWarnings("unchecked")
-    private ScheduledEntryProcessor<Integer, Integer> entryProcessor = mock(ScheduledEntryProcessor.class);
+    private ScheduledEntryProcessor<String, String> entryProcessor = mock(ScheduledEntryProcessor.class);
 
-    private SecondsBasedEntryTaskScheduler<Integer, Integer> scheduler;
+    private SecondsBasedEntryTaskScheduler<String, String> scheduler;
 
     @Before
     @SuppressWarnings("unchecked")
     public void mockScheduleMethod() {
-        when(executorService.schedule(any(Runnable.class), anyLong(), any(TimeUnit.class)))
+        when(taskScheduler.schedule(any(Runnable.class), anyLong(), any(TimeUnit.class)))
                 .thenReturn(mock(ScheduledFuture.class));
     }
 
     @Test
     public void test_scheduleEntry_postpone() {
-        scheduler = new SecondsBasedEntryTaskScheduler<Integer, Integer>(executorService, entryProcessor, POSTPONE);
+        scheduler = new SecondsBasedEntryTaskScheduler<String, String>(taskScheduler, entryProcessor, POSTPONE);
 
-        assertTrue(scheduler.schedule(100, 1, 1));
-        assertNotNull(scheduler.get(1));
+        assertTrue(scheduler.schedule(100, "k", "v"));
         assertEquals(1, scheduler.size());
+        assertEquals("v", scheduler.get("k").getValue());
     }
 
     @Test
     public void test_rescheduleEntry_postpone() {
-        scheduler = new SecondsBasedEntryTaskScheduler<Integer, Integer>(executorService, entryProcessor, POSTPONE);
+        scheduler = new SecondsBasedEntryTaskScheduler<String, String>(taskScheduler, entryProcessor, POSTPONE);
 
-        assertTrue(scheduler.schedule(100, 1, 1));
-        assertTrue(scheduler.schedule(10000, 1, 1));
-        assertNotNull(scheduler.get(1));
+        assertTrue(scheduler.schedule(1000, "k", "x"));
+        assertTrue(scheduler.schedule(7000, "k", "y"));
         assertEquals(1, scheduler.size());
+        assertEquals("y", scheduler.get("k").getValue());
+
+        // discovered in reverse engineering that instead of postponing one can advance, this may be not intentional:
+        assertTrue(scheduler.schedule(4000, "k", "z"));
+        assertEquals(1, scheduler.size());
+        assertEquals("z", scheduler.get("k").getValue());
     }
 
     @Test(timeout = 10000)
     public void test_doNotRescheduleEntryWithinSameSecond_postpone() {
-        scheduler = new SecondsBasedEntryTaskScheduler<Integer, Integer>(executorService, entryProcessor, POSTPONE);
-        int delayMillis = 0;
+        scheduler = new SecondsBasedEntryTaskScheduler<String, String>(taskScheduler, entryProcessor, POSTPONE);
+        final int delayMillis = 0;
+        final String key = "k";
 
         int startSecond;
         boolean firstResult;
         boolean secondResult;
         int stopSecond;
+
         do {
-            // we can just assert the second result if the relative second is still the same,
-            // otherwise we may create a false negative failure since the second could have passed after the schedule() call
+            scheduler.cancel(key); // clean up after previous iteration to guarantee the first schedule attempt to be successful
             startSecond = findRelativeSecond(delayMillis);
-            firstResult = scheduler.schedule(delayMillis, 1, 1);
-            secondResult = scheduler.schedule(delayMillis, 1, 1);
+            firstResult = scheduler.schedule(delayMillis, key, "x");
+            secondResult = scheduler.schedule(delayMillis, key, "y");
             stopSecond = findRelativeSecond(delayMillis);
-        } while (startSecond != stopSecond);
+        } while (startSecond != stopSecond); // make sure that both schedules were in the same relative second
+
         assertTrue("First schedule() call should always be successful", firstResult);
         assertFalse("Second schedule() call should not be successful within the same second", secondResult);
-        assertNotNull(scheduler.get(1));
         assertEquals(1, scheduler.size());
-    }
-
-    @Test
-    public void test_cancelEntry_postpone() {
-        scheduler = new SecondsBasedEntryTaskScheduler<Integer, Integer>(executorService, entryProcessor, POSTPONE);
-
-        assertTrue(scheduler.schedule(100, 1, 1));
-        assertEquals(1, scheduler.size());
-        assertNotNull(scheduler.cancel(1));
-        assertEquals(0, scheduler.size());
+        assertEquals("x", scheduler.get(key).getValue());
     }
 
     @Test
     public void test_scheduleEntry_foreach() {
-        scheduler = new SecondsBasedEntryTaskScheduler<Integer, Integer>(executorService, entryProcessor, FOR_EACH);
+        scheduler = new SecondsBasedEntryTaskScheduler<String, String>(taskScheduler, entryProcessor, FOR_EACH);
 
-        assertTrue(scheduler.schedule(100, 1, 1));
-        assertNotNull(scheduler.get(1));
+        assertTrue(scheduler.schedule(100, "k", "v"));
         assertEquals(1, scheduler.size());
+        assertEquals("v", scheduler.get("k").getValue());
     }
 
     @Test
     public void test_scheduleEntryMultipleTimes_foreach() {
-        scheduler = new SecondsBasedEntryTaskScheduler<Integer, Integer>(executorService, entryProcessor, FOR_EACH);
+        scheduler = new SecondsBasedEntryTaskScheduler<String, String>(taskScheduler, entryProcessor, FOR_EACH);
 
-        assertTrue(scheduler.schedule(100, 1, 1));
-        assertTrue(scheduler.schedule(100, 1, 1));
-        assertNotNull(scheduler.get(1));
-        assertEquals(2, scheduler.size());
+        assertTrue(scheduler.schedule(1100, "k", "x"));
+        assertTrue(scheduler.schedule(1200, "k", "y"));
+        assertTrue(scheduler.schedule(3000, "k", "z"));
+        assertEquals(3, scheduler.size());
+        ScheduledEntry<String, String> scheduledSample = scheduler.get("k"); // unspecified which one will be returned
+        assertThat(scheduledSample.getValue(), isIn(asList("x", "y", "z")));
+    }
+
+    @Test
+    public void test_cancelEntry_postpone() {
+        scheduler = new SecondsBasedEntryTaskScheduler<String, String>(taskScheduler, entryProcessor, POSTPONE);
+
+        assertTrue(scheduler.schedule(100, "k", "v"));
+        assertNotNull(scheduler.cancel("k"));
+        assertTrue(scheduler.isEmpty());
+    }
+
+    @Test
+    public void test_cancelEntry_foreach() {
+        scheduler = new SecondsBasedEntryTaskScheduler<String, String>(taskScheduler, entryProcessor, FOR_EACH);
+
+        assertTrue(scheduler.schedule(100, "k", "x"));
+        assertTrue(scheduler.schedule(100, "k", "y"));
+        assertNotNull(scheduler.cancel("k"));
+        assertTrue(scheduler.isEmpty());
     }
 
     @Test
     public void test_cancelIfExists_postpone() {
-        scheduler = new SecondsBasedEntryTaskScheduler<Integer, Integer>(executorService, entryProcessor, POSTPONE);
+        scheduler = new SecondsBasedEntryTaskScheduler<String, String>(taskScheduler, entryProcessor, POSTPONE);
 
-        assertTrue(scheduler.schedule(100, 1, 1));
-        assertEquals(1, scheduler.cancelIfExists(1, 1));
+        assertTrue(scheduler.schedule(100, "k", "v"));
+        assertEquals(1, scheduler.cancelIfExists("k", "v"));
+        assertTrue(scheduler.isEmpty());
     }
 
     @Test
     public void test_cancelIfExists_foreach() {
-        scheduler = new SecondsBasedEntryTaskScheduler<Integer, Integer>(executorService, entryProcessor, FOR_EACH);
+        scheduler = new SecondsBasedEntryTaskScheduler<String, String>(taskScheduler, entryProcessor, FOR_EACH);
 
-        assertTrue(scheduler.schedule(100, 1, 1));
-        assertEquals(1, scheduler.cancelIfExists(1, 1));
+        assertTrue(scheduler.schedule(100, "k", "v"));
+        assertEquals(1, scheduler.cancelIfExists("k", "v"));
+        assertTrue(scheduler.isEmpty());
     }
 
     @Test
     public void test_cancelIfExistsWithInvalidValue_foreach() {
-        scheduler = new SecondsBasedEntryTaskScheduler<Integer, Integer>(executorService, entryProcessor, FOR_EACH);
+        scheduler = new SecondsBasedEntryTaskScheduler<String, String>(taskScheduler, entryProcessor, FOR_EACH);
 
-        assertTrue(scheduler.schedule(100, 1, 1));
-        assertEquals(0, scheduler.cancelIfExists(1, 0));
+        assertTrue(scheduler.schedule(100, "k", "x"));
+        assertEquals(0, scheduler.cancelIfExists("k", "y"));
+        assertEquals("x", scheduler.get("k").getValue());
     }
 
     @Test
     public void test_cancelIfExistsMultiple_foreach() {
-        scheduler = new SecondsBasedEntryTaskScheduler<Integer, Integer>(executorService, entryProcessor, FOR_EACH);
+        scheduler = new SecondsBasedEntryTaskScheduler<String, String>(taskScheduler, entryProcessor, FOR_EACH);
 
-        assertTrue(scheduler.schedule(100, 1, 1));
-        assertTrue(scheduler.schedule(100, 1, 2));
-        assertEquals(1, scheduler.cancelIfExists(1, 1));
+        assertTrue(scheduler.schedule(100, "k", "x"));
+        assertTrue(scheduler.schedule(100, "k", "y"));
+        assertEquals(1, scheduler.cancelIfExists("k", "y"));
+        assertEquals("x", scheduler.get("k").getValue());
     }
 
     @Test
     public void test_cancelAll() {
-        scheduler = new SecondsBasedEntryTaskScheduler<Integer, Integer>(executorService, entryProcessor, FOR_EACH);
+        scheduler = new SecondsBasedEntryTaskScheduler<String, String>(taskScheduler, entryProcessor, FOR_EACH);
 
-        assertTrue(scheduler.schedule(100, 1, 1));
-        assertTrue(scheduler.schedule(100, 1, 2));
+        assertTrue(scheduler.schedule(100, "k", "x"));
+        assertTrue(scheduler.schedule(100, "k", "y"));
         scheduler.cancelAll();
-        assertEquals(0, scheduler.size());
+        assertTrue(scheduler.isEmpty());
     }
 
     @Test
     @SuppressWarnings("unchecked")
-    public void test_executeScheduledEntry() {
+    public void test_executeScheduledEntries_postpone() {
         ArgumentCaptor<Runnable> runnableCaptor = ArgumentCaptor.forClass(Runnable.class);
-        when(executorService.schedule(runnableCaptor.capture(), anyLong(), any(TimeUnit.class)))
+        when(taskScheduler.schedule(runnableCaptor.capture(), anyLong(), any(TimeUnit.class)))
                 .thenReturn(mock(ScheduledFuture.class));
 
-        scheduler = new SecondsBasedEntryTaskScheduler<Integer, Integer>(executorService, entryProcessor, FOR_EACH);
+        scheduler = new SecondsBasedEntryTaskScheduler<String, String>(taskScheduler, entryProcessor, POSTPONE);
+        scheduler.schedule(1100, "k", "x");
+        scheduler.schedule(1200, "k", "y");
+        scheduler.schedule(3000, "k", "z");
+        scheduler.schedule(3000, "j", "v");
 
-        assertTrue(scheduler.schedule(100, 1, 1));
-        assertEquals(1, scheduler.size());
+        // simulate that the time's up and everything has been executed
+        for (Runnable runnable : runnableCaptor.getAllValues()) {
+            runnable.run();
+        }
 
-        Runnable runnable = runnableCaptor.getValue();
-        assertNotNull(runnable);
-        runnable.run();
-        assertEquals(0, scheduler.size());
+        assertTrue(scheduler.isEmpty());
+
+        ArgumentCaptor<Collection<ScheduledEntry<String, String>>> entriesCaptor = ArgumentCaptor.forClass(Collection.class);
+        verify(entryProcessor, atLeastOnce()).process(same(scheduler), entriesCaptor.capture());
+
+        List<String> entriesPassedToProcessor = new ArrayList<String>();
+        for (Collection<ScheduledEntry<String, String>> scheduledEntries : entriesCaptor.getAllValues()) {
+            for (ScheduledEntry<String, String> entry : scheduledEntries) {
+                entriesPassedToProcessor.add(entry.getKey() + ":" + entry.getValue());
+            }
+        }
+
+        assertThat(entriesPassedToProcessor, contains("k:z", "j:v"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void test_executeScheduledEntries_foreach() {
+        ArgumentCaptor<Runnable> runnableCaptor = ArgumentCaptor.forClass(Runnable.class);
+        when(taskScheduler.schedule(runnableCaptor.capture(), anyLong(), any(TimeUnit.class)))
+                .thenReturn(mock(ScheduledFuture.class));
+
+        scheduler = new SecondsBasedEntryTaskScheduler<String, String>(taskScheduler, entryProcessor, FOR_EACH);
+        scheduler.schedule(1100, "k", "x");
+        scheduler.schedule(1200, "k", "y");
+        scheduler.schedule(3000, "k", "z");
+        scheduler.schedule(3000, "j", "v");
+
+        // simulate that the time's up and everything has been executed
+        for (Runnable runnable : runnableCaptor.getAllValues()) {
+            runnable.run();
+        }
+        assertTrue(scheduler.isEmpty());
+
+        ArgumentCaptor<Collection<ScheduledEntry<String, String>>> entriesCaptor = ArgumentCaptor.forClass(Collection.class);
+        verify(entryProcessor, atLeastOnce()).process(same(scheduler), entriesCaptor.capture());
+
+        List<String> entriesPassedToProcessor = new ArrayList<String>();
+        for (Collection<ScheduledEntry<String, String>> scheduledEntries : entriesCaptor.getAllValues()) {
+            for (ScheduledEntry<String, String> entry : scheduledEntries) {
+                entriesPassedToProcessor.add(entry.getKey() + ":" + entry.getValue());
+            }
+        }
+
+        assertThat(entriesPassedToProcessor, contains("k:x", "k:y", "k:z", "j:v"));
+    }
+
+    @Test
+    public void test_noExceptionsOnNonExistingKey_postpone() {
+        scheduler = new SecondsBasedEntryTaskScheduler<String, String>(taskScheduler, entryProcessor, POSTPONE);
+
+        assertTrue(scheduler.schedule(100, "k", "v"));
+        assertNull(scheduler.get("j"));
+        assertNull(scheduler.cancel("j"));
+        assertEquals(0, scheduler.cancelIfExists("j", "v"));
+        assertEquals("v", scheduler.get("k").getValue());
+    }
+
+    @Test
+    public void test_noExceptionsOnNonExistingKey_foreach() {
+        scheduler = new SecondsBasedEntryTaskScheduler<String, String>(taskScheduler, entryProcessor, FOR_EACH);
+
+        assertTrue(scheduler.schedule(100, "k", "v"));
+        assertNull(scheduler.get("j"));
+        assertNull(scheduler.cancel("j"));
+        assertEquals(0, scheduler.cancelIfExists("j", "v"));
+        assertEquals("v", scheduler.get("k").getValue());
     }
 
     @Test
     public void test_toString() {
-        scheduler = new SecondsBasedEntryTaskScheduler<Integer, Integer>(executorService, entryProcessor, FOR_EACH);
+        scheduler = new SecondsBasedEntryTaskScheduler<String, String>(taskScheduler, entryProcessor, FOR_EACH);
 
         assertNotNull(scheduler.toString());
     }

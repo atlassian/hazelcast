@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package com.hazelcast.concurrent.lock.operations;
 
 import com.hazelcast.concurrent.lock.LockDataSerializerHook;
 import com.hazelcast.concurrent.lock.LockStoreImpl;
+import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
@@ -26,12 +27,13 @@ import com.hazelcast.spi.Notifier;
 import com.hazelcast.spi.ObjectNamespace;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.WaitNotifyKey;
+import com.hazelcast.spi.impl.MutatingOperation;
 
 import java.io.IOException;
 
 import static java.lang.Boolean.TRUE;
 
-public class UnlockOperation extends AbstractLockOperation implements Notifier, BackupAwareOperation {
+public class UnlockOperation extends AbstractLockOperation implements Notifier, BackupAwareOperation, MutatingOperation {
 
     private boolean force;
     private boolean shouldNotify;
@@ -71,12 +73,27 @@ public class UnlockOperation extends AbstractLockOperation implements Notifier, 
             // we can not check for retry here, hence just throw the exception
             String ownerInfo = lockStore.getOwnerInfo(key);
             throw new IllegalMonitorStateException("Current thread is not owner of the lock! -> " + ownerInfo);
+        } else {
+            ILogger logger = getLogger();
+            if (logger.isFinestEnabled()) {
+                logger.finest("Released lock " + namespace.getObjectName());
+            }
         }
     }
 
     protected final void forceUnlock() {
         LockStoreImpl lockStore = getLockStore();
-        response = lockStore.forceUnlock(key);
+        boolean unlocked = lockStore.forceUnlock(key);
+        this.response = unlocked;
+
+        ILogger logger = getLogger();
+        if (logger.isFinestEnabled()) {
+            if (unlocked) {
+                logger.finest("Released lock " + namespace.getObjectName());
+            } else {
+                logger.finest("Could not release lock " + namespace.getObjectName() + " as it is not locked");
+            }
+        }
     }
 
     @Override

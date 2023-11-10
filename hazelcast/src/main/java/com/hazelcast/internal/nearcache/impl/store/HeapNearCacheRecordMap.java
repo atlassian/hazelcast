@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,38 +16,45 @@
 
 package com.hazelcast.internal.nearcache.impl.store;
 
-import com.hazelcast.internal.eviction.Evictable;
 import com.hazelcast.internal.eviction.EvictionCandidate;
 import com.hazelcast.internal.eviction.EvictionListener;
 import com.hazelcast.internal.nearcache.NearCacheRecord;
 import com.hazelcast.internal.nearcache.impl.SampleableNearCacheRecordMap;
+import com.hazelcast.nio.serialization.SerializableByConvention;
 import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.util.SampleableConcurrentHashMap;
 
+/**
+ * {@link SampleableNearCacheRecordMap} implementation for on-heap Near Caches.
+ *
+ * @param <K> the type of the key stored in Near Cache
+ * @param <V> the type of the value stored in Near Cache
+ */
+@SerializableByConvention
 public class HeapNearCacheRecordMap<K, V extends NearCacheRecord>
         extends SampleableConcurrentHashMap<K, V>
         implements SampleableNearCacheRecordMap<K, V> {
 
     private final SerializationService serializationService;
 
-    public HeapNearCacheRecordMap(SerializationService serializationService, int initialCapacity) {
+    HeapNearCacheRecordMap(SerializationService serializationService, int initialCapacity) {
         super(initialCapacity);
         this.serializationService = serializationService;
     }
 
-    public class NearCacheEvictableSamplingEntry extends SamplingEntry<K, V> implements EvictionCandidate {
+    public class NearCacheEvictableSamplingEntry extends SamplingEntry<K, V> implements EvictionCandidate<K, V> {
 
-        public NearCacheEvictableSamplingEntry(K key, V value) {
+        NearCacheEvictableSamplingEntry(K key, V value) {
             super(key, value);
         }
 
         @Override
-        public Object getAccessor() {
+        public K getAccessor() {
             return key;
         }
 
         @Override
-        public Evictable getEvictable() {
+        public V getEvictable() {
             return value;
         }
 
@@ -78,26 +85,24 @@ public class HeapNearCacheRecordMap<K, V extends NearCacheRecord>
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     protected <E extends SamplingEntry> E createSamplingEntry(K key, V value) {
         return (E) new NearCacheEvictableSamplingEntry(key, value);
     }
 
     @Override
-    public <C extends EvictionCandidate<K, V>> int evict(Iterable<C> evictionCandidates,
-                                                         EvictionListener<K, V> evictionListener) {
-        if (evictionCandidates == null) {
-            return 0;
+    public <C extends EvictionCandidate<K, V>> boolean tryEvict(C evictionCandidate,
+                                                                EvictionListener<K, V> evictionListener) {
+        if (evictionCandidate == null) {
+            return false;
         }
-        int actualEvictedCount = 0;
-        for (EvictionCandidate<K, V> evictionCandidate : evictionCandidates) {
-            if (remove(evictionCandidate.getAccessor()) != null) {
-                actualEvictedCount++;
-                if (evictionListener != null) {
-                    evictionListener.onEvict(evictionCandidate.getAccessor(), evictionCandidate.getEvictable(), false);
-                }
-            }
+        if (remove(evictionCandidate.getAccessor()) == null) {
+            return false;
         }
-        return actualEvictedCount;
+        if (evictionListener != null) {
+            evictionListener.onEvict(evictionCandidate.getAccessor(), evictionCandidate.getEvictable(), false);
+        }
+        return true;
     }
 
     @Override

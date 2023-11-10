@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,12 +22,14 @@ import com.hazelcast.core.MembershipListener;
 
 public class DummyMembershipListener implements MembershipListener {
 
+    @Override
     public void memberAdded(MembershipEvent membershipEvent) {
-//        System.err.println(membershipEvent);
+        //System.err.println(membershipEvent);
     }
 
+    @Override
     public void memberRemoved(MembershipEvent membershipEvent) {
-//        System.err.println(membershipEvent);
+        //System.err.println(membershipEvent);
     }
 
     @Override

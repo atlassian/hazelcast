@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,7 +46,8 @@ import static org.junit.Assert.assertEquals;
 public class CustomDataSourceMapReduceTest
         extends HazelcastTestSupport {
 
-    private static final Comparator<Map.Entry<String, Integer>> ENTRYSET_COMPARATOR = new Comparator<Map.Entry<String, Integer>>() {
+    private static final Comparator<Map.Entry<String, Integer>> ENTRYSET_COMPARATOR
+            = new Comparator<Map.Entry<String, Integer>>() {
         @Override
         public int compare(Map.Entry<String, Integer> o1, Map.Entry<String, Integer> o2) {
             Integer i1 = Integer.parseInt(o1.getKey());
@@ -65,9 +66,8 @@ public class CustomDataSourceMapReduceTest
         final HazelcastInstance h2 = nodeFactory.newHazelcastInstance();
         final HazelcastInstance h3 = nodeFactory.newHazelcastInstance();
 
-        assertClusterSizeEventually(3, h1);
+        assertClusterSize(3, h1, h3);
         assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
 
         JobTracker jobTracker = h1.getJobTracker("default");
         Job<String, Integer> job = jobTracker.newJob(new CustomKeyValueSource());

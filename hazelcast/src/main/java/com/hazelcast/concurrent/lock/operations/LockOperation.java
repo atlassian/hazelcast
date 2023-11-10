@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,14 +20,16 @@ import com.hazelcast.concurrent.lock.LockDataSerializerHook;
 import com.hazelcast.concurrent.lock.LockStoreImpl;
 import com.hazelcast.concurrent.lock.LockWaitNotifyKey;
 import com.hazelcast.core.OperationTimeoutException;
+import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.BackupAwareOperation;
 import com.hazelcast.spi.BlockingOperation;
 import com.hazelcast.spi.ObjectNamespace;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.WaitNotifyKey;
+import com.hazelcast.spi.impl.MutatingOperation;
 
-public class LockOperation extends AbstractLockOperation implements BlockingOperation, BackupAwareOperation {
+public class LockOperation extends AbstractLockOperation implements BlockingOperation, BackupAwareOperation, MutatingOperation {
 
     public LockOperation() {
     }
@@ -43,7 +45,20 @@ public class LockOperation extends AbstractLockOperation implements BlockingOper
 
     @Override
     public void run() throws Exception {
-        response = getLockStore().lock(key, getCallerUuid(), threadId, getReferenceCallId(), leaseTime);
+        interceptLockOperation();
+        final boolean lockResult = getLockStore().lock(key, getCallerUuid(), threadId, getReferenceCallId(), leaseTime);
+        response = lockResult;
+
+        ILogger logger = getLogger();
+        if (logger.isFinestEnabled()) {
+            if (lockResult) {
+                logger.finest("Acquired lock " + namespace.getObjectName()
+                        + " for " + getCallerAddress() + " - " + getCallerUuid() + ", thread ID: " + threadId);
+            } else {
+                logger.finest("Could not acquire lock " + namespace.getObjectName()
+                        + " as owned by " + getLockStore().getOwnerInfo(key));
+            }
+        }
     }
 
     @Override

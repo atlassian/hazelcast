@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,24 +34,12 @@ public class HazelcastManagedThread extends Thread {
         super(target);
     }
 
-    public HazelcastManagedThread(ThreadGroup group, Runnable target) {
-        super(group, target);
-    }
-
     public HazelcastManagedThread(String name) {
         super(name);
     }
 
-    public HazelcastManagedThread(ThreadGroup group, String name) {
-        super(group, name);
-    }
-
     public HazelcastManagedThread(Runnable target, String name) {
         super(target, name);
-    }
-
-    public HazelcastManagedThread(ThreadGroup group, Runnable target, String name) {
-        super(group, target, name);
     }
 
     @Override

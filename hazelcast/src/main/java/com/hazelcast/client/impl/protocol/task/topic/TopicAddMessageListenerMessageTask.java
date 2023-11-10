@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,10 @@
 
 package com.hazelcast.client.impl.protocol.task.topic;
 
-import com.hazelcast.client.ClientEndpoint;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.TopicAddMessageListenerCodec;
 import com.hazelcast.client.impl.protocol.task.AbstractCallableMessageTask;
+import com.hazelcast.client.impl.protocol.task.ListenerMessageTask;
 import com.hazelcast.core.Message;
 import com.hazelcast.core.MessageListener;
 import com.hazelcast.instance.Node;
@@ -37,7 +37,7 @@ import static com.hazelcast.util.HashUtil.hashToIndex;
 
 public class TopicAddMessageListenerMessageTask
         extends AbstractCallableMessageTask<TopicAddMessageListenerCodec.RequestParameters>
-        implements MessageListener {
+        implements MessageListener, ListenerMessageTask {
 
     private Data partitionKey;
     private Random rand = new Random();
@@ -50,7 +50,6 @@ public class TopicAddMessageListenerMessageTask
     protected Object call() throws Exception {
         partitionKey = serializationService.toData(parameters.name);
         TopicService service = getService(TopicService.SERVICE_NAME);
-        ClientEndpoint endpoint = getEndpoint();
         String registrationId = service.addMessageListener(parameters.name, this, parameters.localOnly);
         endpoint.addListenerDestroyAction(TopicService.SERVICE_NAME, parameters.name, registrationId);
         return registrationId;
@@ -110,7 +109,7 @@ public class TopicAddMessageListenerMessageTask
         ClientMessage eventMessage = TopicAddMessageListenerCodec.encodeTopicEvent(messageData,
                 message.getPublishTime(), publisherUuid);
 
-        boolean isMultithreaded = nodeEngine.getConfig().getTopicConfig(parameters.name).isMultiThreadingEnabled();
+        boolean isMultithreaded = nodeEngine.getConfig().findTopicConfig(parameters.name).isMultiThreadingEnabled();
         if (isMultithreaded) {
             int key = rand.nextInt();
             int partitionId = hashToIndex(key, nodeEngine.getPartitionService().getPartitionCount());

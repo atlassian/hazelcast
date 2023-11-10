@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import com.hazelcast.spi.serialization.SerializationService;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -57,7 +58,7 @@ public final class CollectionUtil {
 
     /**
      * Adds a value to a list of values in the map.
-     *
+     * <p>
      * Creates a new list if no list is found for the key.
      *
      * @param map   the given map of lists
@@ -109,12 +110,26 @@ public final class CollectionUtil {
      */
     public static <C> Collection<Data> objectToDataCollection(Collection<C> collection,
                                                               SerializationService serializationService) {
-        List<Data> dataKeys = new ArrayList<Data>(collection.size());
-        for (C item : collection) {
-            checkNotNull(item);
-            dataKeys.add(serializationService.toData(item));
+        List<Data> dataCollection = new ArrayList<Data>(collection.size());
+        objectToDataCollection(collection, dataCollection, serializationService, null);
+        return dataCollection;
+    }
+
+    /**
+     * Converts a collection of any type to a collection of {@link Data}.
+     *
+     * @param objectCollection     object items
+     * @param dataCollection       data items
+     * @param serializationService will be used for converting object to {@link Data}
+     * @param errorMessage         the errorMessage when an item is null
+     * @throws NullPointerException if collection is {@code null} or contains a {@code null} item
+     */
+    public static <C> void objectToDataCollection(Collection<C> objectCollection, Collection<Data> dataCollection,
+                                                  SerializationService serializationService, String errorMessage) {
+        for (C item : objectCollection) {
+            checkNotNull(item, errorMessage);
+            dataCollection.add(serializationService.toData(item));
         }
-        return dataKeys;
     }
 
     /**
@@ -151,7 +166,7 @@ public final class CollectionUtil {
 
     /**
      * Converts an int array to an Integer {@link List}.
-     *
+     * <p>
      * The returned collection can be modified after it is created; it isn't protected by an immutable wrapper.
      *
      * @param array the array
@@ -164,5 +179,10 @@ public final class CollectionUtil {
             result.add(partitionId);
         }
         return result;
+    }
+
+    /** Returns an empty Collection if argument is null. **/
+    public static <T> Collection<T> nullToEmpty(Collection<T> collection) {
+        return collection == null ? Collections.<T>emptyList() : collection;
     }
 }

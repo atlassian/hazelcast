@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,28 @@
 
 package com.hazelcast.config;
 
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+import com.hazelcast.nio.serialization.impl.Versioned;
+import com.hazelcast.spi.merge.SplitBrainMergeTypeProvider;
+import com.hazelcast.spi.merge.SplitBrainMergeTypes;
+
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
+import static com.hazelcast.internal.serialization.impl.SerializationUtil.readNullableList;
+import static com.hazelcast.internal.serialization.impl.SerializationUtil.writeNullableList;
 import static com.hazelcast.util.Preconditions.checkAsyncBackupCount;
 import static com.hazelcast.util.Preconditions.checkBackupCount;
+import static com.hazelcast.util.Preconditions.checkNotNull;
 
 /**
- * Contains the configuration for an {@link com.hazelcast.core.IQueue}
+ * Contains the configuration for an {@link com.hazelcast.core.IQueue}.
  */
-public class QueueConfig {
+@SuppressWarnings("checkstyle:methodcount")
+public class QueueConfig implements SplitBrainMergeTypeProvider, IdentifiedDataSerializable, Versioned , NamedConfig {
 
     /**
      * Default value for the maximum size of the Queue.
@@ -56,7 +68,8 @@ public class QueueConfig {
     private QueueStoreConfig queueStoreConfig;
     private boolean statisticsEnabled = true;
     private String quorumName;
-    private QueueConfigReadOnly readOnly;
+    private MergePolicyConfig mergePolicyConfig = new MergePolicyConfig();
+    private transient QueueConfigReadOnly readOnly;
 
     public QueueConfig() {
     }
@@ -74,14 +87,16 @@ public class QueueConfig {
         this.emptyQueueTtl = config.emptyQueueTtl;
         this.statisticsEnabled = config.statisticsEnabled;
         this.quorumName = config.quorumName;
+        this.mergePolicyConfig = config.mergePolicyConfig;
         this.queueStoreConfig = config.queueStoreConfig != null ? new QueueStoreConfig(config.queueStoreConfig) : null;
         this.listenerConfigs = new ArrayList<ItemListenerConfig>(config.getItemListenerConfigs());
     }
 
     /**
-     * Returns a read only copy of the queue configuration.
+     * Gets immutable version of this configuration.
      *
-     * @return A read only copy of the queue configuration.
+     * @return immutable version of this configuration
+     * @deprecated this method will be removed in 4.0; it is meant for internal usage only
      */
     public QueueConfigReadOnly getAsReadOnly() {
         if (readOnly == null) {
@@ -93,7 +108,7 @@ public class QueueConfig {
     /**
      * Returns the TTL (time to live) for emptying the Queue.
      *
-     * @return The TTL (time to live) for emptying the Queue.
+     * @return the TTL (time to live) for emptying the Queue
      */
     public int getEmptyQueueTtl() {
         return emptyQueueTtl;
@@ -102,8 +117,8 @@ public class QueueConfig {
     /**
      * Sets the TTL (time to live) for emptying the Queue.
      *
-     * @param emptyQueueTtl Set the TTL (time to live) for emptying the Queue to this value.
-     * @return The Queue configuration.
+     * @param emptyQueueTtl set the TTL (time to live) for emptying the Queue to this value
+     * @return the Queue configuration
      */
     public QueueConfig setEmptyQueueTtl(int emptyQueueTtl) {
         this.emptyQueueTtl = emptyQueueTtl;
@@ -113,7 +128,7 @@ public class QueueConfig {
     /**
      * Returns the maximum size of the Queue.
      *
-     * @return The maximum size of the Queue.
+     * @return the maximum size of the Queue
      */
     public int getMaxSize() {
         return maxSize == 0 ? Integer.MAX_VALUE : maxSize;
@@ -122,8 +137,8 @@ public class QueueConfig {
     /**
      * Sets the maximum size of the Queue.
      *
-     * @param maxSize Set the maximum size of the Queue to this value.
-     * @return The Queue configuration.
+     * @param maxSize set the maximum size of the Queue to this value
+     * @return the Queue configuration
      */
     public QueueConfig setMaxSize(int maxSize) {
         if (maxSize < 0) {
@@ -136,7 +151,7 @@ public class QueueConfig {
     /**
      * Get the total number of backups: the backup count plus the asynchronous backup count.
      *
-     * @return The total number of backups.
+     * @return the total number of backups
      */
     public int getTotalBackupCount() {
         return backupCount + asyncBackupCount;
@@ -145,7 +160,7 @@ public class QueueConfig {
     /**
      * Get the number of synchronous backups for this queue.
      *
-     * @return The synchronous backup count.
+     * @return the synchronous backup count
      */
     public int getBackupCount() {
         return backupCount;
@@ -169,7 +184,7 @@ public class QueueConfig {
     /**
      * Get the number of asynchronous backups for this queue.
      *
-     * @return The number of asynchronous backups.
+     * @return the number of asynchronous backups
      */
     public int getAsyncBackupCount() {
         return asyncBackupCount;
@@ -194,7 +209,7 @@ public class QueueConfig {
     /**
      * Get the QueueStore (load and store queue items from/to a database) configuration.
      *
-     * @return The QueueStore configuration.
+     * @return the QueueStore configuration
      */
     public QueueStoreConfig getQueueStoreConfig() {
         return queueStoreConfig;
@@ -203,8 +218,8 @@ public class QueueConfig {
     /**
      * Set the QueueStore (load and store queue items from/to a database) configuration.
      *
-     * @param queueStoreConfig Set the QueueStore configuration to this configuration.
-     * @return The QueueStore configuration.
+     * @param queueStoreConfig set the QueueStore configuration to this configuration
+     * @return the QueueStore configuration
      */
     public QueueConfig setQueueStoreConfig(QueueStoreConfig queueStoreConfig) {
         this.queueStoreConfig = queueStoreConfig;
@@ -214,7 +229,7 @@ public class QueueConfig {
     /**
      * Check if statistics are enabled for this queue.
      *
-     * @return true if statistics are enabled, false otherwise.
+     * @return {@code true} if statistics are enabled, {@code false} otherwise
      */
     public boolean isStatisticsEnabled() {
         return statisticsEnabled;
@@ -223,7 +238,7 @@ public class QueueConfig {
     /**
      * Enables or disables statistics for this queue.
      *
-     * @param statisticsEnabled True to enable statistics for this queue, false to disable.
+     * @param statisticsEnabled {@code true} to enable statistics for this queue, {@code false} to disable
      * @return the updated QueueConfig
      */
     public QueueConfig setStatisticsEnabled(boolean statisticsEnabled) {
@@ -232,7 +247,7 @@ public class QueueConfig {
     }
 
     /**
-     * @return The name of this queue.
+     * @return the name of this queue
      */
     public String getName() {
         return name;
@@ -241,8 +256,8 @@ public class QueueConfig {
     /**
      * Set the name for this queue.
      *
-     * @param name The name to set for this queue.
-     * @return This queue configuration.
+     * @param name the name to set for this queue
+     * @return this queue configuration
      */
     public QueueConfig setName(String name) {
         this.name = name;
@@ -252,8 +267,8 @@ public class QueueConfig {
     /**
      * Add an item listener configuration to this queue.
      *
-     * @param listenerConfig The item listener configuration to add to this queue.
-     * @return The updated queue configuration.
+     * @param listenerConfig the item listener configuration to add to this queue
+     * @return the updated queue configuration
      */
     public QueueConfig addItemListenerConfig(ItemListenerConfig listenerConfig) {
         getItemListenerConfigs().add(listenerConfig);
@@ -263,7 +278,7 @@ public class QueueConfig {
     /**
      * Get the list of item listener configurations for this queue.
      *
-     * @return The list of item listener configurations for this queue.
+     * @return the list of item listener configurations for this queue
      */
     public List<ItemListenerConfig> getItemListenerConfigs() {
         if (listenerConfigs == null) {
@@ -275,8 +290,8 @@ public class QueueConfig {
     /**
      * Set the list of item listener configurations for this queue.
      *
-     * @param listenerConfigs The list of item listener configurations to set for this queue.
-     * @return The updated queue configuration.
+     * @param listenerConfigs the list of item listener configurations to set for this queue
+     * @return the updated queue configuration
      */
     public QueueConfig setItemListenerConfigs(List<ItemListenerConfig> listenerConfigs) {
         this.listenerConfigs = listenerConfigs;
@@ -303,6 +318,30 @@ public class QueueConfig {
         return this;
     }
 
+    /**
+     * Gets the {@link MergePolicyConfig} for this queue.
+     *
+     * @return the {@link MergePolicyConfig} for this queue
+     */
+    public MergePolicyConfig getMergePolicyConfig() {
+        return mergePolicyConfig;
+    }
+
+    /**
+     * Sets the {@link MergePolicyConfig} for this queue.
+     *
+     * @return the updated queue configuration
+     */
+    public QueueConfig setMergePolicyConfig(MergePolicyConfig mergePolicyConfig) {
+        this.mergePolicyConfig = checkNotNull(mergePolicyConfig, "mergePolicyConfig cannot be null");
+        return this;
+    }
+
+    @Override
+    public Class getProvidedMergeTypes() {
+        return SplitBrainMergeTypes.QueueMergeTypes.class;
+    }
+
     @Override
     public String toString() {
         return "QueueConfig{"
@@ -314,6 +353,101 @@ public class QueueConfig {
                 + ", emptyQueueTtl=" + emptyQueueTtl
                 + ", queueStoreConfig=" + queueStoreConfig
                 + ", statisticsEnabled=" + statisticsEnabled
+                + ", mergePolicyConfig=" + mergePolicyConfig
                 + '}';
+    }
+
+    @Override
+    public int getFactoryId() {
+        return ConfigDataSerializerHook.F_ID;
+    }
+
+    @Override
+    public int getId() {
+        return ConfigDataSerializerHook.QUEUE_CONFIG;
+    }
+
+    @Override
+    public void writeData(ObjectDataOutput out) throws IOException {
+        out.writeUTF(name);
+        writeNullableList(listenerConfigs, out);
+        out.writeInt(backupCount);
+        out.writeInt(asyncBackupCount);
+        out.writeInt(maxSize);
+        out.writeInt(emptyQueueTtl);
+        out.writeObject(queueStoreConfig);
+        out.writeBoolean(statisticsEnabled);
+        out.writeUTF(quorumName);
+        out.writeObject(mergePolicyConfig);
+    }
+
+    @Override
+    public void readData(ObjectDataInput in) throws IOException {
+        name = in.readUTF();
+        listenerConfigs = readNullableList(in);
+        backupCount = in.readInt();
+        asyncBackupCount = in.readInt();
+        maxSize = in.readInt();
+        emptyQueueTtl = in.readInt();
+        queueStoreConfig = in.readObject();
+        statisticsEnabled = in.readBoolean();
+        quorumName = in.readUTF();
+        mergePolicyConfig = in.readObject();
+    }
+
+    @Override
+    @SuppressWarnings({"checkstyle:cyclomaticcomplexity", "checkstyle:npathcomplexity"})
+    public final boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof QueueConfig)) {
+            return false;
+        }
+
+        QueueConfig that = (QueueConfig) o;
+        if (backupCount != that.backupCount) {
+            return false;
+        }
+        if (asyncBackupCount != that.asyncBackupCount) {
+            return false;
+        }
+        if (getMaxSize() != that.getMaxSize()) {
+            return false;
+        }
+        if (emptyQueueTtl != that.emptyQueueTtl) {
+            return false;
+        }
+        if (statisticsEnabled != that.statisticsEnabled) {
+            return false;
+        }
+        if (!name.equals(that.name)) {
+            return false;
+        }
+        if (!getItemListenerConfigs().equals(that.getItemListenerConfigs())) {
+            return false;
+        }
+        if (queueStoreConfig != null ? !queueStoreConfig.equals(that.queueStoreConfig) : that.queueStoreConfig != null) {
+            return false;
+        }
+        if (quorumName != null ? !quorumName.equals(that.quorumName) : that.quorumName != null) {
+            return false;
+        }
+        return mergePolicyConfig != null ? mergePolicyConfig.equals(that.mergePolicyConfig) : that.mergePolicyConfig == null;
+    }
+
+    @Override
+    public final int hashCode() {
+        int result = name.hashCode();
+        result = 31 * result + getItemListenerConfigs().hashCode();
+        result = 31 * result + backupCount;
+        result = 31 * result + asyncBackupCount;
+        result = 31 * result + getMaxSize();
+        result = 31 * result + emptyQueueTtl;
+        result = 31 * result + (queueStoreConfig != null ? queueStoreConfig.hashCode() : 0);
+        result = 31 * result + (statisticsEnabled ? 1 : 0);
+        result = 31 * result + (quorumName != null ? quorumName.hashCode() : 0);
+        result = 31 * result + (mergePolicyConfig != null ? mergePolicyConfig.hashCode() : 0);
+        return result;
     }
 }

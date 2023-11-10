@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,11 +45,28 @@ public class ClientReliableTopicConfig {
     private String name;
     private TopicOverloadPolicy topicOverloadPolicy = DEFAULT_TOPIC_OVERLOAD_POLICY;
 
+
+    // for spring-instantiation
+    public ClientReliableTopicConfig() {
+    }
+
     /**
      * Creates a new ReliableTopicConfig with default settings.
      */
     public ClientReliableTopicConfig(String name) {
         this.name = checkNotNull(name, "name");
+    }
+
+    /**
+     * Create a clone of given reliable topic
+     *
+     * @param reliableTopicConfig topic
+     */
+    public ClientReliableTopicConfig(ClientReliableTopicConfig reliableTopicConfig) {
+        this.executor = reliableTopicConfig.executor;
+        this.readBatchSize = reliableTopicConfig.readBatchSize;
+        this.name = reliableTopicConfig.name;
+        this.topicOverloadPolicy = reliableTopicConfig.topicOverloadPolicy;
     }
 
     /**
@@ -59,6 +76,14 @@ public class ClientReliableTopicConfig {
      */
     public String getName() {
         return name;
+    }
+
+    /**
+     * Sets the name or name pattern for this config. Must not be modified after this
+     * instance is added to {@link ClientConfig}.
+     */
+    public void setName(String name) {
+        this.name = name;
     }
 
     /**
@@ -161,5 +186,38 @@ public class ClientReliableTopicConfig {
                 + ", executor=" + executor
                 + ", readBatchSize=" + readBatchSize
                 + '}';
+    }
+
+    @Override
+    @SuppressWarnings({"checkstyle:npathcomplexity"})
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+
+        ClientReliableTopicConfig that = (ClientReliableTopicConfig) o;
+
+        if (readBatchSize != that.readBatchSize) {
+            return false;
+        }
+        if (executor != null ? !executor.equals(that.executor) : that.executor != null) {
+            return false;
+        }
+        if (name != null ? !name.equals(that.name) : that.name != null) {
+            return false;
+        }
+        return topicOverloadPolicy == that.topicOverloadPolicy;
+    }
+
+    @Override
+    public int hashCode() {
+        int result = executor != null ? executor.hashCode() : 0;
+        result = 31 * result + readBatchSize;
+        result = 31 * result + (name != null ? name.hashCode() : 0);
+        result = 31 * result + (topicOverloadPolicy != null ? topicOverloadPolicy.hashCode() : 0);
+        return result;
     }
 }

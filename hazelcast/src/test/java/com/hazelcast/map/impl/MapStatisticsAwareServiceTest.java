@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,13 @@
 package com.hazelcast.map.impl;
 
 import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.core.IMap;
 import com.hazelcast.monitor.LocalMapStats;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -32,18 +34,34 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 
 /**
- * Test for MapStatisticsAwareService
+ * Test for {@link MapStatisticsAwareService}
  */
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
 public class MapStatisticsAwareServiceTest extends HazelcastTestSupport {
 
-    @Test
-    public void getStats() {
-        HazelcastInstance hz = createHazelcastInstance();
+    HazelcastInstance hz;
+    IMap map;
+
+    @Before
+    public void setUp() throws Exception {
+        hz = createHazelcastInstance();
         warmUpPartitions(hz);
-        // when one map exists
-        hz.getMap("map");
+        map = hz.getMap("map");
+    }
+
+    @Test
+    public void getStats_returns_stats_object_when_map_is_empty() {
+        assertStatsObjectCreated();
+    }
+
+    @Test
+    public void getStats_returns_stats_object_when_map_is_not_empty() {
+        map.put(1, 1);
+        assertStatsObjectCreated();
+    }
+
+    private void assertStatsObjectCreated() {
         MapService mapService = getNodeEngineImpl(hz).getService(MapService.SERVICE_NAME);
         Map<String, LocalMapStats> mapStats = mapService.getStats();
 

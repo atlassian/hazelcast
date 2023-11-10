@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.internal.serialization.impl;
 
 import com.hazelcast.internal.serialization.InternalSerializationService;
@@ -10,10 +26,10 @@ import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 import org.powermock.core.classloader.annotations.PrepareForTest;
 import org.powermock.modules.junit4.PowerMockRunner;
+import org.powermock.reflect.Whitebox;
 
 import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
-import java.lang.reflect.Field;
 import java.nio.ByteOrder;
 import java.util.Arrays;
 import java.util.Random;
@@ -25,7 +41,6 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.verify;
 import static org.powermock.api.mockito.PowerMockito.mock;
-import static org.powermock.api.mockito.PowerMockito.spy;
 import static org.powermock.api.mockito.PowerMockito.when;
 
 @RunWith(PowerMockRunner.class)
@@ -33,11 +48,12 @@ import static org.powermock.api.mockito.PowerMockito.when;
 @Category({QuickTest.class, ParallelTest.class})
 public class ObjectDataInputStreamFinalMethodsTest {
 
-    final static byte[] INIT_DATA = new byte[]{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+    static final byte[] INIT_DATA = new byte[]{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
 
     private InternalSerializationService mockSerializationService;
     private ObjectDataInputStream in;
-    private DataInputStream dataInputSpy;
+    private ObjectDataInputStream inMockedDis;
+    private DataInputStream mockedDis;
     private InitableByteArrayInputStream inputStream;
     private ByteOrder byteOrder;
 
@@ -50,78 +66,74 @@ public class ObjectDataInputStreamFinalMethodsTest {
         inputStream = new InitableByteArrayInputStream(INIT_DATA);
         in = new ObjectDataInputStream(inputStream, mockSerializationService);
 
-        Field field = ObjectDataInputStream.class.getDeclaredField("dataInput");
-        field.setAccessible(true);
-        DataInputStream dataInput = (DataInputStream) field.get(in);
-
-        dataInputSpy = spy(dataInput);
-
-        field.set(in, dataInputSpy);
+        mockedDis = mock(DataInputStream.class);
+        inMockedDis = new ObjectDataInputStream(inputStream, mockSerializationService);
+        Whitebox.setInternalState(inMockedDis, DataInputStream.class, mockedDis);
     }
 
     @Test
     public void testRead() throws Exception {
-        in.read();
-        verify(dataInputSpy).readByte();
+        inMockedDis.read();
+        verify(mockedDis).readByte();
     }
 
     @Test
     public void testReadB() throws Exception {
         byte[] someInput = new byte[0];
-        in.read(someInput);
-        verify(dataInputSpy).read(someInput);
+        inMockedDis.read(someInput);
+        verify(mockedDis).read(someInput);
     }
 
     @Test
     public void testReadForBOffLen() throws Exception {
         byte[] someInput = new byte[1];
-        in.read(someInput, 0, 1);
-        verify(dataInputSpy).read(someInput, 0, 1);
+        inMockedDis.read(someInput, 0, 1);
+        verify(mockedDis).read(someInput, 0, 1);
     }
 
     @Test
     public void testReadFullyB() throws Exception {
         byte[] someInput = new byte[1];
-        in.readFully(someInput);
-        verify(dataInputSpy).readFully(someInput);
+        inMockedDis.readFully(someInput);
+        verify(mockedDis).readFully(someInput);
     }
 
     @Test
     public void testReadFullyForBOffLen() throws Exception {
         byte[] someInput = new byte[1];
-        in.readFully(someInput, 0, 1);
-        verify(dataInputSpy).readFully(someInput, 0, 1);
+        inMockedDis.readFully(someInput, 0, 1);
+        verify(mockedDis).readFully(someInput, 0, 1);
     }
 
     @Test
     public void testSkipBytes() throws Exception {
         int someInput = new Random().nextInt();
-        in.skipBytes(someInput);
-        verify(dataInputSpy).skipBytes(someInput);
+        inMockedDis.skipBytes(someInput);
+        verify(mockedDis).skipBytes(someInput);
     }
 
     @Test
     public void testReadBoolean() throws Exception {
-        in.readBoolean();
-        verify(dataInputSpy).readBoolean();
+        inMockedDis.readBoolean();
+        verify(mockedDis).readBoolean();
     }
 
     @Test
     public void testReadByte() throws Exception {
-        in.readByte();
-        verify(dataInputSpy).readByte();
+        inMockedDis.readByte();
+        verify(mockedDis).readByte();
     }
 
     @Test
     public void testReadUnsignedByte() throws Exception {
-        in.readUnsignedByte();
-        verify(dataInputSpy).readUnsignedByte();
+        inMockedDis.readUnsignedByte();
+        verify(mockedDis).readUnsignedByte();
     }
 
     @Test
     public void testReadUnsignedShort() throws Exception {
-        in.readUnsignedShort();
-        verify(dataInputSpy).readUnsignedShort();
+        inMockedDis.readUnsignedShort();
+        verify(mockedDis).readShort();
     }
 
     @Test
@@ -289,14 +301,14 @@ public class ObjectDataInputStreamFinalMethodsTest {
 
     @Test
     public void testReadLine() throws Exception {
-        in.readLine();
-        verify(dataInputSpy).readLine();
+        inMockedDis.readLine();
+        verify(mockedDis).readLine();
     }
 
     @Test
     public void testReadObject() throws Exception {
-        in.readObject();
-        verify(mockSerializationService).readObject(in);
+        inMockedDis.readObject();
+        verify(mockSerializationService).readObject(inMockedDis);
     }
 
     @Test

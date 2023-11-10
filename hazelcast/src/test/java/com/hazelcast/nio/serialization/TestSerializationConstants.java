@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ package com.hazelcast.nio.serialization;
 
 public class TestSerializationConstants {
 
-
     public static final int PORTABLE_FACTORY_ID = 1;
     public static final int INNER_PORTABLE = 1;
 
@@ -30,7 +29,6 @@ public class TestSerializationConstants {
     public static final int OBJECT_CARRYING_PORTABLE = 7;
     public static final int ALL_FIELD_OBJECT_PORTABLE = 8;
     public static final int MORPHING_PORTABLE = 9;
-
 
     public static final int DATA_SERIALIZABLE_FACTORY_ID = 1;
     public static final int SAMPLE_IDENTIFIED_DATA_SERIALIZABLE = 1;

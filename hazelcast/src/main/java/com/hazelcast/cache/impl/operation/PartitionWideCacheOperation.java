@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,6 @@ import com.hazelcast.spi.impl.AbstractNamedOperation;
  * @see com.hazelcast.cache.impl.operation.CacheSizeOperation
  * @see com.hazelcast.cache.impl.operation.CacheGetAllOperation
  * @see com.hazelcast.cache.impl.operation.CacheClearOperation
- * @see com.hazelcast.cache.impl.operation.CacheGetConfigOperation
  */
 abstract class PartitionWideCacheOperation
         extends AbstractNamedOperation

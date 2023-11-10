@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.util;
 
 import com.hazelcast.test.HazelcastParallelClassRunner;
@@ -8,6 +24,9 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
+/**
+ * Invokes all {@link JVMUtil} method to ensure no exception is thrown.
+ */
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
 public class JVMUtilTest extends HazelcastTestSupport {
@@ -17,7 +36,11 @@ public class JVMUtilTest extends HazelcastTestSupport {
         assertUtilityConstructor(JVMUtil.class);
     }
 
-    // just invoke each JVMUtil static method to ensure no exception is thrown
+    @Test
+    public void testIs32bitJVM() {
+        JVMUtil.is32bitJVM();
+    }
+
     @Test
     public void testIsCompressedOops() {
         JVMUtil.isCompressedOops();
@@ -31,11 +54,6 @@ public class JVMUtilTest extends HazelcastTestSupport {
     @Test
     public void testIsObjectLayoutCompressedOopsOrNull() {
         JVMUtil.isObjectLayoutCompressedOopsOrNull();
-    }
-
-    @Test
-    public void testIs32bitJVM() {
-        JVMUtil.is32bitJVM();
     }
 
     // Prints the size of object reference as calculated by JVMUtil.

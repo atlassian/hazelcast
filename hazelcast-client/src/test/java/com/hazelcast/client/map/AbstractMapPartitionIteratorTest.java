@@ -1,29 +1,47 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.client.map;
 
+import com.hazelcast.client.config.ClientConfig;
 import com.hazelcast.client.proxy.ClientMapProxy;
 import com.hazelcast.client.test.TestHazelcastFactory;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.test.HazelcastTestSupport;
 import org.junit.After;
 import org.junit.Test;
-import org.junit.runners.Parameterized;
+import org.junit.runners.Parameterized.Parameter;
+import org.junit.runners.Parameterized.Parameters;
 
-import java.util.Arrays;
 import java.util.Iterator;
 import java.util.Map;
 
+import static java.util.Arrays.asList;
 import static junit.framework.Assert.assertFalse;
 import static junit.framework.Assert.assertTrue;
 import static org.junit.Assert.assertEquals;
 
 public abstract class AbstractMapPartitionIteratorTest extends HazelcastTestSupport {
 
-    @Parameterized.Parameter
+    @Parameter
     public boolean prefetchValues;
 
-    @Parameterized.Parameters(name = "prefetchValues:{0}")
+    @Parameters(name = "prefetchValues:{0}")
     public static Iterable<Object[]> parameters() {
-        return Arrays.asList(new Object[]{Boolean.TRUE}, new Object[]{Boolean.FALSE});
+        return asList(new Object[]{Boolean.TRUE}, new Object[]{Boolean.FALSE});
     }
 
     protected TestHazelcastFactory factory;
@@ -82,6 +100,10 @@ public abstract class AbstractMapPartitionIteratorTest extends HazelcastTestSupp
             Map.Entry entry = iterator.next();
             assertEquals(value, entry.getValue());
         }
+    }
+
+    protected ClientConfig getClientConfig() {
+        return new ClientConfig();
     }
 
     private <K, V> ClientMapProxy<K, V> getMapProxy() {

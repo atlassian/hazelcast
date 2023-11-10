@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,12 +39,12 @@ public class CacheMapLoader implements MapStore, MapLoaderLifecycleSupport {
     }
 
     @Override
-    public Object load(final Object key) {
+    public Object load(Object key) {
         return type + ":" + key;
     }
 
     @Override
-    public Map loadAll(final Collection keys) {
+    public Map loadAll(Collection keys) {
         return null;
     }
 

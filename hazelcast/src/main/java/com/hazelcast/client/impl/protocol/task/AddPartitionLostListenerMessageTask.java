@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,8 @@ import java.security.Permission;
 import static com.hazelcast.internal.partition.InternalPartitionService.PARTITION_LOST_EVENT_TOPIC;
 
 public class AddPartitionLostListenerMessageTask
-        extends AbstractCallableMessageTask<ClientAddPartitionLostListenerCodec.RequestParameters> {
+        extends AbstractCallableMessageTask<ClientAddPartitionLostListenerCodec.RequestParameters>
+        implements ListenerMessageTask {
 
     public AddPartitionLostListenerMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);

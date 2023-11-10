@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,10 +31,10 @@ import java.util.NoSuchElementException;
  * its internal {@link com.hazelcast.core.Member} collection. It reflects changes in the internal collection.
  * Mutating methods throw {@link java.lang.UnsupportedOperationException}
  * It is mainly used for querying a member list.
+ *
  * @param <M> A subclass of {@link com.hazelcast.core.Member} interface
  */
 public final class MemberSelectingCollection<M extends Member> implements Collection<M> {
-
 
     private final Collection<M> members;
 
@@ -47,13 +47,16 @@ public final class MemberSelectingCollection<M extends Member> implements Collec
 
     @Override
     public int size() {
+        return count(members, selector);
+    }
+
+    public static <M extends Member> int count(Collection<M> members, MemberSelector memberSelector) {
         int size = 0;
         for (M member : members) {
-            if (selector.select(member)) {
+            if (memberSelector.select(member)) {
                 size++;
             }
         }
-
         return size;
     }
 
@@ -86,8 +89,7 @@ public final class MemberSelectingCollection<M extends Member> implements Collec
                 result.add(member);
             }
         }
-
-        return result.toArray(new Object[result.size()]);
+        return result.toArray(new Object[0]);
     }
 
     @Override
@@ -176,7 +178,7 @@ public final class MemberSelectingCollection<M extends Member> implements Collec
             if (member != null || hasNext()) {
                 nextMember = member;
                 member = null;
-            } else  {
+            } else {
                 throw new NoSuchElementException();
             }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.hazelcast.client.impl.protocol.task.transaction;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.XATransactionPrepareCodec;
 import com.hazelcast.client.impl.protocol.task.AbstractCallableMessageTask;
+import com.hazelcast.client.impl.protocol.task.TransactionalMessageTask;
 import com.hazelcast.instance.Node;
 import com.hazelcast.nio.Connection;
 import com.hazelcast.security.permission.TransactionPermission;
@@ -31,7 +32,8 @@ import com.hazelcast.transaction.impl.xa.XAService;
 import java.security.Permission;
 
 public class XATransactionPrepareMessageTask
-        extends AbstractCallableMessageTask<XATransactionPrepareCodec.RequestParameters> {
+        extends AbstractCallableMessageTask<XATransactionPrepareCodec.RequestParameters>
+        implements TransactionalMessageTask {
     public XATransactionPrepareMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,10 +19,13 @@ package com.hazelcast.map.impl.operation;
 import com.hazelcast.core.EntryView;
 import com.hazelcast.map.EntryProcessor;
 import com.hazelcast.map.impl.MapEntries;
+import com.hazelcast.map.impl.query.Query;
 import com.hazelcast.map.merge.MapMergePolicy;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.query.Predicate;
 import com.hazelcast.spi.OperationFactory;
+import com.hazelcast.spi.merge.SplitBrainMergePolicy;
+import com.hazelcast.spi.merge.SplitBrainMergeTypes.MapMergeTypes;
 
 import java.util.List;
 import java.util.Set;
@@ -38,8 +41,8 @@ abstract class MapOperationProviderDelegator implements MapOperationProvider {
     abstract MapOperationProvider getDelegate();
 
     @Override
-    public MapOperation createPutOperation(String name, Data key, Data value, long ttl) {
-        return getDelegate().createPutOperation(name, key, value, ttl);
+    public MapOperation createPutOperation(String name, Data key, Data value, long ttl, long maxIdle) {
+        return getDelegate().createPutOperation(name, key, value, ttl, maxIdle);
     }
 
     @Override
@@ -48,18 +51,18 @@ abstract class MapOperationProviderDelegator implements MapOperationProvider {
     }
 
     @Override
-    public MapOperation createSetOperation(String name, Data dataKey, Data value, long ttl) {
-        return getDelegate().createSetOperation(name, dataKey, value, ttl);
+    public MapOperation createSetOperation(String name, Data dataKey, Data value, long ttl, long maxIdle) {
+        return getDelegate().createSetOperation(name, dataKey, value, ttl, maxIdle);
     }
 
     @Override
-    public MapOperation createPutIfAbsentOperation(String name, Data key, Data value, long ttl) {
-        return getDelegate().createPutIfAbsentOperation(name, key, value, ttl);
+    public MapOperation createPutIfAbsentOperation(String name, Data key, Data value, long ttl, long maxIdle) {
+        return getDelegate().createPutIfAbsentOperation(name, key, value, ttl, maxIdle);
     }
 
     @Override
-    public MapOperation createPutTransientOperation(String name, Data key, Data value, long ttl) {
-        return getDelegate().createPutTransientOperation(name, key, value, ttl);
+    public MapOperation createPutTransientOperation(String name, Data key, Data value, long ttl, long maxIdle) {
+        return getDelegate().createPutTransientOperation(name, key, value, ttl, maxIdle);
     }
 
     @Override
@@ -88,8 +91,8 @@ abstract class MapOperationProviderDelegator implements MapOperationProvider {
     }
 
     @Override
-    public MapOperation createDeleteOperation(String name, Data key) {
-        return getDelegate().createDeleteOperation(name, key);
+    public MapOperation createDeleteOperation(String name, Data key, boolean disableWanReplicationEvent) {
+        return getDelegate().createDeleteOperation(name, key, disableWanReplicationEvent);
     }
 
     @Override
@@ -143,6 +146,12 @@ abstract class MapOperationProviderDelegator implements MapOperationProvider {
     }
 
     @Override
+    public OperationFactory createMergeOperationFactory(String name, int[] partitions, List<MapMergeTypes>[] mergingEntries,
+                                                        SplitBrainMergePolicy<Data, MapMergeTypes> mergePolicy) {
+        return getDelegate().createMergeOperationFactory(name, partitions, mergingEntries, mergePolicy);
+    }
+
+    @Override
     public MapOperation createPutFromLoadAllOperation(String name, List<Data> keyValueSequence) {
         return getDelegate().createPutFromLoadAllOperation(name, keyValueSequence);
     }
@@ -164,9 +173,21 @@ abstract class MapOperationProviderDelegator implements MapOperationProvider {
     }
 
     @Override
-    public MapOperation createMergeOperation(String name, Data dataKey, EntryView<Data, Data> entryView,
-                                             MapMergePolicy policy, boolean disableWanReplicationEvent) {
-        return getDelegate().createMergeOperation(name, dataKey, entryView, policy, disableWanReplicationEvent);
+    public MapOperation createSetTtlOperation(String name, Data key, long ttl) {
+        return getDelegate().createSetTtlOperation(name, key, ttl);
+    }
+
+    @Override
+    public MapOperation createLegacyMergeOperation(String name, EntryView<Data, Data> mergingEntry,
+                                                   MapMergePolicy policy, boolean disableWanReplicationEvent) {
+        return getDelegate().createLegacyMergeOperation(name, mergingEntry, policy, disableWanReplicationEvent);
+    }
+
+    @Override
+    public MapOperation createMergeOperation(String name, MapMergeTypes mergingValue,
+                                             SplitBrainMergePolicy<Data, MapMergeTypes> mergePolicy,
+                                             boolean disableWanReplicationEvent) {
+        return getDelegate().createMergeOperation(name, mergingValue, mergePolicy, disableWanReplicationEvent);
     }
 
     @Override
@@ -239,5 +260,20 @@ abstract class MapOperationProviderDelegator implements MapOperationProvider {
     @Override
     public MapOperation createFetchEntriesOperation(String name, int lastTableIndex, int fetchSize) {
         return getDelegate().createFetchEntriesOperation(name, lastTableIndex, fetchSize);
+    }
+
+    @Override
+    public MapOperation createQueryOperation(Query query) {
+        return getDelegate().createQueryOperation(query);
+    }
+
+    @Override
+    public MapOperation createQueryPartitionOperation(Query query) {
+        return getDelegate().createQueryPartitionOperation(query);
+    }
+
+    @Override
+    public MapOperation createFetchWithQueryOperation(String name, int lastTableIndex, int fetchSize, Query query) {
+        return getDelegate().createFetchWithQueryOperation(name, lastTableIndex, fetchSize, query);
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,21 +20,22 @@ import com.hazelcast.cache.BuiltInCacheMergePolicies;
 import com.hazelcast.cache.CacheMergePolicy;
 import com.hazelcast.config.InvalidConfigurationException;
 import com.hazelcast.spi.NodeEngine;
-import com.hazelcast.util.ConcurrencyUtil;
+import com.hazelcast.spi.merge.SplitBrainMergePolicy;
+import com.hazelcast.spi.merge.SplitBrainMergePolicyProvider;
 import com.hazelcast.util.ConstructorFunction;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 import static com.hazelcast.nio.ClassLoaderUtil.newInstance;
+import static com.hazelcast.util.ConcurrencyUtil.getOrPutIfAbsent;
 
 /**
  * A provider for {@link com.hazelcast.cache.CacheMergePolicy} instances.
  */
 public final class CacheMergePolicyProvider {
 
-    private final ConcurrentMap<String, CacheMergePolicy> mergePolicyMap;
-    private final NodeEngine nodeEngine;
+    private final ConcurrentMap<String, CacheMergePolicy> mergePolicyMap = new ConcurrentHashMap<String, CacheMergePolicy>();
 
     private final ConstructorFunction<String, CacheMergePolicy> policyConstructorFunction
             = new ConstructorFunction<String, CacheMergePolicy>() {
@@ -49,27 +50,45 @@ public final class CacheMergePolicyProvider {
         }
     };
 
+    private final NodeEngine nodeEngine;
+    private final SplitBrainMergePolicyProvider policyProvider;
+
     public CacheMergePolicyProvider(NodeEngine nodeEngine) {
         this.nodeEngine = nodeEngine;
-        this.mergePolicyMap = new ConcurrentHashMap<String, CacheMergePolicy>();
+        this.policyProvider = nodeEngine.getSplitBrainMergePolicyProvider();
         addOutOfBoxPolicies();
     }
 
     private void addOutOfBoxPolicies() {
         for (BuiltInCacheMergePolicies mergePolicy : BuiltInCacheMergePolicies.values()) {
-            final CacheMergePolicy cacheMergePolicy = mergePolicy.newInstance();
-            // Register `CacheMergePolicy` by its constant
+            CacheMergePolicy cacheMergePolicy = mergePolicy.newInstance();
+            // register `CacheMergePolicy` by its constant
             mergePolicyMap.put(mergePolicy.name(), cacheMergePolicy);
-            // Register `CacheMergePolicy` by its name
+            // register `CacheMergePolicy` by its name
             mergePolicyMap.put(mergePolicy.getImplementationClassName(), cacheMergePolicy);
         }
     }
 
-    public CacheMergePolicy getMergePolicy(String className) {
+    /**
+     * Returns an instance of a merge policy by its classname.
+     * <p>
+     * First tries to resolve the classname as {@link SplitBrainMergePolicy},
+     * then as {@link com.hazelcast.cache.CacheMergePolicy}.
+     * <p>
+     * If no merge policy matches an {@link InvalidConfigurationException} is thrown.
+     *
+     * @param className the classname of the given merge policy
+     * @return an instance of the merge policy class
+     * @throws InvalidConfigurationException if no matching merge policy class was found
+     */
+    public Object getMergePolicy(String className) {
         if (className == null) {
             throw new InvalidConfigurationException("Class name is mandatory!");
         }
-        return ConcurrencyUtil.getOrPutIfAbsent(mergePolicyMap, className, policyConstructorFunction);
+        try {
+            return policyProvider.getMergePolicy(className);
+        } catch (InvalidConfigurationException e) {
+            return getOrPutIfAbsent(mergePolicyMap, className, policyConstructorFunction);
+        }
     }
-
 }

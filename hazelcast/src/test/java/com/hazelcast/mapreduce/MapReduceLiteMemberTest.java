@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.mapreduce;
 
 import com.hazelcast.config.Config;
@@ -45,10 +61,8 @@ public class MapReduceLiteMemberTest
         lite = factory.newHazelcastInstance(new Config().setLiteMember(true));
         lite2 = factory.newHazelcastInstance(new Config().setLiteMember(true));
 
-        assertClusterSizeEventually(4, instance);
-        assertClusterSizeEventually(4, instance2);
-        assertClusterSizeEventually(4, lite);
-        assertClusterSizeEventually(4, lite2);
+        assertClusterSize(4, instance, lite2);
+        assertClusterSizeEventually(4, instance2, lite);
     }
 
     @After
@@ -132,8 +146,7 @@ public class MapReduceLiteMemberTest
     public void testMapReduceJobSubmissionWithNoDataNode() {
         instance.shutdown();
         instance2.shutdown();
-        assertClusterSizeEventually(2, lite);
-        assertClusterSizeEventually(2, lite2);
+        assertClusterSizeEventually(2, lite, lite2);
 
         testMapReduceJobSubmissionWithNoDataNode(lite);
     }

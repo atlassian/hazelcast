@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,9 @@
 
 package com.hazelcast.internal.nearcache.impl.record;
 
-import com.hazelcast.internal.nearcache.NearCacheRecord;
-
 /**
- * Implementation of {@link NearCacheRecord} to store
- * any object type without {@link com.hazelcast.nio.serialization.Data} type.
+ * Implementation of {@link com.hazelcast.internal.nearcache.NearCacheRecord} to store
+ * any object type except {@link com.hazelcast.nio.serialization.Data}.
  *
  * @param <V> type of object instances to store.
  */
@@ -29,5 +27,10 @@ public class NearCacheObjectRecord<V> extends AbstractNearCacheRecord<V> {
     public NearCacheObjectRecord(V value, long creationTime, long expiryTime) {
         super(value, creationTime, expiryTime);
         this.value = value;
+    }
+
+    @Override
+    public String toString() {
+        return "NearCacheObjectRecord{" + super.toString() + '}';
     }
 }

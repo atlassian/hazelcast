@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,40 +17,79 @@
 package com.hazelcast.cache.impl;
 
 import com.hazelcast.config.CacheConfig;
+import com.hazelcast.internal.eviction.ExpirationManager;
+import com.hazelcast.spi.ServiceNamespace;
 import com.hazelcast.util.ConcurrencyUtil;
 import com.hazelcast.util.ConstructorFunction;
 
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
  * <p>
- *     Responsible for all cache data of a partition. Creates and
+ * Responsible for all cache data of a partition. Creates and
  * looks up {@link com.hazelcast.cache.impl.ICacheRecordStore CacheRecordStore}s by name.
  * </p>
  * A {@link CacheService} manages all <code>CachePartitionSegment</code>s.
  */
 public class CachePartitionSegment implements ConstructorFunction<String, ICacheRecordStore> {
 
-    protected final AbstractCacheService cacheService;
     protected final int partitionId;
-    protected final ConcurrentMap<String, ICacheRecordStore> recordStores =
-            new ConcurrentHashMap<String, ICacheRecordStore>();
     protected final Object mutex = new Object();
+    protected final AbstractCacheService cacheService;
+    protected final ConcurrentMap<String, ICacheRecordStore> recordStores = new ConcurrentHashMap<String, ICacheRecordStore>();
+    private boolean runningCleanupOperation;
+
+    private volatile long lastCleanupTime;
+
+    /**
+     * Used when sorting partition containers in {@link ExpirationManager}
+     * A non-volatile copy of lastCleanupTime is used with two reasons.
+     * <p/>
+     * 1. We need an un-modified field during sorting.
+     * 2. Decrease number of volatile reads.
+     */
+    private long lastCleanupTimeCopy;
 
     public CachePartitionSegment(final AbstractCacheService cacheService, final int partitionId) {
         this.cacheService = cacheService;
         this.partitionId = partitionId;
     }
 
-    @Override public ICacheRecordStore createNew(String name) {
-        return cacheService.createNewRecordStore(name, partitionId);
+    @Override
+    public ICacheRecordStore createNew(String cacheNameWithPrefix) {
+        return cacheService.createNewRecordStore(cacheNameWithPrefix, partitionId);
     }
 
     public Iterator<ICacheRecordStore> recordStoreIterator() {
         return recordStores.values().iterator();
+    }
+
+    public boolean hasRunningCleanupOperation() {
+        return runningCleanupOperation;
+    }
+
+    public void setRunningCleanupOperation(boolean status) {
+        runningCleanupOperation = status;
+    }
+
+    public long getLastCleanupTime() {
+        return lastCleanupTime;
+    }
+
+    public void setLastCleanupTime(long time) {
+        lastCleanupTime = time;
+    }
+
+    public long getLastCleanupTimeBeforeSorting() {
+        return lastCleanupTimeCopy;
+    }
+
+    public void storeLastCleanupTime() {
+        lastCleanupTimeCopy = getLastCleanupTime();
     }
 
     public Collection<CacheConfig> getCacheConfigs() {
@@ -61,12 +100,30 @@ public class CachePartitionSegment implements ConstructorFunction<String, ICache
         return partitionId;
     }
 
-    public ICacheRecordStore getOrCreateRecordStore(String name) {
-        return ConcurrencyUtil.getOrPutSynchronized(recordStores, name, mutex, this);
+    /**
+     * Gets or creates a cache record store with the prefixed {@code cacheNameWithPrefix}.
+     *
+     * @param cacheNameWithPrefix the full name of the {@link com.hazelcast.cache.ICache}, including the manager scope prefix
+     * @return the cache partition record store
+     */
+    public ICacheRecordStore getOrCreateRecordStore(String cacheNameWithPrefix) {
+        return ConcurrencyUtil.getOrPutSynchronized(recordStores, cacheNameWithPrefix, mutex, this);
     }
 
-    public ICacheRecordStore getRecordStore(String name) {
-        return recordStores.get(name);
+    /**
+     * Returns a cache record store with the prefixed
+     * {@code cacheNameWithPrefix} or {@code null} if one doesn't exist.
+     *
+     * @param cacheNameWithPrefix the full name of the {@link com.hazelcast.cache.ICache},
+     *                            including the manager scope prefix
+     * @return the cache partition record store or {@code null} if it doesn't exist
+     */
+    public ICacheRecordStore getRecordStore(String cacheNameWithPrefix) {
+        return recordStores.get(cacheNameWithPrefix);
+    }
+
+    public ICacheService getCacheService() {
+        return cacheService;
     }
 
     public void deleteRecordStore(String name, boolean destroy) {
@@ -100,10 +157,10 @@ public class CachePartitionSegment implements ConstructorFunction<String, ICache
         }
     }
 
-    public void clear() {
+    public void reset() {
         synchronized (mutex) {
             for (ICacheRecordStore store : recordStores.values()) {
-                store.clear();
+                store.reset();
             }
         }
     }
@@ -122,9 +179,19 @@ public class CachePartitionSegment implements ConstructorFunction<String, ICache
             for (ICacheRecordStore store : recordStores.values()) {
                 CacheConfig cacheConfig = store.getConfig();
                 if (backupCount > cacheConfig.getTotalBackupCount()) {
-                    store.clear();
+                    store.reset();
                 }
             }
         }
+    }
+
+    public Collection<ServiceNamespace> getAllNamespaces(int replicaIndex) {
+        Collection<ServiceNamespace> namespaces = new HashSet<ServiceNamespace>();
+        for (ICacheRecordStore recordStore : recordStores.values()) {
+            if (recordStore.getConfig().getTotalBackupCount() >= replicaIndex) {
+                namespaces.add(recordStore.getObjectNamespace());
+            }
+        }
+        return namespaces;
     }
 }

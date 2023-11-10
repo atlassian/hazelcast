@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,35 +23,37 @@ import org.springframework.beans.factory.xml.ParserContext;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 
+import static com.hazelcast.config.DomConfigHelper.childElements;
+import static com.hazelcast.config.DomConfigHelper.cleanNodeName;
+
 /**
- * BeanDefinitionParser for Hazelcast Instance Configuration
- * <p/>
- *
+ * BeanDefinitionParser for Hazelcast Instance Configuration.
+ * <p>
  * <b>Sample Spring XML for Hazelcast Instance:</b>
- * <pre>
- * &lt;hz:hazelcast id="instance"&gt;
- *      &lt;hz:config&gt;
- *          &lt;hz:group name="dev" password="password"/&gt;
- *          &lt;hz:network port="5701" port-auto-increment="false"&gt;
- *              &lt;hz:join&gt;
- *                  &lt;hz:multicast enabled="false" multicast-group="224.2.2.3" multicast-port="54327"/&gt;
- *                   &lt;hz:tcp-ip enabled="true"&gt;
- *                      &lt;hz:members&gt;10.10.1.2, 10.10.1.3&lt;/hz:members&gt;
- *                   &lt;/hz:tcp-ip&gt;
- *              &lt;/hz:join&gt;
- *          &lt;/hz:network&gt;
- *          &lt;hz:map name="map" backup-count="2" max-size="0" eviction-percentage="30"
+ * <pre>{@code
+ * <hz:hazelcast id="instance">
+ *      <hz:config>
+ *          <hz:group name="dev" password="password"/>
+ *          <hz:network port="5701" port-auto-increment="false">
+ *              <hz:join>
+ *                  <hz:multicast enabled="false" multicast-group="224.2.2.3" multicast-port="54327"/>
+ *                   <hz:tcp-ip enabled="true">
+ *                      <hz:members>10.10.1.2, 10.10.1.3</hz:members>
+ *                   </hz:tcp-ip>
+ *              </hz:join>
+ *          </hz:network>
+ *          <hz:map name="map" backup-count="2" max-size="0" eviction-percentage="30"
  *              read-backup-data="true" eviction-policy="NONE"
- *          merge-policy="com.hazelcast.map.merge.PassThroughMergePolicy"/&gt;
- *      &lt;/hz:config&gt;
- * &lt;/hz:hazelcast&gt;
- * </pre>
+ *          merge-policy="com.hazelcast.map.merge.PassThroughMergePolicy"/>
+ *      </hz:config>
+ * </hz:hazelcast>
+ * }</pre>
  */
 public class HazelcastInstanceDefinitionParser extends AbstractHazelcastBeanDefinitionParser {
 
     @Override
     protected AbstractBeanDefinition parseInternal(Element element, ParserContext parserContext) {
-        final SpringXmlBuilder springXmlBuilder = new SpringXmlBuilder(parserContext);
+        SpringXmlBuilder springXmlBuilder = new SpringXmlBuilder(parserContext);
         springXmlBuilder.handle(element);
         return springXmlBuilder.getBeanDefinition();
     }
@@ -59,17 +61,16 @@ public class HazelcastInstanceDefinitionParser extends AbstractHazelcastBeanDefi
     private class SpringXmlBuilder extends SpringXmlBuilderHelper {
 
         private final ParserContext parserContext;
+        private final BeanDefinitionBuilder builder;
 
-        private BeanDefinitionBuilder builder;
-
-        public SpringXmlBuilder(ParserContext parserContext) {
+        SpringXmlBuilder(ParserContext parserContext) {
             this.parserContext = parserContext;
             this.builder = BeanDefinitionBuilder.rootBeanDefinition(HazelcastInstanceFactory.class);
             this.builder.setFactoryMethod("newHazelcastInstance");
             this.builder.setDestroyMethodName("shutdown");
         }
 
-        public AbstractBeanDefinition getBeanDefinition() {
+        AbstractBeanDefinition getBeanDefinition() {
             return builder.getBeanDefinition();
         }
 
@@ -77,14 +78,14 @@ public class HazelcastInstanceDefinitionParser extends AbstractHazelcastBeanDefi
             handleCommonBeanAttributes(element, builder, parserContext);
             Element config = null;
             for (Node node : childElements(element)) {
-                final String nodeName = cleanNodeName(node);
+                String nodeName = cleanNodeName(node);
                 if ("config".equals(nodeName)) {
                     config = (Element) node;
                 }
             }
-            final HazelcastConfigBeanDefinitionParser configParser = new HazelcastConfigBeanDefinitionParser();
-            final AbstractBeanDefinition configBeanDef = configParser.parseInternal(config, parserContext);
-            this.builder.addConstructorArgValue(configBeanDef);
+            HazelcastConfigBeanDefinitionParser configParser = new HazelcastConfigBeanDefinitionParser();
+            AbstractBeanDefinition configBeanDef = configParser.parseInternal(config, parserContext);
+            builder.addConstructorArgValue(configBeanDef);
         }
     }
 }

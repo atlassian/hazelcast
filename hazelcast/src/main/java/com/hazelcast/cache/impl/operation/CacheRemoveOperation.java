@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,11 +26,11 @@ import java.io.IOException;
 
 /**
  * Operation implementation for cache remove functionality.
- * @see com.hazelcast.cache.impl.ICacheRecordStore#remove(Data, Object, String, int)
- * @see com.hazelcast.cache.impl.ICacheRecordStore#remove(Data, String, int)
+ *
+ * @see com.hazelcast.cache.impl.ICacheRecordStore#remove(Data, String, String, int)
+ * @see com.hazelcast.cache.impl.ICacheRecordStore#remove(Data, Object, String, String, int)
  */
-public class CacheRemoveOperation
-        extends AbstractMutatingCacheOperation {
+public class CacheRemoveOperation extends MutatingCacheOperation {
 
     // if same
     private Data oldValue;
@@ -38,8 +38,8 @@ public class CacheRemoveOperation
     public CacheRemoveOperation() {
     }
 
-    public CacheRemoveOperation(String name, Data key, Data oldValue, int completionId) {
-        super(name, key, completionId);
+    public CacheRemoveOperation(String cacheNameWithPrefix, Data key, Data oldValue, int completionId) {
+        super(cacheNameWithPrefix, key, completionId);
         this.oldValue = oldValue;
     }
 
@@ -47,19 +47,18 @@ public class CacheRemoveOperation
     public void run()
             throws Exception {
         if (oldValue == null) {
-            response = cache.remove(key, getCallerUuid(), completionId);
+            response = recordStore.remove(key, getCallerUuid(), null, completionId);
         } else {
-            response = cache.remove(key, oldValue, getCallerUuid(), completionId);
+            response = recordStore.remove(key, oldValue, getCallerUuid(), null, completionId);
         }
     }
 
     @Override
     public void afterRun() throws Exception {
         if (Boolean.TRUE.equals(response)) {
-            if (cache.isWanReplicationEnabled()) {
-                wanEventPublisher.publishWanReplicationRemove(name, key);
-            }
+            publishWanRemove(key);
         }
+        super.afterRun();
     }
 
     @Override

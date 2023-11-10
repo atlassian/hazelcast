@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,5 +16,7 @@
 
 /**
  * Provides connection interfaces/classes for com.hazelcast.client
+ *
+ * Everything in this package and its subpackages is private.
  */
 package com.hazelcast.client.connection;

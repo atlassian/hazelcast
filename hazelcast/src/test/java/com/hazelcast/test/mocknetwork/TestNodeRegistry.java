@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -12,7 +12,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
  */
 
 package com.hazelcast.test.mocknetwork;
@@ -23,40 +22,77 @@ import com.hazelcast.instance.Node;
 import com.hazelcast.instance.NodeContext;
 import com.hazelcast.instance.NodeState;
 import com.hazelcast.nio.Address;
+import com.hazelcast.test.AssertTask;
+import com.hazelcast.util.AddressUtil;
 
+import java.net.UnknownHostException;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+
+import static com.hazelcast.test.HazelcastTestSupport.assertTrueEventually;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 
 public final class TestNodeRegistry {
 
     private final ConcurrentMap<Address, Node> nodes = new ConcurrentHashMap<Address, Node>(10);
     private final Collection<Address> joinAddresses;
+    private final List<String> nodeExtensionPriorityList;
 
-    public TestNodeRegistry(Collection<Address> addresses) {
+    public TestNodeRegistry(Collection<Address> addresses, List<String> nodeExtensionPriorityList) {
         this.joinAddresses = addresses;
+        this.nodeExtensionPriorityList = nodeExtensionPriorityList;
     }
 
     public NodeContext createNodeContext(Address address) {
-        Node node;
-        if ((node = nodes.get(address)) != null) {
-            verifyInvariant(NodeState.SHUT_DOWN == node.getState(), "This address is already in registry! " + address);
+        return createNodeContext(address, Collections.<Address>emptySet());
+    }
+
+    public NodeContext createNodeContext(final Address address, Set<Address> initiallyBlockedAddresses) {
+        final Node node = nodes.get(address);
+        if (node != null) {
+            assertFalse(address + " is already registered", node.isRunning());
+            assertTrueEventually(new AssertTask() {
+                @Override
+                public void run() {
+                    assertEquals(address + " should be SHUT_DOWN", NodeState.SHUT_DOWN, node.getState());
+                }
+            });
             nodes.remove(address, node);
         }
-        return new MockNodeContext(this, address);
+        return new MockNodeContext(this, address, initiallyBlockedAddresses, nodeExtensionPriorityList);
     }
 
     public HazelcastInstance getInstance(Address address) {
         Node node = nodes.get(address);
+        if (node == null) {
+            String host = address.getHost();
+            if (host != null) {
+                try {
+                    if (AddressUtil.isIpAddress(host)) {
+                        // try using hostname
+                        node = nodes.get(new Address(address.getInetAddress().getHostName(), address.getPort()));
+                    } else {
+                        // try using ip address
+                        node = nodes.get(new Address(address.getInetAddress().getHostAddress(), address.getPort()));
+                    }
+                } catch (UnknownHostException e) {
+                    // suppress
+                }
+            }
+        }
         return node != null && node.isRunning() ? node.hazelcastInstance : null;
     }
 
-    public boolean removeInstance(Address address) {
-        return nodes.remove(address) != null;
+    public void removeInstance(Address address) {
+        nodes.remove(address);
     }
 
     public Collection<HazelcastInstance> getAllHazelcastInstances() {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,12 +29,16 @@ public class FieldGetter extends AbstractMultiValueGetter {
 
     @Override
     protected Object extractFrom(Object object) throws IllegalAccessException {
-        return field.get(object);
+        try {
+            return field.get(object);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(composeAttributeValueExtractionFailedMessage(field), e);
+        }
     }
 
     @Override
     boolean isCacheable() {
-        return ReflectionHelper.THIS_CL.equals(field.getDeclaringClass().getClassLoader());
+        return true;
     }
 
     @Override

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,10 @@
 package com.hazelcast.map.impl.recordstore;
 
 import com.hazelcast.config.InMemoryFormat;
-import com.hazelcast.map.impl.SizeEstimator;
+import com.hazelcast.core.EntryView;
+import com.hazelcast.map.impl.EntryCostEstimator;
 import com.hazelcast.map.impl.iterator.MapEntriesWithCursor;
 import com.hazelcast.map.impl.iterator.MapKeysWithCursor;
-import com.hazelcast.map.impl.record.AbstractRecord;
 import com.hazelcast.map.impl.record.Record;
 import com.hazelcast.map.impl.record.RecordFactory;
 import com.hazelcast.nio.serialization.Data;
@@ -29,10 +29,11 @@ import com.hazelcast.spi.serialization.SerializationService;
 import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
-import static com.hazelcast.map.impl.SizeEstimatorFactory.createMapSizeEstimator;
+import static com.hazelcast.map.impl.OwnedEntryCostEstimatorFactory.createMapSizeEstimator;
 
 /**
  * Default implementation of {@link Storage} layer used by a {@link RecordStore}
@@ -45,11 +46,11 @@ public class StorageImpl<R extends Record> implements Storage<Data, R> {
     private final StorageSCHM<R> records;
 
     // not final for testing purposes.
-    private SizeEstimator sizeEstimator;
+    private EntryCostEstimator<Data, Record> entryCostEstimator;
 
     StorageImpl(RecordFactory<R> recordFactory, InMemoryFormat inMemoryFormat, SerializationService serializationService) {
         this.recordFactory = recordFactory;
-        this.sizeEstimator = createMapSizeEstimator(inMemoryFormat);
+        this.entryCostEstimator = createMapSizeEstimator(inMemoryFormat);
         this.records = new StorageSCHM<R>(serializationService);
     }
 
@@ -57,7 +58,7 @@ public class StorageImpl<R extends Record> implements Storage<Data, R> {
     public void clear(boolean isDuringShutdown) {
         records.clear();
 
-        sizeEstimator.reset();
+        entryCostEstimator.reset();
     }
 
     @Override
@@ -66,27 +67,32 @@ public class StorageImpl<R extends Record> implements Storage<Data, R> {
     }
 
     @Override
+    public Iterator<R> mutationTolerantIterator() {
+        return records.values().iterator();
+    }
+
+    @Override
     public void put(Data key, R record) {
 
-        ((AbstractRecord) record).setKey(key);
+        record.setKey(key);
 
         R previousRecord = records.put(key, record);
 
         if (previousRecord == null) {
-            updateSizeEstimator(calculateHeapCost(key));
+            updateCostEstimate(entryCostEstimator.calculateEntryCost(key, record));
+        } else {
+            updateCostEstimate(-entryCostEstimator.calculateValueCost(previousRecord));
+            updateCostEstimate(entryCostEstimator.calculateValueCost(record));
         }
-
-        updateSizeEstimator(-calculateHeapCost(previousRecord));
-        updateSizeEstimator(calculateHeapCost(record));
     }
 
     @Override
     public void updateRecordValue(Data key, R record, Object value) {
-        updateSizeEstimator(-calculateHeapCost(record));
+        updateCostEstimate(-entryCostEstimator.calculateValueCost(record));
 
         recordFactory.setValue(record, value);
 
-        updateSizeEstimator(calculateHeapCost(record));
+        updateCostEstimate(entryCostEstimator.calculateValueCost(record));
     }
 
     @Override
@@ -114,9 +120,8 @@ public class StorageImpl<R extends Record> implements Storage<Data, R> {
         clear(isDuringShutdown);
     }
 
-    @Override
-    public SizeEstimator getSizeEstimator() {
-        return sizeEstimator;
+    public EntryCostEstimator getEntryCostEstimator() {
+        return entryCostEstimator;
     }
 
     @Override
@@ -133,20 +138,15 @@ public class StorageImpl<R extends Record> implements Storage<Data, R> {
         Data key = record.getKey();
         records.remove(key);
 
-        updateSizeEstimator(-calculateHeapCost(record));
-        updateSizeEstimator(-calculateHeapCost(key));
+        updateCostEstimate(-entryCostEstimator.calculateEntryCost(key, record));
     }
 
-    protected void updateSizeEstimator(long recordSize) {
-        sizeEstimator.add(recordSize);
+    protected void updateCostEstimate(long entrySize) {
+        entryCostEstimator.adjustEstimateBy(entrySize);
     }
 
-    protected long calculateHeapCost(Object obj) {
-        return sizeEstimator.calculateSize(obj);
-    }
-
-    public void setSizeEstimator(SizeEstimator sizeEstimator) {
-        this.sizeEstimator = sizeEstimator;
+    public void setEntryCostEstimator(EntryCostEstimator entryCostEstimator) {
+        this.entryCostEstimator = entryCostEstimator;
     }
 
     @Override
@@ -155,7 +155,7 @@ public class StorageImpl<R extends Record> implements Storage<Data, R> {
     }
 
     @Override
-    public Iterable<LazyEntryViewFromRecord> getRandomSamples(int sampleCount) {
+    public Iterable getRandomSamples(int sampleCount) {
         return records.getRandomSamples(sampleCount);
     }
 
@@ -177,6 +177,11 @@ public class StorageImpl<R extends Record> implements Storage<Data, R> {
             entriesData.add(new AbstractMap.SimpleEntry<Data, Data>(entry.getKey(), dataValue));
         }
         return new MapEntriesWithCursor(entriesData, newTableIndex);
+    }
+
+    @Override
+    public Record extractRecordFromLazy(EntryView entryView) {
+        return ((LazyEntryViewFromRecord) entryView).getRecord();
     }
 
 }

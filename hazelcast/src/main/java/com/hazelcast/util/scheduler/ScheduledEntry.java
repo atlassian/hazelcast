@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,8 +20,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Entry wrapper with schedule time information to be used in SecondsBasedEntryTaskScheduler.
- * See SecondsBasedEntryTaskScheduler
+ * Entry wrapper with schedule time information to be used in {@link SecondsBasedEntryTaskScheduler}.
  *
  * @param <K> key type of scheduled entry
  * @param <V> value type of scheduled entry

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,19 +23,27 @@ import com.hazelcast.spi.impl.SpiDataSerializerHook;
 
 import java.io.IOException;
 
+import static com.hazelcast.nio.Bits.INT_SIZE_IN_BYTES;
+import static com.hazelcast.nio.Bits.LONG_SIZE_IN_BYTES;
+
 /**
  * A {@link Response} is a result of an {@link com.hazelcast.spi.Operation} being executed.
  * There are different types of responses:
  * <ol>
- * <li>
- * {@link NormalResponse} the result of a regular Operation result, e.g. Map.put
- * </li>
- * <li>
- * {@link BackupAckResponse} the result of a completed {@link com.hazelcast.spi.impl.operationservice.impl.operations.Backup}.
- * </li>
+ * <li>{@link NormalResponse} the result of a regular Operation result, e.g. Map.put()</li>
+ * <li>{@link BackupAckResponse} the result of a completed
+ * {@link com.hazelcast.spi.impl.operationservice.impl.operations.Backup}</li>
  * </ol>
  */
 public abstract class Response implements IdentifiedDataSerializable {
+
+    public static final int OFFSET_SERIALIZER_TYPE_ID = 4;
+    public static final int OFFSET_IDENTIFIED = OFFSET_SERIALIZER_TYPE_ID + INT_SIZE_IN_BYTES;
+    public static final int OFFSET_TYPE_FACTORY_ID = OFFSET_IDENTIFIED + 1;
+    public static final int OFFSET_TYPE_ID = OFFSET_TYPE_FACTORY_ID + INT_SIZE_IN_BYTES;
+    public static final int OFFSET_CALL_ID = OFFSET_TYPE_ID + INT_SIZE_IN_BYTES;
+    public static final int OFFSET_URGENT = OFFSET_CALL_ID + LONG_SIZE_IN_BYTES;
+    public static final int RESPONSE_SIZE_IN_BYTES = OFFSET_URGENT + 1;
 
     protected long callId;
     protected boolean urgent;
@@ -51,16 +59,16 @@ public abstract class Response implements IdentifiedDataSerializable {
     /**
      * Check if this Response is an urgent response.
      *
-     * @return true if urgent, false otherwise.
+     * @return {@code true} if urgent, {@code false} otherwise
      */
     public boolean isUrgent() {
         return urgent;
     }
 
     /**
-     * Returns the call id of the operation this response belongs to.
+     * Returns the call ID of the operation this response belongs to.
      *
-     * @return the call id.
+     * @return the call ID
      */
     public long getCallId() {
         return callId;

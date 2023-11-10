@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,14 +18,16 @@ package com.hazelcast.util;
 
 /**
  * Mutable long which can be used for counting purposes.
- * <p/>
+ * <p>
  * This class is not thread-safe.
  */
 public class MutableLong {
 
-    //CHECKSTYLE:OFF
+    /**
+     * Mutable long value of this instance.
+     */
+    @SuppressWarnings("checkstyle:visibilitymodifier")
     public long value;
-    //CHECKSTYLE:OFF
 
     public static MutableLong valueOf(long value) {
         MutableLong instance = new MutableLong();
@@ -52,8 +54,6 @@ public class MutableLong {
 
     @Override
     public String toString() {
-        return "MutableLong{" +
-                "value=" + value +
-                '}';
+        return "MutableLong{value=" + value + '}';
     }
 }

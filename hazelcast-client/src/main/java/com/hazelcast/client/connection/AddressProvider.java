@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,6 @@
 
 package com.hazelcast.client.connection;
 
-import java.net.InetSocketAddress;
-import java.util.Collection;
 
 /**
  * Provides initial addresses for client to find and connect to a node
@@ -25,8 +23,8 @@ import java.util.Collection;
 public interface AddressProvider {
 
     /**
-     * @return Collection of InetSocketAddress
+     * @return The possible member addresses to connect to.
      */
-    Collection<InetSocketAddress> loadAddresses();
+    Addresses loadAddresses();
 
 }

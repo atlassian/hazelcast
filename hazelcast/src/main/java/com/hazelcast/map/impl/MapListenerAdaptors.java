@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,11 +20,12 @@ import com.hazelcast.core.EntryEvent;
 import com.hazelcast.core.EntryEventType;
 import com.hazelcast.core.IMapEvent;
 import com.hazelcast.core.MapEvent;
-import com.hazelcast.map.impl.nearcache.invalidation.Invalidation;
+import com.hazelcast.internal.nearcache.impl.invalidation.Invalidation;
 import com.hazelcast.map.impl.nearcache.invalidation.InvalidationListener;
 import com.hazelcast.map.listener.EntryAddedListener;
 import com.hazelcast.map.listener.EntryEvictedListener;
 import com.hazelcast.map.listener.EntryExpiredListener;
+import com.hazelcast.map.listener.EntryLoadedListener;
 import com.hazelcast.map.listener.EntryMergedListener;
 import com.hazelcast.map.listener.EntryRemovedListener;
 import com.hazelcast.map.listener.EntryUpdatedListener;
@@ -234,6 +235,26 @@ public final class MapListenerAdaptors {
                 }
             };
 
+    /**
+     * Converts an {@link EntryLoadedListener} to a {@link com.hazelcast.map.impl.ListenerAdapter}.
+     */
+    private static final ConstructorFunction<MapListener, ListenerAdapter> ENTRY_LOADED_LISTENER_ADAPTER_CONSTRUCTOR =
+            new ConstructorFunction<MapListener, ListenerAdapter>() {
+                @Override
+                public ListenerAdapter createNew(MapListener mapListener) {
+                    if (!(mapListener instanceof EntryLoadedListener)) {
+                        return null;
+                    }
+                    final EntryLoadedListener listener = (EntryLoadedListener) mapListener;
+                    return new ListenerAdapter<IMapEvent>() {
+                        @Override
+                        public void onEvent(IMapEvent event) {
+                            listener.entryLoaded((EntryEvent) event);
+                        }
+                    };
+                }
+            };
+
 
     /**
      * Register all {@link com.hazelcast.map.impl.ListenerAdapter} constructors
@@ -241,6 +262,7 @@ public final class MapListenerAdaptors {
      */
     static {
         CONSTRUCTORS.put(EntryEventType.ADDED, ENTRY_ADDED_LISTENER_ADAPTER_CONSTRUCTOR);
+        CONSTRUCTORS.put(EntryEventType.LOADED, ENTRY_LOADED_LISTENER_ADAPTER_CONSTRUCTOR);
         CONSTRUCTORS.put(EntryEventType.REMOVED, ENTRY_REMOVED_LISTENER_ADAPTER_CONSTRUCTOR);
         CONSTRUCTORS.put(EntryEventType.EVICTED, ENTRY_EVICTED_LISTENER_ADAPTER_CONSTRUCTOR);
         CONSTRUCTORS.put(EntryEventType.UPDATED, ENTRY_UPDATED_LISTENER_ADAPTER_CONSTRUCTOR);
@@ -298,4 +320,8 @@ public final class MapListenerAdaptors {
         return new InternalMapListenerAdapter(mapListener);
     }
 
+    // only used for testing purposes
+    public static Map<EntryEventType, ConstructorFunction<MapListener, ListenerAdapter>> getConstructors() {
+        return CONSTRUCTORS;
+    }
 }

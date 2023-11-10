@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -59,7 +59,8 @@ public class CompositeMessageTaskFactory implements MessageTaskFactory {
     private void loadServices() {
         try {
             ClassLoader classLoader = this.node.getConfigClassLoader();
-            Iterator<Class<MessageTaskFactoryProvider>> iter = ServiceLoader.classIterator(FACTORY_ID, classLoader);
+            Iterator<Class<MessageTaskFactoryProvider>> iter = ServiceLoader.classIterator(
+                    MessageTaskFactoryProvider.class, FACTORY_ID, classLoader);
 
             while (iter.hasNext()) {
                 Class<MessageTaskFactoryProvider> clazz = iter.next();

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,23 +16,26 @@
 
 package com.hazelcast.nio;
 
-import com.hazelcast.client.impl.protocol.ClientMessage;
+import com.hazelcast.client.impl.ClientEngine;
+import com.hazelcast.config.MemcacheProtocolConfig;
+import com.hazelcast.config.RestApiConfig;
 import com.hazelcast.config.SSLConfig;
-import com.hazelcast.config.SocketInterceptorConfig;
 import com.hazelcast.config.SymmetricEncryptionConfig;
-import com.hazelcast.instance.HazelcastThreadGroup;
 import com.hazelcast.internal.ascii.TextCommandService;
+import com.hazelcast.instance.EndpointQualifier;
+import com.hazelcast.internal.networking.InboundHandler;
+import com.hazelcast.internal.networking.OutboundHandler;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.logging.LoggingService;
-import com.hazelcast.internal.networking.IOOutOfMemoryHandler;
-import com.hazelcast.internal.networking.ReadHandler;
-import com.hazelcast.internal.networking.SocketChannelWrapperFactory;
 import com.hazelcast.nio.tcp.TcpIpConnection;
-import com.hazelcast.internal.networking.WriteHandler;
 import com.hazelcast.spi.EventService;
 import com.hazelcast.spi.annotation.PrivateApi;
+import com.hazelcast.spi.properties.HazelcastProperties;
 
+import java.io.IOException;
+import java.net.Socket;
 import java.util.Collection;
+import java.util.Map;
 
 @PrivateApi
 public interface IOService {
@@ -41,31 +44,39 @@ public interface IOService {
 
     boolean isActive();
 
-    HazelcastThreadGroup getHazelcastThreadGroup();
+    HazelcastProperties properties();
+
+    String getHazelcastName();
 
     LoggingService getLoggingService();
 
-    IOOutOfMemoryHandler getIoOutOfMemoryHandler();
-
+    // returns the MEMBER server socket address
     Address getThisAddress();
+
+    /**
+      * @return all server socket addresses of this Hazelcast member, as picked by the
+      *         configured {@link com.hazelcast.instance.AddressPicker}
+      */
+    Map<EndpointQualifier, Address> getThisAddresses();
 
     void onFatalError(Exception e);
 
-    SocketInterceptorConfig getSocketInterceptorConfig();
+    SymmetricEncryptionConfig getSymmetricEncryptionConfig(EndpointQualifier endpointQualifier);
 
-    SymmetricEncryptionConfig getSymmetricEncryptionConfig();
+    /**
+     * Returns initialized {@link RestApiConfig} for the node.
+     */
+    RestApiConfig getRestApiConfig();
+    /**
+     * Returns initialized {@link MemcacheProtocolConfig} for the node.
+     */
+    MemcacheProtocolConfig getMemcacheProtocolConfig();
 
-    SSLConfig getSSLConfig();
+    SSLConfig getSSLConfig(EndpointQualifier endpointQualifier);
 
-    void handleClientMessage(ClientMessage cm, Connection connection);
+    ClientEngine getClientEngine();
 
     TextCommandService getTextCommandService();
-
-    boolean isMemcacheEnabled();
-
-    boolean isRestEnabled();
-
-    boolean isHealthcheckEnabled();
 
     void removeEndpoint(Address endpoint);
 
@@ -79,64 +90,29 @@ public interface IOService {
 
     boolean isSocketBindAny();
 
-    int getSocketReceiveBufferSize();
+    void interceptSocket(EndpointQualifier endpointQualifier, Socket socket, boolean onAccept) throws IOException;
 
-    int getSocketSendBufferSize();
+    boolean isSocketInterceptorEnabled(EndpointQualifier endpointQualifier);
 
-    boolean isSocketBufferDirect();
-
-    /**
-     * Size of receive buffers for connections opened by clients
-     *
-     * @return size in bytes
-     */
-    int getSocketClientReceiveBufferSize();
-
-    /**
-     * Size of send buffers for connections opened by clients
-     *
-     * @return size in bytes
-     */
-    int getSocketClientSendBufferSize();
-
-    int getSocketLingerSeconds();
-
-    int getSocketConnectTimeoutSeconds();
-
-    boolean getSocketKeepAlive();
-
-    boolean getSocketNoDelay();
-
-    int getInputSelectorThreadCount();
-
-    int getOutputSelectorThreadCount();
+    int getSocketConnectTimeoutSeconds(EndpointQualifier endpointQualifier);
 
     long getConnectionMonitorInterval();
 
     int getConnectionMonitorMaxFaults();
 
-    /**
-     * @return Time interval between two I/O imbalance checks.
-     */
-    int getBalancerIntervalSeconds();
-
     void onDisconnect(Address endpoint, Throwable cause);
-
-    boolean isClient();
 
     void executeAsync(Runnable runnable);
 
     EventService getEventService();
 
-    Collection<Integer> getOutboundPorts();
+    Collection<Integer> getOutboundPorts(EndpointQualifier endpointQualifier);
 
     InternalSerializationService getSerializationService();
 
-    SocketChannelWrapperFactory getSocketChannelWrapperFactory();
+    MemberSocketInterceptor getSocketInterceptor(EndpointQualifier endpointQualifier);
 
-    MemberSocketInterceptor getMemberSocketInterceptor();
+    InboundHandler[] createInboundHandlers(EndpointQualifier qualifier, TcpIpConnection connection);
 
-    ReadHandler createReadHandler(TcpIpConnection connection);
-
-    WriteHandler createWriteHandler(TcpIpConnection connection);
+    OutboundHandler[] createOutboundHandlers(EndpointQualifier qualifier, TcpIpConnection connection);
 }

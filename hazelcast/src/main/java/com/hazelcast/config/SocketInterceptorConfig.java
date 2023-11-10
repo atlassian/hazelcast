@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,13 +19,24 @@ package com.hazelcast.config;
 import java.util.Properties;
 
 /**
- * Contains the configuration for interceptor socket
+ * Contains the configuration for interceptor socket.
  */
 public class SocketInterceptorConfig {
     private boolean enabled;
     private String className;
     private Object implementation;
     private Properties properties = new Properties();
+
+    public SocketInterceptorConfig() {
+    }
+
+    public SocketInterceptorConfig(SocketInterceptorConfig socketInterceptorConfig) {
+        enabled = socketInterceptorConfig.enabled;
+        className = socketInterceptorConfig.className;
+        implementation = socketInterceptorConfig.implementation;
+        properties = new Properties();
+        properties.putAll(socketInterceptorConfig.properties);
+    }
 
     /**
      * Returns the name of the {@link com.hazelcast.nio.SocketInterceptor} implementation class.
@@ -37,7 +48,7 @@ public class SocketInterceptorConfig {
     }
 
     /**
-     * Sets the name for the {@link com.hazelcast.nio.SocketInterceptor} implementation class
+     * Sets the name for the {@link com.hazelcast.nio.SocketInterceptor} implementation class.
      *
      * @param className the name of the {@link com.hazelcast.nio.SocketInterceptor} implementation class to set
      * @return this SocketInterceptorConfig instance
@@ -48,7 +59,7 @@ public class SocketInterceptorConfig {
     }
 
     /**
-     * Sets the {@link com.hazelcast.nio.SocketInterceptor} implementation object
+     * Sets the {@link com.hazelcast.nio.SocketInterceptor} implementation object.
      *
      * @param implementation the {@link com.hazelcast.nio.SocketInterceptor} implementation object to set
      * @return this SocketInterceptorConfig instance
@@ -59,7 +70,7 @@ public class SocketInterceptorConfig {
     }
 
     /**
-     * Returns the {@link com.hazelcast.nio.SocketInterceptor} implementation object
+     * Returns the {@link com.hazelcast.nio.SocketInterceptor} implementation object.
      *
      * @return the {@link com.hazelcast.nio.SocketInterceptor} implementation object
      */
@@ -68,16 +79,16 @@ public class SocketInterceptorConfig {
     }
 
     /**
-     * Returns if this configuration is enabled
+     * Returns if this configuration is enabled.
      *
-     * @return true if enabled, false otherwise
+     * @return {@code true} if enabled, {@code false} otherwise
      */
     public boolean isEnabled() {
         return enabled;
     }
 
     /**
-     * Enables and disables this configuration
+     * Enables and disables this configuration.
      *
      * @param enabled true to enable, false to disable
      */
@@ -89,10 +100,10 @@ public class SocketInterceptorConfig {
     /**
      * Sets a property.
      *
-     * @param name  the name of the property to set.
-     * @param value the value of the property to set.
+     * @param name  the name of the property to set
+     * @param value the value of the property to set
      * @return the updated SocketInterceptorConfig
-     * @throws NullPointerException if name or value is null.
+     * @throws NullPointerException if name or value is {@code null}
      */
     public SocketInterceptorConfig setProperty(String name, String value) {
         properties.put(name, value);
@@ -102,9 +113,9 @@ public class SocketInterceptorConfig {
     /**
      * Gets a property.
      *
-     * @param name the name of the property to get.
-     * @return the value of the property, null if not found
-     * @throws NullPointerException if name is null.
+     * @param name the name of the property to get
+     * @return the value of the property, {@code null} if not found
+     * @throws NullPointerException if name is {@code null}
      */
     public String getProperty(String name) {
         return properties.getProperty(name);
@@ -113,7 +124,7 @@ public class SocketInterceptorConfig {
     /**
      * Gets all properties.
      *
-     * @return the properties.
+     * @return the properties
      */
     public Properties getProperties() {
         return properties;
@@ -122,9 +133,9 @@ public class SocketInterceptorConfig {
     /**
      * Sets the properties.
      *
-     * @param properties the properties to set.
-     * @return the updated SSLConfig.
-     * @throws IllegalArgumentException if properties is null.
+     * @param properties the properties to set
+     * @return the updated SSLConfig
+     * @throws IllegalArgumentException if properties is {@code null}
      */
     public SocketInterceptorConfig setProperties(Properties properties) {
         if (properties == null) {
@@ -133,6 +144,39 @@ public class SocketInterceptorConfig {
 
         this.properties = properties;
         return this;
+    }
+
+    @Override
+    @SuppressWarnings({"checkstyle:cyclomaticcomplexity", "checkstyle:npathcomplexity"})
+    public final boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || !(o instanceof SocketInterceptorConfig)) {
+            return false;
+        }
+
+        SocketInterceptorConfig that = (SocketInterceptorConfig) o;
+
+        if (enabled != that.enabled) {
+            return false;
+        }
+        if (className != null ? !className.equals(that.className) : that.className != null) {
+            return false;
+        }
+        if (implementation != null ? !implementation.equals(that.implementation) : that.implementation != null) {
+            return false;
+        }
+        return properties != null ? properties.equals(that.properties) : that.properties == null;
+    }
+
+    @Override
+    public final int hashCode() {
+        int result = (enabled ? 1 : 0);
+        result = 31 * result + (className != null ? className.hashCode() : 0);
+        result = 31 * result + (implementation != null ? implementation.hashCode() : 0);
+        result = 31 * result + (properties != null ? properties.hashCode() : 0);
+        return result;
     }
 
     @Override

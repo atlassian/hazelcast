@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,14 +16,10 @@
 
 package com.hazelcast.internal.management.request;
 
-import com.eclipsesource.json.JsonObject;
 import com.hazelcast.instance.HazelcastInstanceImpl;
 import com.hazelcast.internal.management.ManagementCenterService;
+import com.hazelcast.internal.json.JsonObject;
 import com.hazelcast.logging.ILogger;
-
-import java.io.IOException;
-
-import static com.hazelcast.util.JsonUtil.getString;
 
 /**
  * Request coming from Management Center to trigger a force start the node during hot-restart.
@@ -46,20 +42,12 @@ public class ForceStartNodeRequest implements ConsoleRequest {
     }
 
     @Override
-    public Object readResponse(JsonObject in) throws IOException {
-        return getString(in, "result", "FAIL");
-    }
-
-    @Override
     public void writeResponse(ManagementCenterService mcs, JsonObject out) throws Exception {
         String resultString;
         HazelcastInstanceImpl instance = mcs.getHazelcastInstance();
         try {
-            if (instance.node.getNodeExtension().triggerForceStart()) {
-                resultString = SUCCESS_RESULT;
-            } else {
-                resultString = FAILED_RESULT;
-            }
+            resultString = instance.node.getNodeExtension().getInternalHotRestartService().triggerForceStart()
+                    ? SUCCESS_RESULT : FAILED_RESULT;
         } catch (Exception e) {
             ILogger logger = instance.node.getLogger(getClass());
             logger.warning("Problem on force start: ", e);
@@ -68,11 +56,6 @@ public class ForceStartNodeRequest implements ConsoleRequest {
 
         JsonObject result = new JsonObject().add("result", resultString);
         out.add("result", result);
-    }
-
-    @Override
-    public JsonObject toJson() {
-        return new JsonObject();
     }
 
     @Override

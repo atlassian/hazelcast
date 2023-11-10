@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  */
 
 package com.hazelcast.instance;
-
 
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.OutOfMemoryHandler;
@@ -79,7 +78,6 @@ public class OutOfMemoryErrorDispatcherTest extends HazelcastTestSupport {
         OutOfMemoryErrorDispatcher.registerServer(hz2);
         assertArrayEquals(new HazelcastInstance[]{hz1, hz2}, OutOfMemoryErrorDispatcher.current());
     }
-
 
     @Test(expected = IllegalArgumentException.class)
     public void register_whenNull() {
@@ -217,7 +215,6 @@ public class OutOfMemoryErrorDispatcherTest extends HazelcastTestSupport {
 
     private void test_DefaultOutOfMemoryHandler_using_accessor(MemoryInfoAccessor memoryInfoAccessor,
                                                                VerificationMode verificationMode) {
-
         OutOfMemoryError oome = new OutOfMemoryError();
 
         HazelcastInstance hz = mock(HazelcastInstance.class);

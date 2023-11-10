@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,34 +18,34 @@ package com.hazelcast.multimap.impl.txn;
 
 import com.hazelcast.multimap.impl.MultiMapContainer;
 import com.hazelcast.multimap.impl.MultiMapDataSerializerHook;
-import com.hazelcast.multimap.impl.operations.MultiMapKeyBasedOperation;
+import com.hazelcast.multimap.impl.operations.AbstractKeyBasedMultiMapOperation;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.nio.serialization.impl.Versioned;
 import com.hazelcast.spi.BackupOperation;
 import com.hazelcast.transaction.TransactionException;
 
 import java.io.IOException;
 
-public class TxnPrepareBackupOperation extends MultiMapKeyBasedOperation implements BackupOperation {
+import static com.hazelcast.multimap.impl.txn.TxnPrepareOperation.LOCK_EXTENSION_TIME_IN_MILLIS;
 
-    private static final long LOCK_EXTENSION_TIME_IN_MILLIS = 10000L;
-    String caller;
-    long ttl;
+public class TxnPrepareBackupOperation extends AbstractKeyBasedMultiMapOperation implements BackupOperation, Versioned {
+
+    private String caller;
 
     public TxnPrepareBackupOperation() {
     }
 
-    public TxnPrepareBackupOperation(String name, Data dataKey, String caller, long threadId) {
-        super(name, dataKey);
+    public TxnPrepareBackupOperation(String name, Data dataKey, long threadId, String caller) {
+        super(name, dataKey, threadId);
         this.caller = caller;
-        this.threadId = threadId;
     }
 
     @Override
     public void run() throws Exception {
-        MultiMapContainer container = getOrCreateContainer();
-        if (!container.txnLock(dataKey, caller, threadId, getCallId(), ttl + LOCK_EXTENSION_TIME_IN_MILLIS, true)) {
+        MultiMapContainer container = getOrCreateContainerWithoutAccess();
+        if (!container.txnLock(dataKey, caller, threadId, getCallId(), LOCK_EXTENSION_TIME_IN_MILLIS, true)) {
             throw new TransactionException(
                     "Lock is not owned by the transaction! -> " + container.getLockOwnerInfo(dataKey)
             );
@@ -56,14 +56,12 @@ public class TxnPrepareBackupOperation extends MultiMapKeyBasedOperation impleme
     protected void writeInternal(ObjectDataOutput out) throws IOException {
         super.writeInternal(out);
         out.writeUTF(caller);
-        out.writeLong(ttl);
     }
 
     @Override
     protected void readInternal(ObjectDataInput in) throws IOException {
         super.readInternal(in);
         caller = in.readUTF();
-        ttl = in.readLong();
     }
 
     @Override

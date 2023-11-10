@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,17 +19,20 @@ package com.hazelcast.collection.impl.txnqueue.operations;
 import com.hazelcast.collection.impl.queue.QueueContainer;
 import com.hazelcast.collection.impl.queue.QueueDataSerializerHook;
 import com.hazelcast.collection.impl.queue.operations.QueueOperation;
+import com.hazelcast.core.TransactionalQueue;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.spi.BackupOperation;
-import com.hazelcast.spi.impl.MutatingOperation;
 
 import java.io.IOException;
 
 /**
- * Reserve poll backup operation for the transactional queue.
+ * Transaction prepare operation for a queue poll, executed on the backup replica.
+ *
+ * @see TransactionalQueue#poll
+ * @see TxnPollOperation
  */
-public class TxnReservePollBackupOperation extends QueueOperation implements BackupOperation, MutatingOperation {
+public class TxnReservePollBackupOperation extends QueueOperation implements BackupOperation {
 
     private long itemId;
     private String transactionId;

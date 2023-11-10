@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,6 @@ import com.hazelcast.core.ExecutionCallback;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.ICompletableFuture;
 import com.hazelcast.core.IMap;
-import com.hazelcast.instance.TestUtil;
 import com.hazelcast.map.EntryBackupProcessor;
 import com.hazelcast.map.EntryProcessor;
 import com.hazelcast.map.impl.MapService;
@@ -67,8 +66,10 @@ public class ClientMapIssueTest extends HazelcastTestSupport {
     @Test
     public void testListenerRegistrations() throws Exception {
         Config config = getConfig();
+        ClientConfig clientConfig = getClientConfig();
+
         HazelcastInstance instance1 = hazelcastFactory.newHazelcastInstance(config);
-        HazelcastInstance client = hazelcastFactory.newHazelcastClient();
+        HazelcastInstance client = hazelcastFactory.newHazelcastClient(clientConfig);
 
         final String mapName = randomMapName();
         IMap<Object, Object> map = client.getMap(mapName);
@@ -79,8 +80,8 @@ public class ClientMapIssueTest extends HazelcastTestSupport {
         instance1.getLifecycleService().terminate();
         instance1 = hazelcastFactory.newHazelcastInstance(config);
 
-        final EventService eventService1 = TestUtil.getNode(instance1).nodeEngine.getEventService();
-        final EventService eventService2 = TestUtil.getNode(instance2).nodeEngine.getEventService();
+        final EventService eventService1 = getNodeEngineImpl(instance1).getEventService();
+        final EventService eventService2 = getNodeEngineImpl(instance2).getEventService();
 
         assertTrueEventually(new AssertTask() {
             @Override
@@ -96,11 +97,14 @@ public class ClientMapIssueTest extends HazelcastTestSupport {
 
     @Test
     public void testFutureGetCalledInCallback() {
-        hazelcastFactory.newHazelcastInstance();
-        HazelcastInstance client = hazelcastFactory.newHazelcastClient();
+        Config config = getConfig();
+        ClientConfig clientConfig = getClientConfig();
+
+        hazelcastFactory.newHazelcastInstance(config);
+        HazelcastInstance client = hazelcastFactory.newHazelcastClient(clientConfig);
 
         IMap<Integer, Integer> map = client.getMap("map");
-        final ICompletableFuture<Integer> future = (ICompletableFuture<Integer>) map.getAsync(1);
+        final ICompletableFuture<Integer> future = map.getAsync(1);
         final CountDownLatch latch = new CountDownLatch(1);
         future.andThen(new ExecutionCallback<Integer>() {
             public void onResponse(Integer response) {
@@ -122,10 +126,11 @@ public class ClientMapIssueTest extends HazelcastTestSupport {
     @Category(NightlyTest.class)
     public void testOperationNotBlockingAfterClusterShutdown() throws InterruptedException {
         Config config = getConfig();
+
         HazelcastInstance instance1 = hazelcastFactory.newHazelcastInstance(config);
         HazelcastInstance instance2 = hazelcastFactory.newHazelcastInstance(config);
 
-        ClientConfig clientConfig = new ClientConfig();
+        ClientConfig clientConfig = getClientConfig();
         clientConfig.setExecutorPoolSize(1);
         clientConfig.getNetworkConfig().setConnectionAttemptLimit(Integer.MAX_VALUE);
         clientConfig.setProperty(ClientProperty.INVOCATION_TIMEOUT_SECONDS.getName(), "10");
@@ -160,7 +165,7 @@ public class ClientMapIssueTest extends HazelcastTestSupport {
         HazelcastInstance instance1 = hazelcastFactory.newHazelcastInstance(config);
         HazelcastInstance instance2 = hazelcastFactory.newHazelcastInstance(config);
 
-        ClientConfig clientConfig = new ClientConfig();
+        ClientConfig clientConfig = getClientConfig();
         clientConfig.setExecutorPoolSize(1);
         clientConfig.getNetworkConfig().setConnectionAttemptLimit(Integer.MAX_VALUE);
         clientConfig.setProperty(ClientProperty.INVOCATION_TIMEOUT_SECONDS.getName(), "10");
@@ -194,7 +199,7 @@ public class ClientMapIssueTest extends HazelcastTestSupport {
         hazelcastFactory.newHazelcastInstance(config);
         hazelcastFactory.newHazelcastInstance(config);
 
-        final ClientConfig clientConfig = new ClientConfig();
+        final ClientConfig clientConfig = getClientConfig();
         final HazelcastInstance client = hazelcastFactory.newHazelcastClient(clientConfig);
 
         final IMap<Integer, Integer> map = client.getMap("map");
@@ -218,7 +223,7 @@ public class ClientMapIssueTest extends HazelcastTestSupport {
         hazelcastFactory.newHazelcastInstance(config);
         hazelcastFactory.newHazelcastInstance(config);
 
-        final ClientConfig clientConfig = new ClientConfig();
+        final ClientConfig clientConfig = getClientConfig();
         final HazelcastInstance client = hazelcastFactory.newHazelcastClient(clientConfig);
 
         final IMap<Integer, Integer> map = client.getMap("map");
@@ -235,8 +240,8 @@ public class ClientMapIssueTest extends HazelcastTestSupport {
         Collection<Integer> values = map.values(predicate);
         assertEquals(pageSize, values.size());
 
-        /**
-         * There may be cases when the server may return a list of entries larger than the requested page size , in this case
+        /*
+         * There may be cases when the server may return a list of entries larger than the requested page size, in this case
          * the client should not put any anchor into the list that is on a page greater than the requested page. The case occurs
          * when multiple members exist in the cluster. E.g.:
          * pageSize:5
@@ -276,8 +281,8 @@ public class ClientMapIssueTest extends HazelcastTestSupport {
 
         // Make sure that the anchor is the last entry of the first page. i.e. it is (9, 9)
         Map.Entry anchor = predicate.getAnchor();
-        assertEquals((2 * pageSize) -1, anchor.getKey());
-        assertEquals((2 * pageSize) -1, anchor.getValue());
+        assertEquals((2 * pageSize) - 1, anchor.getKey());
+        assertEquals((2 * pageSize) - 1, anchor.getValue());
 
         // jump to page 4
         predicate.setPage(4);
@@ -306,8 +311,8 @@ public class ClientMapIssueTest extends HazelcastTestSupport {
 
         // make sure that the anchor is now (10 * 5) -1 = (49, 49)
         anchor = predicate.getAnchor();
-        assertEquals((10 * pageSize) -1, anchor.getKey());
-        assertEquals((10 * pageSize) -1, anchor.getValue());
+        assertEquals((10 * pageSize) - 1, anchor.getKey());
+        assertEquals((10 * pageSize) - 1, anchor.getValue());
     }
 
     @Test
@@ -316,7 +321,7 @@ public class ClientMapIssueTest extends HazelcastTestSupport {
         hazelcastFactory.newHazelcastInstance(config);
         hazelcastFactory.newHazelcastInstance(config);
 
-        final ClientConfig clientConfig = new ClientConfig();
+        final ClientConfig clientConfig = getClientConfig();
         final HazelcastInstance client = hazelcastFactory.newHazelcastClient(clientConfig);
 
         final IMap<Integer, Integer> map = client.getMap("map");
@@ -334,20 +339,25 @@ public class ClientMapIssueTest extends HazelcastTestSupport {
         assertEquals(pageSize, values.size());
     }
 
-
     @Test
+    @Category(NightlyTest.class)
     public void testNoOperationTimeoutException_whenUserCodeLongRunning() {
         Config config = getConfig();
-        config.setProperty(OPERATION_CALL_TIMEOUT_MILLIS.getName(), "2000");
+        long callTimeoutMillis = SECONDS.toMillis(10);
+        config.setProperty(OPERATION_CALL_TIMEOUT_MILLIS.getName(), String.valueOf(callTimeoutMillis));
         hazelcastFactory.newHazelcastInstance(config);
 
         HazelcastInstance client = hazelcastFactory.newHazelcastClient();
         IMap<Object, Object> map = client.getMap(randomMapName());
-        SleepyProcessor sleepyProcessor = new SleepyProcessor(SECONDS.toMillis(10));
+        SleepyProcessor sleepyProcessor = new SleepyProcessor(2 * callTimeoutMillis);
         String key = randomString();
         String value = randomString();
         map.put(key, value);
         assertEquals(value, map.executeOnKey(key, sleepyProcessor));
+    }
+
+    protected ClientConfig getClientConfig() {
+        return new ClientConfig();
     }
 
     static class SleepyProcessor implements EntryProcessor, Serializable {
@@ -373,6 +383,5 @@ public class ClientMapIssueTest extends HazelcastTestSupport {
         public EntryBackupProcessor getBackupProcessor() {
             return null;
         }
-
     }
 }

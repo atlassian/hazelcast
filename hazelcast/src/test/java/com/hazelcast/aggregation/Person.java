@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,12 +24,12 @@ import java.io.IOException;
 
 public class Person implements DataSerializable {
 
-    public double age;
+    public Double age;
 
     public Person() {
     }
 
-    public Person(double age) {
+    public Person(Double age) {
         this.age = age;
     }
 

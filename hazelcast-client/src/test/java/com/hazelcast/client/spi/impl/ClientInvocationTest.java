@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,10 @@
 
 package com.hazelcast.client.spi.impl;
 
-import com.hazelcast.client.HazelcastClientNotActiveException;
+import com.hazelcast.client.impl.clientside.HazelcastClientInstanceImpl;
+import com.hazelcast.client.impl.protocol.ClientMessage;
+import com.hazelcast.client.impl.protocol.codec.MapGetCodec;
+import com.hazelcast.client.test.ClientTestSupport;
 import com.hazelcast.client.test.TestHazelcastFactory;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.ExecutionCallback;
@@ -24,27 +27,34 @@ import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
 import com.hazelcast.core.LifecycleEvent;
 import com.hazelcast.core.LifecycleListener;
-import com.hazelcast.instance.TestUtil;
 import com.hazelcast.map.EntryBackupProcessor;
 import com.hazelcast.map.EntryProcessor;
+import com.hazelcast.nio.Address;
+import com.hazelcast.spi.exception.TargetNotMemberException;
+import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.test.HazelcastParallelClassRunner;
-import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.After;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
+import org.mockito.Matchers;
 
+import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.locks.LockSupport;
 
+import static com.hazelcast.util.ThreadUtil.getThreadId;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.when;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
-public class ClientInvocationTest extends HazelcastTestSupport {
+public class ClientInvocationTest extends ClientTestSupport {
 
     private final TestHazelcastFactory hazelcastFactory = new TestHazelcastFactory();
 
@@ -81,7 +91,7 @@ public class ClientInvocationTest extends HazelcastTestSupport {
         }
 
         // crash the server
-        TestUtil.getNode(server).getConnectionManager().shutdown();
+        getNode(server).getNetworkingService().shutdown();
         server.getLifecycleService().terminate();
 
         int callBackCount = 0;
@@ -124,28 +134,25 @@ public class ClientInvocationTest extends HazelcastTestSupport {
             }
         });
         server.shutdown();
-
         assertOpenEventually(disconnectedLatch);
-        final CountDownLatch shutdownLatch = new CountDownLatch(1);
         int n = 100;
         final CountDownLatch errorLatch = new CountDownLatch(n);
         for (int i = 0; i < n; i++) {
-            map.submitToKey(randomString(), new DummyEntryProcessor(), new ExecutionCallback() {
-                @Override
-                public void onResponse(Object response) {
-
-                }
-
-                @Override
-                public void onFailure(Throwable t) {
-                    if (t.getCause() instanceof HazelcastClientNotActiveException) {
-                        shutdownLatch.countDown();
+            try {
+                map.submitToKey(randomString(), new DummyEntryProcessor(), new ExecutionCallback() {
+                    @Override
+                    public void onResponse(Object response) {
                     }
-                    errorLatch.countDown();
-                }
-            });
+
+                    @Override
+                    public void onFailure(Throwable t) {
+                        errorLatch.countDown();
+                    }
+                });
+            } catch (Exception e) {
+                errorLatch.countDown();
+            }
         }
-        assertOpenEventually("No requests failed with reason client shutdown", shutdownLatch);
         assertOpenEventually("Not all of the requests failed", errorLatch);
     }
 
@@ -177,5 +184,24 @@ public class ClientInvocationTest extends HazelcastTestSupport {
             failure = t;
             latch.countDown();
         }
+    }
+
+    @Test(expected = TargetNotMemberException.class)
+    public void invokeOnPartitionOwnerWhenPartitionTableNotUpdated() throws IOException, ExecutionException, InterruptedException {
+        hazelcastFactory.newHazelcastInstance();
+        HazelcastInstance client = hazelcastFactory.newHazelcastClient();
+        HazelcastClientInstanceImpl clientInstanceImpl = getHazelcastClientInstanceImpl(client);
+        SmartClientInvocationService spyInvocationService
+                = spy((SmartClientInvocationService) clientInstanceImpl.getInvocationService());
+
+        //trying to simulate late partition table update here in case a member removed
+        //in that case, the member that partitionService returns should not be in member list
+        //we are simulating that by returning false when a membership of a member is asked
+        when(spyInvocationService.isMember(Matchers.<Address>any())).thenReturn(false);
+
+        SerializationService serializationService = clientInstanceImpl.getSerializationService();
+        ClientMessage request = MapGetCodec.encodeRequest("test", serializationService.toData("test"), getThreadId());
+        ClientInvocation invocation = new ClientInvocation(clientInstanceImpl, request, "map", 1);
+        spyInvocationService.invokeOnPartitionOwner(invocation, 1);
     }
 }

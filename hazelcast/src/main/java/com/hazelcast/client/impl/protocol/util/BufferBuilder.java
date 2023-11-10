@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -99,6 +99,20 @@ public class BufferBuilder {
         position += length;
 
         return this;
+    }
+
+    /**
+     * Creates ClientProtocolBuffer safe/unsafe according to property with existing byteArray
+     *
+     * @param byteArray existing byteArray
+     * @return ClientProtocolBuffer
+     */
+    public static ClientProtocolBuffer createBuffer(byte[] byteArray) {
+        if (USE_UNSAFE) {
+            return new UnsafeBuffer(byteArray);
+        } else {
+            return new SafeBuffer(byteArray);
+        }
     }
 
     private void ensureCapacity(int additionalCapacity) {

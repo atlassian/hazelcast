@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,14 +18,31 @@ package com.hazelcast.spi.impl.executionservice;
 
 import com.hazelcast.spi.ExecutionService;
 
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+
 /**
- * The internal {@link ExecutionService}. Currently this method doesn't contains any additional methods, but
- * in the future they can be added here.
+ * The internal {@link ExecutionService}.
  */
 public interface InternalExecutionService extends ExecutionService {
 
+    ExecutorService getDurable(String name);
+
+    ExecutorService getScheduledDurable(String name);
 
     void executeDurable(String name, Runnable command);
 
+    ScheduledFuture<?> scheduleDurable(String name, Runnable command, long delay, TimeUnit unit);
+
+    <V> ScheduledFuture<Future<V>> scheduleDurable(String name, Callable<V> command, long delay, TimeUnit unit);
+
+    ScheduledFuture<?> scheduleDurableWithRepetition(String name, Runnable command,
+                                                     long initialDelay, long period, TimeUnit unit);
+
     void shutdownDurableExecutor(String name);
+
+    void shutdownScheduledDurableExecutor(String name);
 }

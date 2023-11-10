@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,9 @@ package com.hazelcast.concurrent.lock;
 
 import com.hazelcast.nio.serialization.Data;
 
+/**
+ * A lock for a specific key in a specific namespace. It contains the details of a single lock in the system.
+ */
 public interface LockResource {
 
     Data getKey();
@@ -29,6 +32,8 @@ public interface LockResource {
     String getOwner();
 
     boolean isTransactional();
+
+    boolean isLocal();
 
     boolean shouldBlockReads();
 

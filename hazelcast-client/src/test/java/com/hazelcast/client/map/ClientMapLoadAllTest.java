@@ -1,11 +1,31 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.client.map;
 
+import com.hazelcast.client.config.ClientConfig;
 import com.hazelcast.client.test.TestHazelcastFactory;
 import com.hazelcast.config.Config;
+import com.hazelcast.config.MapConfig;
+import com.hazelcast.config.MapStoreConfig;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
 import com.hazelcast.core.MapStore;
 import com.hazelcast.map.impl.mapstore.AbstractMapStoreTest;
+import com.hazelcast.map.impl.mapstore.MapLoaderTest;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
@@ -23,6 +43,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static com.hazelcast.test.TestCollectionUtils.setOfValuesBetween;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
@@ -37,7 +58,7 @@ public class ClientMapLoadAllTest extends AbstractMapStoreTest {
         hazelcastFactory.terminateAll();
     }
 
-    @Test(timeout = 60000)
+    @Test
     public void testGetMap_issue_3031() throws Exception {
         final int itemCount = 1000;
         final String mapName = randomMapName();
@@ -59,7 +80,7 @@ public class ClientMapLoadAllTest extends AbstractMapStoreTest {
 
         breakMe.set(true);
 
-        final HazelcastInstance client = hazelcastFactory.newHazelcastClient();
+        final HazelcastInstance client = hazelcastFactory.newHazelcastClient(getClientConfig());
         client.getMap(mapName);
     }
 
@@ -71,7 +92,7 @@ public class ClientMapLoadAllTest extends AbstractMapStoreTest {
         hazelcastFactory.newHazelcastInstance(config);
         hazelcastFactory.newHazelcastInstance(config);
 
-        final HazelcastInstance client = hazelcastFactory.newHazelcastClient();
+        final HazelcastInstance client = hazelcastFactory.newHazelcastClient(getClientConfig());
         final IMap<Object, Object> map = client.getMap(mapName);
         populateMap(map, 1000);
         map.evictAll();
@@ -83,19 +104,51 @@ public class ClientMapLoadAllTest extends AbstractMapStoreTest {
     }
 
     @Test
+    public void givenSpecificKeysWereReloaded_whenLoadAllIsCalled_thenAllEntriesAreLoadedFromTheStore() {
+        String name = randomString();
+        int keysInMapStore = 10000;
+
+        Config config = getConfig();
+        MapConfig mapConfig = config.getMapConfig(name);
+        MapStoreConfig mapStoreConfig = new MapStoreConfig();
+        mapStoreConfig.setEnabled(true);
+        mapStoreConfig.setImplementation(new MapLoaderTest.DummyMapLoader(keysInMapStore));
+        mapStoreConfig.setInitialLoadMode(MapStoreConfig.InitialLoadMode.EAGER);
+        mapConfig.setMapStoreConfig(mapStoreConfig);
+        hazelcastFactory.newHazelcastInstance(config);
+
+        HazelcastInstance client = hazelcastFactory.newHazelcastClient(getClientConfig());
+        IMap<Integer, Integer> map = client.getMap(name);
+
+        //load specific keys
+        map.loadAll(setOfValuesBetween(0, keysInMapStore), true);
+
+        //remove everything
+        map.clear();
+
+        //assert loadAll with load all entries provided by the mapLoader
+        map.loadAll(true);
+        assertEquals(keysInMapStore, map.size());
+    }
+
+    @Test
     public void testLoadAll_allKeys() throws Exception {
         final String mapName = randomMapName();
         final Config config = createNewConfig(mapName);
         hazelcastFactory.newHazelcastInstance(config);
         hazelcastFactory.newHazelcastInstance(config);
         hazelcastFactory.newHazelcastInstance(config);
-        final HazelcastInstance client = hazelcastFactory.newHazelcastClient();
+        final HazelcastInstance client = hazelcastFactory.newHazelcastClient(getClientConfig());
         final IMap<Object, Object> map = client.getMap(mapName);
         populateMap(map, 1000);
         map.evictAll();
         map.loadAll(true);
 
         assertEquals(1000, map.size());
+    }
+
+    protected ClientConfig getClientConfig() {
+        return new ClientConfig();
     }
 
     private Config createNewConfig(String mapName) {
@@ -126,17 +179,8 @@ public class ClientMapLoadAllTest extends AbstractMapStoreTest {
         }
     }
 
-    private static void closeResources(HazelcastInstance... instances) {
-        if (instances == null) {
-            return;
-        }
-        for (HazelcastInstance instance : instances) {
-            instance.shutdown();
-        }
-    }
-
-
     private static class SimpleStore implements MapStore {
+
         private ConcurrentMap store = new ConcurrentHashMap();
 
         @Override
@@ -152,17 +196,14 @@ public class ClientMapLoadAllTest extends AbstractMapStoreTest {
                 final Object value = entry.getValue();
                 store(key, value);
             }
-
         }
 
         @Override
         public void delete(Object key) {
-
         }
 
         @Override
         public void deleteAll(Collection keys) {
-
         }
 
         @Override
@@ -213,5 +254,4 @@ public class ClientMapLoadAllTest extends AbstractMapStoreTest {
             return false;
         }
     }
-
 }

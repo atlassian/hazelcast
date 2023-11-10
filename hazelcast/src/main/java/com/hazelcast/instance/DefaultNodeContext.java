@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,30 +17,122 @@
 package com.hazelcast.instance;
 
 import com.hazelcast.cluster.Joiner;
+import com.hazelcast.config.Config;
+import com.hazelcast.config.ConfigurationException;
+import com.hazelcast.config.MemberAddressProviderConfig;
+import com.hazelcast.internal.networking.ChannelErrorHandler;
+import com.hazelcast.internal.networking.Networking;
+import com.hazelcast.internal.networking.ServerSocketRegistry;
+import com.hazelcast.internal.networking.nio.NioNetworking;
+import com.hazelcast.internal.util.InstantiationUtils;
+import com.hazelcast.logging.ILogger;
 import com.hazelcast.logging.LoggingServiceImpl;
-import com.hazelcast.nio.ConnectionManager;
+import com.hazelcast.nio.ClassLoaderUtil;
+import com.hazelcast.nio.NetworkingService;
 import com.hazelcast.nio.NodeIOService;
-import com.hazelcast.internal.networking.IOThreadingModel;
-import com.hazelcast.nio.tcp.SocketReaderInitializerImpl;
-import com.hazelcast.nio.tcp.SocketWriterInitializerImpl;
-import com.hazelcast.nio.tcp.TcpIpConnectionManager;
-import com.hazelcast.internal.networking.nonblocking.NonBlockingIOThreadingModel;
-import com.hazelcast.internal.networking.spinning.SpinningIOThreadingModel;
+import com.hazelcast.nio.tcp.TcpIpConnectionChannelErrorHandler;
+import com.hazelcast.nio.tcp.TcpIpNetworkingService;
+import com.hazelcast.spi.MemberAddressProvider;
 import com.hazelcast.spi.annotation.PrivateApi;
+import com.hazelcast.spi.properties.HazelcastProperties;
 
-import java.nio.channels.ServerSocketChannel;
+import java.util.List;
+import java.util.Properties;
+
+import static com.hazelcast.config.ConfigAccessor.getActiveMemberNetworkConfig;
+import static com.hazelcast.spi.properties.GroupProperty.IO_BALANCER_INTERVAL_SECONDS;
+import static com.hazelcast.spi.properties.GroupProperty.IO_INPUT_THREAD_COUNT;
+import static com.hazelcast.spi.properties.GroupProperty.IO_OUTPUT_THREAD_COUNT;
+import static java.util.Arrays.asList;
+import static java.util.Collections.unmodifiableList;
 
 @PrivateApi
 public class DefaultNodeContext implements NodeContext {
 
+    public static final List<String> EXTENSION_PRIORITY_LIST = unmodifiableList(asList(
+            "com.hazelcast.instance.EnterpriseNodeExtension",
+            "com.hazelcast.instance.DefaultNodeExtension"
+    ));
+
     @Override
     public NodeExtension createNodeExtension(Node node) {
-        return NodeExtensionFactory.create(node);
+        return NodeExtensionFactory.create(node, EXTENSION_PRIORITY_LIST);
     }
 
     @Override
     public AddressPicker createAddressPicker(Node node) {
-        return new DefaultAddressPicker(node);
+        Config config = node.getConfig();
+        MemberAddressProviderConfig memberAddressProviderConfig =
+                getActiveMemberNetworkConfig(config).getMemberAddressProviderConfig();
+
+        final ILogger addressPickerLogger = node.getLogger(AddressPicker.class);
+        if (!memberAddressProviderConfig.isEnabled()) {
+            if (config.getAdvancedNetworkConfig().isEnabled()) {
+                return new AdvancedNetworkAddressPicker(config, addressPickerLogger);
+            }
+
+            return new DefaultAddressPicker(config, addressPickerLogger);
+        }
+
+        MemberAddressProvider implementation = memberAddressProviderConfig.getImplementation();
+        if (implementation != null) {
+            return new DelegatingAddressPicker(implementation, config, addressPickerLogger);
+        }
+        ClassLoader classLoader = config.getClassLoader();
+        String classname = memberAddressProviderConfig.getClassName();
+        Class<? extends MemberAddressProvider> clazz = loadMemberAddressProviderClass(classLoader, classname);
+        ILogger memberAddressProviderLogger = node.getLogger(clazz);
+
+        Properties properties = memberAddressProviderConfig.getProperties();
+        MemberAddressProvider memberAddressProvider = newMemberAddressProviderInstance(clazz,
+                memberAddressProviderLogger, properties);
+        return new DelegatingAddressPicker(memberAddressProvider, config, addressPickerLogger);
+    }
+
+    @SuppressWarnings("checkstyle:npathcomplexity")
+    // justification for the suppression: the flow is pretty straightforward and breaking this up into smaller pieces
+    // would make it harder to read
+    private static MemberAddressProvider newMemberAddressProviderInstance(Class<? extends MemberAddressProvider> clazz,
+                                                                          ILogger logger, Properties properties) {
+        Properties nonNullProps = properties == null ? new Properties() : properties;
+        MemberAddressProvider provider = InstantiationUtils.newInstanceOrNull(clazz, nonNullProps, logger);
+        if (provider == null) {
+            provider = InstantiationUtils.newInstanceOrNull(clazz, logger, nonNullProps);
+        }
+        if (provider == null) {
+            provider = InstantiationUtils.newInstanceOrNull(clazz, nonNullProps);
+        }
+        if (provider == null) {
+            if (properties != null && !properties.isEmpty()) {
+                throw new ConfigurationException("Cannot find a matching constructor for MemberAddressProvider.  "
+                        + "The member address provider has properties configured, but the class " + "'"
+                        + clazz.getName() + "' does not have a public constructor accepting properties.");
+            }
+            provider = InstantiationUtils.newInstanceOrNull(clazz, logger);
+        }
+        if (provider == null) {
+            provider = InstantiationUtils.newInstanceOrNull(clazz);
+        }
+        if (provider == null) {
+            throw new ConfigurationException("Cannot find a matching constructor for MemberAddressProvider "
+                    + "implementation '" + clazz.getName() + "'.");
+        }
+        return provider;
+    }
+
+    private Class<? extends MemberAddressProvider> loadMemberAddressProviderClass(ClassLoader classLoader,
+                                                                                  String classname) {
+        try {
+            Class<?> clazz = ClassLoaderUtil.loadClass(classLoader, classname);
+            if (!(MemberAddressProvider.class.isAssignableFrom(clazz))) {
+                throw new ConfigurationException("Configured member address provider " + clazz.getName()
+                        + " does not implement the interface" + MemberAddressProvider.class.getName());
+            }
+            return (Class<? extends MemberAddressProvider>) clazz;
+        } catch (ClassNotFoundException e) {
+            throw new ConfigurationException("Cannot create a new instance of MemberAddressProvider '" + classname
+                    + "'", e);
+        }
     }
 
     @Override
@@ -49,44 +141,38 @@ public class DefaultNodeContext implements NodeContext {
     }
 
     @Override
-    public ConnectionManager createConnectionManager(Node node, ServerSocketChannel serverSocketChannel) {
+    public NetworkingService createNetworkingService(Node node, ServerSocketRegistry registry) {
         NodeIOService ioService = new NodeIOService(node, node.nodeEngine);
-        IOThreadingModel ioThreadingModel = createTcpIpConnectionThreadingModel(node, ioService);
+        Networking networking = createNetworking(node);
+        Config config = node.getConfig();
 
-        return new TcpIpConnectionManager(
+        return new TcpIpNetworkingService(config,
                 ioService,
-                serverSocketChannel,
+                registry,
                 node.loggingService,
                 node.nodeEngine.getMetricsRegistry(),
-                ioThreadingModel);
+                networking,
+                node.getNodeExtension().createChannelInitializerProvider(ioService),
+                node.getProperties());
     }
 
-    private IOThreadingModel createTcpIpConnectionThreadingModel(Node node, NodeIOService ioService) {
-        boolean spinning = Boolean.getBoolean("hazelcast.io.spinning");
+    private Networking createNetworking(Node node) {
+
         LoggingServiceImpl loggingService = node.loggingService;
 
-        SocketWriterInitializerImpl socketWriterInitializer
-                = new SocketWriterInitializerImpl(loggingService.getLogger(SocketWriterInitializerImpl.class));
-        SocketReaderInitializerImpl socketReaderInitializer
-                = new SocketReaderInitializerImpl(loggingService.getLogger(SocketReaderInitializerImpl.class));
-        if (spinning) {
-            return new SpinningIOThreadingModel(
-                    loggingService,
-                    node.getHazelcastThreadGroup(),
-                    ioService.getIoOutOfMemoryHandler(),
-                    socketWriterInitializer,
-                    socketReaderInitializer);
-        } else {
-            return new NonBlockingIOThreadingModel(
-                    loggingService,
-                    node.nodeEngine.getMetricsRegistry(),
-                    node.getHazelcastThreadGroup(),
-                    ioService.getIoOutOfMemoryHandler(), ioService.getInputSelectorThreadCount(),
-                    ioService.getOutputSelectorThreadCount(),
-                    ioService.getBalancerIntervalSeconds(),
-                    socketWriterInitializer,
-                    socketReaderInitializer
-            );
-        }
+        ChannelErrorHandler errorHandler
+                = new TcpIpConnectionChannelErrorHandler(loggingService.getLogger(TcpIpConnectionChannelErrorHandler.class));
+
+        HazelcastProperties props = node.getProperties();
+
+        return new NioNetworking(
+                new NioNetworking.Context()
+                        .loggingService(loggingService)
+                        .metricsRegistry(node.nodeEngine.getMetricsRegistry())
+                        .threadNamePrefix(node.hazelcastInstance.getName())
+                        .errorHandler(errorHandler)
+                        .inputThreadCount(props.getInteger(IO_INPUT_THREAD_COUNT))
+                        .outputThreadCount(props.getInteger(IO_OUTPUT_THREAD_COUNT))
+                        .balancerIntervalSeconds(props.getInteger(IO_BALANCER_INTERVAL_SECONDS)));
     }
 }

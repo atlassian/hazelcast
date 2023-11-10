@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,31 +16,48 @@
 
 package com.hazelcast.internal.partition.operation;
 
+import com.hazelcast.core.MigrationEvent;
+import com.hazelcast.internal.partition.MigrationInfo;
+import com.hazelcast.internal.partition.impl.InternalPartitionServiceImpl;
+import com.hazelcast.internal.partition.impl.PartitionStateManager;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.spi.MigrationAwareService;
 import com.hazelcast.spi.PartitionMigrationEvent;
 
 import static com.hazelcast.core.MigrationEvent.MigrationStatus.STARTED;
 
-// Runs locally when the node becomes owner of a partition,
-// before applying promotion result to the partition table.
+/**
+ * Runs locally when the node becomes owner of a partition, before applying a promotion result to the partition table.
+ * Sends a {@link MigrationEvent} and notifies all {@link MigrationAwareService}s that the migration is starting.
+ * After completion notifies the {@link #beforePromotionsCallback}.
+ */
 final class BeforePromotionOperation extends AbstractPromotionOperation {
+
+    private Runnable beforePromotionsCallback;
 
     /**
      * This constructor should not be used to obtain an instance of this class; it exists to fulfill IdentifiedDataSerializable
      * coding conventions.
      */
     public BeforePromotionOperation() {
-        super(-1);
+        super(null);
     }
 
-    BeforePromotionOperation(int currentReplicaIndex) {
-        super(currentReplicaIndex);
+    BeforePromotionOperation(MigrationInfo migrationInfo, Runnable beforePromotionsCallback) {
+        super(migrationInfo);
+        this.beforePromotionsCallback = beforePromotionsCallback;
     }
 
     @Override
     public void beforeRun() throws Exception {
         sendMigrationEvent(STARTED);
+
+        InternalPartitionServiceImpl service = getService();
+        PartitionStateManager partitionStateManager = service.getPartitionStateManager();
+        if (!partitionStateManager.trySetMigratingFlag(getPartitionId())) {
+            throw new IllegalStateException("Cannot set migrating flag, "
+                    + "probably previous migration's finalization is not completed yet.");
+        }
     }
 
     @Override
@@ -55,8 +72,15 @@ final class BeforePromotionOperation extends AbstractPromotionOperation {
             try {
                 service.beforeMigration(event);
             } catch (Throwable e) {
-                logger.warning("While promoting partitionId=" + getPartitionId(), e);
+                logger.warning("While promoting " + getPartitionMigrationEvent(), e);
             }
+        }
+    }
+
+    @Override
+    public void afterRun() throws Exception {
+        if (beforePromotionsCallback != null) {
+            beforePromotionsCallback.run();
         }
     }
 }

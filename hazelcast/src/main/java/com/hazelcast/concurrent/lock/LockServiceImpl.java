@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,22 +19,26 @@ package com.hazelcast.concurrent.lock;
 import com.hazelcast.concurrent.lock.operations.LocalLockCleanupOperation;
 import com.hazelcast.concurrent.lock.operations.LockReplicationOperation;
 import com.hazelcast.concurrent.lock.operations.UnlockOperation;
+import com.hazelcast.config.LockConfig;
 import com.hazelcast.core.DistributedObject;
 import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.partition.strategy.StringPartitioningStrategy;
 import com.hazelcast.spi.ClientAwareService;
+import com.hazelcast.spi.FragmentedMigrationAwareService;
 import com.hazelcast.spi.ManagedService;
 import com.hazelcast.spi.MemberAttributeServiceEvent;
 import com.hazelcast.spi.MembershipAwareService;
 import com.hazelcast.spi.MembershipServiceEvent;
-import com.hazelcast.spi.MigrationAwareService;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.ObjectNamespace;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.OperationService;
 import com.hazelcast.spi.PartitionMigrationEvent;
 import com.hazelcast.spi.PartitionReplicationEvent;
+import com.hazelcast.spi.QuorumAwareService;
 import com.hazelcast.spi.RemoteService;
+import com.hazelcast.spi.ServiceNamespace;
 import com.hazelcast.spi.impl.PartitionSpecificRunnable;
 import com.hazelcast.spi.impl.operationservice.InternalOperationService;
 import com.hazelcast.spi.partition.MigrationEndpoint;
@@ -42,6 +46,7 @@ import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.spi.properties.HazelcastProperties;
 import com.hazelcast.util.Clock;
 import com.hazelcast.util.ConstructorFunction;
+import com.hazelcast.util.ContextMutexFactory;
 
 import java.util.Collection;
 import java.util.LinkedList;
@@ -49,16 +54,29 @@ import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-import static com.hazelcast.spi.impl.OperationResponseHandlerFactory.createEmptyResponseHandler;
+import static com.hazelcast.util.ConcurrencyUtil.getOrPutSynchronized;
 
 @SuppressWarnings("checkstyle:methodcount")
 public final class LockServiceImpl implements LockService, ManagedService, RemoteService, MembershipAwareService,
-        MigrationAwareService, ClientAwareService {
+        FragmentedMigrationAwareService, ClientAwareService, QuorumAwareService {
+
+    private static final Object NULL_OBJECT = new Object();
 
     private final NodeEngine nodeEngine;
     private final LockStoreContainer[] containers;
     private final ConcurrentMap<String, ConstructorFunction<ObjectNamespace, LockStoreInfo>> constructors
             = new ConcurrentHashMap<String, ConstructorFunction<ObjectNamespace, LockStoreInfo>>();
+
+    private final ConcurrentMap<String, Object> quorumConfigCache = new ConcurrentHashMap<String, Object>();
+    private final ContextMutexFactory quorumConfigCacheMutexFactory = new ContextMutexFactory();
+    private final ConstructorFunction<String, Object> quorumConfigConstructor = new ConstructorFunction<String, Object>() {
+        @Override
+        public Object createNew(String name) {
+            LockConfig lockConfig = nodeEngine.getConfig().findLockConfig(name);
+            String quorumName = lockConfig.getQuorumName();
+            return quorumName == null ? NULL_OBJECT : quorumName;
+        }
+    };
 
     private final long maxLeaseTimeInMillis;
 
@@ -149,7 +167,6 @@ public final class LockServiceImpl implements LockService, ManagedService, Remot
         container.clearLockStore(namespace);
     }
 
-
     public LockStoreContainer getLockContainer(int partitionId) {
         return containers[partitionId];
     }
@@ -199,7 +216,8 @@ public final class LockServiceImpl implements LockService, ManagedService, Remot
             Data key = lock.getKey();
             if (uuid.equals(lock.getOwner()) && !lock.isTransactional()) {
                 UnlockOperation op = createLockCleanupOperation(partitionId, lockStore.getNamespace(), key, uuid);
-                operationService.run(op);
+                // op will be executed on partition thread locally. Invocation is to handle retries.
+                operationService.invokeOnTarget(SERVICE_NAME, op, nodeEngine.getThisAddress());
             }
             lockStore.cleanWaitersAndSignalsFor(key, uuid);
         }
@@ -211,7 +229,6 @@ public final class LockServiceImpl implements LockService, ManagedService, Remot
         op.setNodeEngine(nodeEngine);
         op.setServiceName(SERVICE_NAME);
         op.setService(LockServiceImpl.this);
-        op.setOperationResponseHandler(createEmptyResponseHandler());
         op.setPartitionId(partitionId);
         op.setValidateTarget(false);
         return op;
@@ -229,6 +246,18 @@ public final class LockServiceImpl implements LockService, ManagedService, Remot
     }
 
     @Override
+    public Collection<ServiceNamespace> getAllServiceNamespaces(PartitionReplicationEvent event) {
+        int partitionId = event.getPartitionId();
+        LockStoreContainer container = containers[partitionId];
+        return container.getAllNamespaces(event.getReplicaIndex());
+    }
+
+    @Override
+    public boolean isKnownServiceNamespace(ServiceNamespace namespace) {
+        return namespace instanceof ObjectNamespace;
+    }
+
+    @Override
     public void beforeMigration(PartitionMigrationEvent partitionMigrationEvent) {
     }
 
@@ -238,11 +267,17 @@ public final class LockServiceImpl implements LockService, ManagedService, Remot
         LockStoreContainer container = containers[partitionId];
         int replicaIndex = event.getReplicaIndex();
         LockReplicationOperation op = new LockReplicationOperation(container, partitionId, replicaIndex);
-        if (op.isEmpty()) {
-            return null;
-        } else {
-            return op;
-        }
+        return op.isEmpty() ? null : op;
+    }
+
+    @Override
+    public Operation prepareReplicationOperation(PartitionReplicationEvent event,
+            Collection<ServiceNamespace> namespaces) {
+        int partitionId = event.getPartitionId();
+        LockStoreContainer container = containers[partitionId];
+        int replicaIndex = event.getReplicaIndex();
+        LockReplicationOperation op = new LockReplicationOperation(container, partitionId, replicaIndex, namespaces);
+        return op.isEmpty() ? null : op;
     }
 
     @Override
@@ -250,8 +285,17 @@ public final class LockServiceImpl implements LockService, ManagedService, Remot
         if (event.getMigrationEndpoint() == MigrationEndpoint.SOURCE) {
             clearLockStoresHavingLesserBackupCountThan(event.getPartitionId(), event.getNewReplicaIndex());
         } else {
-            int partitionId = event.getPartitionId();
-            scheduleEvictions(partitionId);
+            scheduleEvictions(event.getPartitionId());
+        }
+        // Local locks are local to the partition and replicaIndex where they have been acquired.
+        // That is the reason they are removed on any partition event on the destination.
+        removeLocalLocks(event.getPartitionId());
+    }
+
+    private void removeLocalLocks(int partitionId) {
+        LockStoreContainer container = containers[partitionId];
+        for (LockStoreImpl lockStore : container.getLockStores()) {
+            lockStore.removeLocalLocks();
         }
     }
 
@@ -266,7 +310,11 @@ public final class LockServiceImpl implements LockService, ManagedService, Remot
                 }
 
                 long leaseTime = expirationTime - now;
-                ls.scheduleEviction(lock.getKey(), lock.getVersion(), leaseTime);
+                if (leaseTime <= 0) {
+                    ls.forceUnlock(lock.getKey());
+                } else {
+                    ls.scheduleEviction(lock.getKey(), lock.getVersion(), leaseTime);
+                }
             }
         }
     }
@@ -294,12 +342,25 @@ public final class LockServiceImpl implements LockService, ManagedService, Remot
 
     @Override
     public void destroyDistributedObject(String objectId) {
-        Data key = nodeEngine.getSerializationService().toData(objectId);
-        for (LockStoreContainer container : containers) {
-            InternalLockNamespace namespace = new InternalLockNamespace(objectId);
-            LockStoreImpl lockStore = container.getOrCreateLockStore(namespace);
-            lockStore.forceUnlock(key);
+        final Data key = nodeEngine.getSerializationService().toData(objectId, StringPartitioningStrategy.INSTANCE);
+        final int partitionId = nodeEngine.getPartitionService().getPartitionId(key);
+        final LockStoreImpl lockStore = containers[partitionId].getLockStore(new InternalLockNamespace(objectId));
+
+        if (lockStore != null) {
+            InternalOperationService operationService = (InternalOperationService) nodeEngine.getOperationService();
+            operationService.execute(new PartitionSpecificRunnable() {
+                @Override
+                public void run() {
+                    lockStore.forceUnlock(key);
+                }
+
+                @Override
+                public int getPartitionId() {
+                    return partitionId;
+                }
+            });
         }
+        quorumConfigCache.remove(objectId);
     }
 
     @Override
@@ -309,5 +370,12 @@ public final class LockServiceImpl implements LockService, ManagedService, Remot
 
     public static long getMaxLeaseTimeInMillis(HazelcastProperties hazelcastProperties) {
         return hazelcastProperties.getMillis(GroupProperty.LOCK_MAX_LEASE_TIME_SECONDS);
+    }
+
+    @Override
+    public String getQuorumName(String name) {
+        Object quorumName = getOrPutSynchronized(quorumConfigCache, name, quorumConfigCacheMutexFactory,
+                quorumConfigConstructor);
+        return quorumName == NULL_OBJECT ? null : (String) quorumName;
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,31 +28,37 @@ import com.hazelcast.spi.partition.IPartitionService;
 import com.hazelcast.util.Clock;
 
 import static com.hazelcast.util.Preconditions.checkNotNull;
+import static com.hazelcast.util.ThreadUtil.assertRunningOnPartitionThread;
 
 /**
  * Evictor helper methods.
  */
 public class EvictorImpl implements Evictor {
-
     protected final EvictionChecker evictionChecker;
     protected final IPartitionService partitionService;
     protected final MapEvictionPolicy mapEvictionPolicy;
 
+    private final int batchSize;
+
     public EvictorImpl(MapEvictionPolicy mapEvictionPolicy,
-                       EvictionChecker evictionChecker, IPartitionService partitionService) {
+                       EvictionChecker evictionChecker, IPartitionService partitionService, int batchSize) {
         this.evictionChecker = checkNotNull(evictionChecker);
         this.partitionService = checkNotNull(partitionService);
         this.mapEvictionPolicy = checkNotNull(mapEvictionPolicy);
+        this.batchSize = batchSize;
     }
 
     @Override
     public void evict(RecordStore recordStore, Data excludedKey) {
-        EntryView evictableEntry = selectEvictableEntry(recordStore, excludedKey);
-        if (evictableEntry == null) {
-            return;
-        }
+        assertRunningOnPartitionThread();
 
-        evictEntry(recordStore, evictableEntry);
+        for (int i = 0; i < batchSize; i++) {
+            EntryView evictableEntry = selectEvictableEntry(recordStore, excludedKey);
+            if (evictableEntry == null) {
+                return;
+            }
+            evictEntry(recordStore, evictableEntry);
+        }
     }
 
     private EntryView selectEvictableEntry(RecordStore recordStore, Data excludedKey) {
@@ -92,12 +98,14 @@ public class EvictorImpl implements Evictor {
         recordStore.evict(key, backup);
 
         if (!backup) {
-            recordStore.doPostEvictionOperations(record, backup);
+            recordStore.doPostEvictionOperations(record);
         }
     }
 
     @Override
     public boolean checkEvictable(RecordStore recordStore) {
+        assertRunningOnPartitionThread();
+
         return evictionChecker.checkEvictable(recordStore);
     }
 
@@ -114,11 +122,18 @@ public class EvictorImpl implements Evictor {
 
     protected Iterable<EntryView> getSamples(RecordStore recordStore) {
         Storage storage = recordStore.getStorage();
-        return (Iterable<EntryView>) storage.getRandomSamples(SAMPLE_COUNT);
+        return storage.getRandomSamples(SAMPLE_COUNT);
     }
 
     protected static long getNow() {
         return Clock.currentTimeMillis();
     }
 
+    @Override
+    public String toString() {
+        return "EvictorImpl{"
+                + ", mapEvictionPolicy=" + mapEvictionPolicy
+                + ", batchSize=" + batchSize
+                + '}';
+    }
 }

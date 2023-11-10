@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,12 @@
 
 package com.hazelcast.nio.tcp;
 
+import com.hazelcast.internal.networking.OutboundFrame;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.Connection;
-import com.hazelcast.nio.ConnectionManager;
+import com.hazelcast.nio.ConnectionLifecycleListener;
+import com.hazelcast.nio.EndpointManager;
 import com.hazelcast.nio.ConnectionType;
-import com.hazelcast.nio.OutboundFrame;
-import com.hazelcast.test.mocknetwork.MockConnectionManager;
 import com.hazelcast.util.Clock;
 import com.hazelcast.util.ExceptionUtil;
 
@@ -32,14 +32,21 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 class DroppingConnection implements Connection {
 
-    final Address endpoint;
-    final long timestamp = Clock.currentTimeMillis();
-    private final ConnectionManager connectionManager;
-    private AtomicBoolean isClosing = new AtomicBoolean(false);
+    private final Address endpoint;
+    private final long timestamp = Clock.currentTimeMillis();
+    private final EndpointManager connectionManager;
+    private final ConnectionLifecycleListener lifecycleListener;
+    private AtomicBoolean isAlive = new AtomicBoolean(true);
 
-    DroppingConnection(Address endpoint, ConnectionManager connectionManager) {
+    DroppingConnection(ConnectionLifecycleListener lifecycleListener, Address endpoint, EndpointManager connectionManager) {
         this.endpoint = endpoint;
         this.connectionManager = connectionManager;
+        this.lifecycleListener = lifecycleListener;
+    }
+
+    @Override
+    public EndpointManager getEndpointManager() {
+        return connectionManager;
     }
 
     @Override
@@ -59,7 +66,7 @@ class DroppingConnection implements Connection {
 
     @Override
     public boolean isAlive() {
-        return true;
+        return isAlive.get();
     }
 
     @Override
@@ -74,11 +81,10 @@ class DroppingConnection implements Connection {
 
     @Override
     public void close(String msg, Throwable cause) {
-        if (connectionManager instanceof MockConnectionManager) {
-            if (isClosing.compareAndSet(false, true)) {
-                ((MockConnectionManager)connectionManager).destroyConnection(this);
-            }
+        if (!isAlive.compareAndSet(true, false)) {
+            return;
         }
+        lifecycleListener.onConnectionClose(this, cause, false);
     }
 
     @Override

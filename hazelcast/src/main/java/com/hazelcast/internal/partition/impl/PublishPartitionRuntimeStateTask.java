@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,12 +18,12 @@ package com.hazelcast.internal.partition.impl;
 
 import com.hazelcast.instance.Node;
 import com.hazelcast.instance.NodeState;
+import com.hazelcast.internal.cluster.Versions;
 import com.hazelcast.internal.partition.InternalPartitionService;
 import com.hazelcast.logging.ILogger;
 
 /**
- * A periodic task to publish partition state to cluster members
- * in a predefined interval.
+ * A periodic task to publish partition state to cluster members in a predefined interval.
  */
 class PublishPartitionRuntimeStateTask implements Runnable {
     private final Node node;
@@ -38,17 +38,26 @@ class PublishPartitionRuntimeStateTask implements Runnable {
 
     @Override
     public void run() {
-        if (node.isMaster() && node.getState() == NodeState.ACTIVE) {
+        if (partitionService.isLocalMemberMaster()) {
             MigrationManager migrationManager = partitionService.getMigrationManager();
-            final boolean migrationAllowed = migrationManager.isMigrationAllowed()
+            boolean migrationAllowed = migrationManager.areMigrationTasksAllowed()
                     && !partitionService.isFetchMostRecentPartitionTableTaskRequired();
             if (!migrationAllowed) {
                 logger.fine("Not publishing partition runtime state since migration is not allowed.");
                 return;
-            } else if (migrationManager.hasOnGoingMigration()) {
-                logger.info("Remaining migration tasks in queue => " + partitionService.getMigrationQueueSize());
             }
-            partitionService.publishPartitionRuntimeState();
+
+            if (migrationManager.hasOnGoingMigration()) {
+                logger.info("Remaining migration tasks in queue => " + partitionService.getMigrationQueueSize()
+                    + ". (" + migrationManager.getStats().formatToString(logger.isFineEnabled()) + ")");
+            } else if (node.getState() == NodeState.ACTIVE) {
+                if (node.getClusterService().getClusterVersion().isGreaterOrEqual(Versions.V3_12)) {
+                    partitionService.checkClusterPartitionRuntimeStates();
+                } else {
+                    // RU_COMPAT_3_11
+                    partitionService.publishPartitionRuntimeState();
+                }
+            }
         }
     }
 }

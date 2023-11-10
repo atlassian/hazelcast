@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.hazelcast.cache.impl;
 
+import com.hazelcast.cache.CacheEventType;
 import com.hazelcast.nio.serialization.Data;
 
 /**
@@ -36,6 +37,7 @@ public class CacheEventContext {
     private String origin;
     private int orderKey;
     private int completionId;
+    private Data expiryPolicy;
 
     public CacheEventContext() { }
 
@@ -125,6 +127,15 @@ public class CacheEventContext {
 
     public CacheEventContext setAccessHit(long accessHit) {
         this.accessHit = accessHit;
+        return this;
+    }
+
+    public Data getExpiryPolicy() {
+        return expiryPolicy;
+    }
+
+    public CacheEventContext setExpiryPolicy(Data expiryPolicy) {
+        this.expiryPolicy = expiryPolicy;
         return this;
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,7 +42,7 @@ public class TxnLockAndGetOperation extends LockAwareOperation implements Mutati
 
     public TxnLockAndGetOperation(String name, Data dataKey, long timeout, long ttl, String ownerUuid,
                                   boolean shouldLoad, boolean blockReads) {
-        super(name, dataKey, ttl);
+        super(name, dataKey, ttl, -1);
         this.ownerUuid = ownerUuid;
         this.shouldLoad = shouldLoad;
         this.blockReads = blockReads;
@@ -56,7 +56,7 @@ public class TxnLockAndGetOperation extends LockAwareOperation implements Mutati
         }
         Record record = recordStore.getRecordOrNull(dataKey);
         if (record == null && shouldLoad) {
-            record = recordStore.loadRecordOrNull(dataKey, false);
+            record = recordStore.loadRecordOrNull(dataKey, false, getCallerAddress());
         }
         Data value = record == null ? null : mapServiceContext.toData(record.getValue());
         response = new VersionedValue(value, record == null ? 0 : record.getVersion());

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,11 @@
 
 package com.hazelcast.client.impl.protocol.task.list;
 
-import com.hazelcast.client.ClientEndpoint;
+import com.hazelcast.client.impl.ClientEndpoint;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.ListAddListenerCodec;
 import com.hazelcast.client.impl.protocol.task.AbstractCallableMessageTask;
+import com.hazelcast.client.impl.protocol.task.ListenerMessageTask;
 import com.hazelcast.collection.impl.collection.CollectionEventFilter;
 import com.hazelcast.collection.impl.common.DataAwareItemEvent;
 import com.hazelcast.collection.impl.list.ListService;
@@ -36,7 +37,7 @@ import com.hazelcast.spi.EventService;
 import java.security.Permission;
 
 public class ListAddListenerMessageTask
-        extends AbstractCallableMessageTask<ListAddListenerCodec.RequestParameters> {
+        extends AbstractCallableMessageTask<ListAddListenerCodec.RequestParameters> implements ListenerMessageTask {
 
     public ListAddListenerMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
@@ -44,7 +45,6 @@ public class ListAddListenerMessageTask
 
     @Override
     protected Object call() {
-        ClientEndpoint endpoint = getEndpoint();
         Data partitionKey = serializationService.toData(parameters.name);
         ItemListener listener = createItemListener(endpoint, partitionKey);
         EventService eventService = clientEngine.getEventService();

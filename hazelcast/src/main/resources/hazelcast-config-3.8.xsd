@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ~ Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+  ~ Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
   ~ you may not use this file except in compliance with the License.
@@ -41,6 +41,7 @@
                 <xs:element name="partition-group" type="partition-group" minOccurs="0" maxOccurs="1"/>
                 <xs:element name="executor-service" type="executor-service" minOccurs="0" maxOccurs="unbounded"/>
                 <xs:element name="durable-executor-service" type="durable-executor-service" minOccurs="0" maxOccurs="unbounded"/>
+                <xs:element name="scheduled-executor-service" type="scheduled-executor-service" minOccurs="0" maxOccurs="unbounded"/>
                 <xs:element name="queue" type="queue" minOccurs="0" maxOccurs="unbounded"/>
                 <xs:element name="map" type="map" minOccurs="0" maxOccurs="unbounded"/>
                 <xs:element name="multimap" type="multimap" minOccurs="0" maxOccurs="unbounded"/>
@@ -52,6 +53,7 @@
                 <xs:element name="reliable-topic" type="reliable-topic" minOccurs="0" maxOccurs="unbounded"/>
                 <xs:element name="jobtracker" type="jobtracker" minOccurs="0" maxOccurs="unbounded"/>
                 <xs:element name="semaphore" type="semaphore" minOccurs="0" maxOccurs="unbounded"/>
+                <xs:element name="lock" type="lock" minOccurs="0" maxOccurs="unbounded"/>
                 <xs:element name="ringbuffer" type="ringbuffer" minOccurs="0" maxOccurs="unbounded"/>
                 <xs:element name="listeners" type="listeners" minOccurs="0" maxOccurs="1"/>
                 <xs:element name="serialization" type="serialization" minOccurs="0" maxOccurs="1"/>
@@ -62,6 +64,8 @@
                 <xs:element name="quorum" type="quorum" minOccurs="0" maxOccurs="1"/>
                 <xs:element name="lite-member" type="lite-member" minOccurs="0" maxOccurs="1"/>
                 <xs:element name="hot-restart-persistence" type="hot-restart-persistence" minOccurs="0" maxOccurs="1"/>
+                <xs:element name="user-code-deployment" type="user-code-deployment" minOccurs="0" maxOccurs="1"/>
+                <xs:element name="cardinality-estimator" type="cardinality-estimator" minOccurs="0" maxOccurs="unbounded"/>
             </xs:choice>
             <xs:attribute name="id" type="xs:string" use="optional" default="default"/>
         </xs:complexType>
@@ -426,12 +430,34 @@
                     </xs:attribute>
                 </xs:complexType>
             </xs:element>
+            <xs:element name="cache-loader" minOccurs="0" maxOccurs="1">
+                <xs:complexType>
+                    <xs:attribute name="class-name" use="required" type="xs:string">
+                        <xs:annotation>
+                            <xs:documentation>
+                                The cache loader class name.
+                            </xs:documentation>
+                        </xs:annotation>
+                    </xs:attribute>
+                </xs:complexType>
+            </xs:element>
             <xs:element name="cache-writer-factory" minOccurs="0" maxOccurs="1">
                 <xs:complexType>
                     <xs:attribute name="class-name" use="required">
                         <xs:annotation>
                             <xs:documentation>
                                 The cache writer factory class name.
+                            </xs:documentation>
+                        </xs:annotation>
+                    </xs:attribute>
+                </xs:complexType>
+            </xs:element>
+            <xs:element name="cache-writer" minOccurs="0" maxOccurs="1">
+                <xs:complexType>
+                    <xs:attribute name="class-name" use="required" type="xs:string">
+                        <xs:annotation>
+                            <xs:documentation>
+                                The cache writer class name.
                             </xs:documentation>
                         </xs:annotation>
                     </xs:attribute>
@@ -1073,7 +1099,7 @@
                 <xs:annotation>
                     <xs:documentation>
                         The maximum size of the queue; the maximum number of tasks that can wait to be processed. A
-                        value of 0 means an unbounded queue.
+                        value of 0 means number of partitions * 2.
                     </xs:documentation>
                 </xs:annotation>
             </xs:element>
@@ -1172,6 +1198,23 @@
             </xs:simpleType>
         </xs:attribute>
     </xs:complexType>
+
+    <xs:complexType name="lock">
+        <xs:all>
+            <xs:element name="quorum-ref" minOccurs="0" maxOccurs="1"/>
+        </xs:all>
+        <xs:attribute name="name" use="optional" default="default">
+            <xs:annotation>
+                <xs:documentation>
+                    Name of the lock.
+                </xs:documentation>
+            </xs:annotation>
+            <xs:simpleType>
+                <xs:restriction base="xs:string"/>
+            </xs:simpleType>
+        </xs:attribute>
+    </xs:complexType>
+
     <xs:complexType name="ringbuffer-store">
         <xs:all>
             <xs:element ref="factory-or-class-name" minOccurs="0" maxOccurs="1"/>
@@ -1185,7 +1228,7 @@
                     <xs:documentation>
                         Number of items in the ringbuffer. If no time-to-live-seconds is set, the size will always
                         be equal to capacity after the head completed the first loop around the ring. This is
-                        because no items are getting retired.
+                        because no items are getting retired. The default value is 10000.
                     </xs:documentation>
                 </xs:annotation>
             </xs:element>
@@ -1224,7 +1267,6 @@
                         Possible values:
                         BINARY (default): keys and values are stored as binary data.
                         OBJECT: values are stored in their object forms.
-                        NATIVE: keys and values are stored in native memory. Only available on Hazelcast Enterprise.
                     </xs:documentation>
                 </xs:annotation>
             </xs:element>
@@ -1447,7 +1489,7 @@
                 </xs:documentation>
             </xs:annotation>
         </xs:attribute>
-        <xs:attribute name="loopbackModeEnabled" type="xs:boolean" use="optional" default="true"/>
+        <xs:attribute name="loopbackModeEnabled" type="xs:boolean" use="optional" default="false"/>
     </xs:complexType>
     <xs:complexType name="aws">
         <xs:all>
@@ -1623,21 +1665,21 @@
 
     <xs:complexType name="durable-executor-service">
         <xs:all>
-            <xs:element name="pool-size" type="xs:unsignedShort" minOccurs="0" maxOccurs="1" default="8">
+            <xs:element name="pool-size" type="xs:unsignedShort" minOccurs="0" maxOccurs="1" default="16">
                 <xs:annotation>
                     <xs:documentation>
                         The number of executor threads per member for the executor.
                     </xs:documentation>
                 </xs:annotation>
             </xs:element>
-            <xs:element name="durability" type="xs:unsignedShort" minOccurs="0" maxOccurs="1" default="8">
+            <xs:element name="durability" type="xs:unsignedShort" minOccurs="0" maxOccurs="1" default="1">
                 <xs:annotation>
                     <xs:documentation>
                         The durability of the executor
                     </xs:documentation>
                 </xs:annotation>
             </xs:element>
-            <xs:element name="capacity" type="xs:unsignedInt" minOccurs="0" maxOccurs="1" default="0">
+            <xs:element name="capacity" type="xs:unsignedInt" minOccurs="0" maxOccurs="1" default="100">
                 <xs:annotation>
                     <xs:documentation>
                         Capacity of the executor task per partition.
@@ -1648,7 +1690,71 @@
         <xs:attribute name="name" type="xs:string" use="optional" default="default">
             <xs:annotation>
                 <xs:documentation>
-                    Name of the executor task.
+                    Name of the durable executor.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="scheduled-executor-service">
+        <xs:all>
+            <xs:element name="pool-size" type="xs:unsignedShort" minOccurs="0" maxOccurs="1" default="16">
+                <xs:annotation>
+                    <xs:documentation>
+                        The number of executor threads per member for the executor.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="durability" type="xs:unsignedShort" minOccurs="0" maxOccurs="1" default="1">
+                <xs:annotation>
+                    <xs:documentation>
+                        The durability of the scheduled executor.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="capacity" type="xs:unsignedShort" minOccurs="0" maxOccurs="1" default="100">
+                <xs:annotation>
+                    <xs:documentation>
+                        The maximum number of tasks that a scheduler can have at any given point
+                        in time per partition.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:all>
+        <xs:attribute name="name" type="xs:string" use="optional" default="default">
+            <xs:annotation>
+                <xs:documentation>
+                    Name of the scheduled executor.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="cardinality-estimator">
+        <xs:all>
+            <xs:element name="backup-count" type="backup-count" minOccurs="0" maxOccurs="1" default="1">
+                <xs:annotation>
+                    <xs:documentation>
+                        Number of synchronous backups. For example, if 1 is set as the backup-count,
+                        then the cardinality estimation will be copied to one other JVM for
+                        fail-safety. Valid numbers are 0 (no backup), 1, 2 ... 6.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="async-backup-count" type="backup-count" minOccurs="0" maxOccurs="1" default="0">
+                <xs:annotation>
+                    <xs:documentation>
+                        Number of asynchronous backups. For example, if 1 is set as the async-backup-count,
+                        then cardinality estimation will be copied to one other JVM (asynchronously) for
+                        fail-safety. Valid numbers are 0 (no backup), 1, 2 ... 6.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:all>
+        <xs:attribute name="name" type="xs:string" use="optional" default="default">
+            <xs:annotation>
+                <xs:documentation>
+                    Name of the cardinality estimator.
                 </xs:documentation>
             </xs:annotation>
         </xs:attribute>
@@ -1688,17 +1794,17 @@
                     </xs:documentation>
                 </xs:annotation>
             </xs:element>
+            <xs:element name="password" type="xs:string">
+                <xs:annotation>
+                    <xs:documentation>
+                        Passphrase to use when generating the secret key.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
             <xs:element name="salt" type="xs:string" default="thesalt">
                 <xs:annotation>
                     <xs:documentation>
                         Salt value to use when generating the secret key.
-                    </xs:documentation>
-                </xs:annotation>
-            </xs:element>
-            <xs:element name="password" type="xs:string">
-                <xs:annotation>
-                    <xs:documentation>
-                        Pass phrase to use when generating the secret key.
                     </xs:documentation>
                 </xs:annotation>
             </xs:element>
@@ -2171,7 +2277,10 @@
                         maxOccurs="unbounded"/>
             <xs:element name="durable-executor-service-permission" type="instance-permission" minOccurs="0"
                         maxOccurs="unbounded"/>
+            <xs:element name="cardinality-estimator-permission" type="instance-permission" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:element name="scheduled-executor-permission" type="instance-permission" minOccurs="0" maxOccurs="unbounded"/>
             <xs:element name="transaction-permission" type="base-permission" minOccurs="0" maxOccurs="1"/>
+            <xs:element name="cache-permission" type="instance-permission" minOccurs="0" maxOccurs="unbounded"/>
         </xs:choice>
     </xs:complexType>
     <xs:complexType name="base-permission">
@@ -2285,15 +2394,22 @@
 
     <xs:complexType name="near-cache">
         <xs:all>
-            <xs:element name="max-size" type="xs:unsignedInt" minOccurs="0" maxOccurs="1" default="0">
+            <xs:element name="in-memory-format" type="in-memory-format" minOccurs="0" maxOccurs="1" default="BINARY">
                 <xs:annotation>
                     <xs:documentation>
-                        Maximum size of the Near Cache. When max size is reached,
-                        cache is evicted based on the policy defined.
-                        Any integer between 0 and Integer.MAX_VALUE.
-                        0 means Integer.MAX_VALUE. Default is 0.
-
-                        Deprecated since 3.8, please use &lt;eviction/&gt;
+                        Data type used to store entries.
+                        Possible values:
+                        BINARY (default): keys and values are stored as binary data.
+                        OBJECT: values are stored in their object forms.
+                        NATIVE: keys and values are stored in native memory. Only available on Hazelcast Enterprise.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="invalidate-on-change" type="xs:boolean" minOccurs="0" maxOccurs="1" default="true">
+                <xs:annotation>
+                    <xs:documentation>
+                        True to evict the cached entries if the entries are changed (updated or removed).
+                        Default value is true.
                     </xs:documentation>
                 </xs:annotation>
             </xs:element>
@@ -2316,6 +2432,7 @@
                     </xs:documentation>
                 </xs:annotation>
             </xs:element>
+            <xs:element name="eviction" type="eviction" minOccurs="0" maxOccurs="1"/>
             <xs:element name="eviction-policy" type="eviction-policy" minOccurs="0" maxOccurs="1" default="LRU">
                 <xs:annotation>
                     <xs:documentation>
@@ -2323,42 +2440,34 @@
                         NONE (no extra eviction, time-to-live-seconds may still apply),
                         LRU (Least Recently Used),
                         LFU (Least Frequently Used).
-                        NONE is the default.
+                        LRU is the default.
                         Regardless of the eviction policy used, time-to-live-seconds will still apply.
 
                         Deprecated since 3.8, please use &lt;eviction/&gt;
                     </xs:documentation>
                 </xs:annotation>
             </xs:element>
-            <xs:element name="invalidate-on-change" type="xs:boolean" minOccurs="0" maxOccurs="1" default="true">
+            <xs:element name="max-size" type="xs:unsignedInt" minOccurs="0" maxOccurs="1" default="0">
                 <xs:annotation>
                     <xs:documentation>
-                        True to evict the cached entries if the entries are changed (updated or removed).
-                        Default value is true.
-                    </xs:documentation>
-                </xs:annotation>
-            </xs:element>
-            <xs:element name="in-memory-format" type="in-memory-format" minOccurs="0" maxOccurs="1" default="BINARY">
-                <xs:annotation>
-                    <xs:documentation>
-                        Data type used to store entries.
-                        Possible values:
-                        BINARY (default): keys and values are stored as binary data.
-                        OBJECT: values are stored in their object forms.
-                        NATIVE: keys and values are stored in native memory. Only available on Hazelcast Enterprise.
+                        Maximum size of the Near Cache. When max size is reached,
+                        cache is evicted based on the policy defined.
+                        Any integer between 0 and Integer.MAX_VALUE.
+                        0 means Integer.MAX_VALUE. Default is 0.
+
+                        Deprecated since 3.8, please use &lt;eviction/&gt;
                     </xs:documentation>
                 </xs:annotation>
             </xs:element>
             <xs:element name="cache-local-entries" type="xs:boolean" minOccurs="0" maxOccurs="1" default="false">
                 <xs:annotation>
                     <xs:documentation>
-                        True to cache local entries also.
+                        True to cache local entries, which belong to the member itself.
                         This is useful when in-memory-format for Near Cache is different than the map's one.
                         Default value is false.
                     </xs:documentation>
                 </xs:annotation>
             </xs:element>
-            <xs:element name="eviction" type="eviction" minOccurs="0" maxOccurs="1"/>
         </xs:all>
         <xs:attribute name="name" use="optional" type="xs:string" default="default"/>
     </xs:complexType>
@@ -2473,7 +2582,8 @@
                                     maxOccurs="unbounded">
                             <xs:annotation>
                                 <xs:documentation>
-                                    PortableFactory class to be registered.
+                                    Custom classes implementing com.hazelcast.nio.serialization.DataSerializableFactory to be
+                                    registered. These can be used to speed up serialization/deserialization of objects.
                                 </xs:documentation>
                             </xs:annotation>
                         </xs:element>
@@ -2714,7 +2824,7 @@
                         entry key.
 
                         4 merge policy implementations for IMap and 2 merge policy implementations for
-                        ICache are provided out of the box.
+                        ICache are provided out-of-the-box.
 
                         IMap has the following merge policies:
                         com.hazelcast.map.merge.PutIfAbsentMapMergePolicy: Incoming entry merges from the
@@ -2823,12 +2933,107 @@
         </xs:attribute>
     </xs:complexType>
 
+    <xs:complexType name="user-code-deployment">
+        <xs:all>
+            <xs:element name="class-cache-mode" default="ETERNAL">
+                <xs:annotation>
+                    <xs:documentation>
+                        Controls caching of user classes loaded from remote members.
+
+                        OFF: Never caches loaded classes. This is suitable for loading runnables, callables,
+                        entry processors, etc.
+                        ETERNAL: Cache indefinitely. This is suitable when you load long-living objects,
+                        such as domain objects stored in a map.
+                    </xs:documentation>
+                </xs:annotation>
+                <xs:simpleType>
+                    <xs:restriction base="non-space-string">
+                        <xs:enumeration value="OFF"/>
+                        <xs:enumeration value="ETERNAL"/>
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+            <xs:element name="provider-mode" default="LOCAL_AND_CACHED_CLASSES">
+                <xs:annotation>
+                    <xs:documentation>
+                        Controls how to react on receiving a classloading request from a remote member
+
+                        OFF: Never serve classes to other members. This member will never server classes to remote
+                        members.
+                        LOCAL_CLASSES_ONLY: Serve classes from local classpath only. Classes loaded from other members
+                        will be used locally, but they won't be served to other members.
+                        LOCAL_AND_CACHED_CLASSES: Server classes loaded from both local classpath and from other members.
+                    </xs:documentation>
+                </xs:annotation>
+                <xs:simpleType>
+                    <xs:restriction base="non-space-string">
+                        <xs:enumeration value="OFF"/>
+                        <xs:enumeration value="LOCAL_CLASSES_ONLY"/>
+                        <xs:enumeration value="LOCAL_AND_CACHED_CLASSES"/>
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+            <xs:element name="blacklist-prefixes" type="xs:string" minOccurs="0" maxOccurs="1">
+                <xs:annotation>
+                    <xs:documentation>
+                        Filter to constraint members to be used for classloading request when a class
+                        is not available locally.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="whitelist-prefixes" type="xs:string" minOccurs="0" maxOccurs="1">
+                <xs:annotation>
+                    <xs:documentation>
+                        Command separated list of prefixes of classes which will be loaded remotely.
+
+                        Use this to enable loading of explcitly selected user classes only and
+                        disable remote loading for all other classes. This gives you a fine-grained control
+                        over classloading.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="provider-filter" type="xs:string" minOccurs="0" maxOccurs="1">
+                <xs:annotation>
+                    <xs:documentation>
+                        Filter to constraint members to be used for classloading request when a class
+                        is not available locally.
+
+                        Filter format: HAS_ATTRIBUTE:foo this will send classloading requests
+                        only to members which has a member attribute foo set. Value is ignored,
+                        it can be any type. A present of the attribute is sufficient.
+
+                        This facility allows to have a control on classloading. You can e.g. start Hazelcast lite
+                        members dedicated for class-serving.
+
+                        Setting the filter to null will allow to load classes from all members.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:all>
+        <xs:attribute name="enabled" type="xs:boolean" use="required">
+            <xs:annotation>
+                <xs:documentation>
+                    True to enable User Code Deployment on this member, false otherwise.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
     <xs:complexType name="hot-restart-persistence">
         <xs:all>
             <xs:element name="base-dir" type="xs:string" minOccurs="0" maxOccurs="1" default="hot-restart">
                 <xs:annotation>
                     <xs:documentation>
-                        Base directory for all hot-restart data
+                        Base directory for all hot-restart data. Can be an absolute or relative path to the node startup
+                        directory.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="backup-dir" type="xs:string" minOccurs="0" maxOccurs="1">
+                <xs:annotation>
+                    <xs:documentation>
+                        Base directory for hot backups. Each new backup will be created in a separate directory inside this one.
+                        Can be an absolute or relative path to the node startup directory.
                     </xs:documentation>
                 </xs:annotation>
             </xs:element>
@@ -2862,11 +3067,15 @@
                         default="FULL_RECOVERY_ONLY">
                 <xs:annotation>
                     <xs:documentation>
-                        Specifies the policy that will be respected during hot restart cluster start.
-                        Valid values are;
-                        - FULL_RECOVERY_ONLY
-                        - PARTIAL_RECOVERY_MOST_RECENT
-                        - PARTIAL_RECOVERY_MOST_COMPLETE
+                        Specifies the policy that will be respected during hot restart cluster start. Valid values are :
+                        FULL_RECOVERY_ONLY : Starts the cluster only when all expected nodes are present and correct.
+                        Otherwise, it fails.
+                        PARTIAL_RECOVERY_MOST_RECENT : Starts the cluster with the members which have most up-to-date
+                        partition table and successfully restored their data. All other members will leave the cluster and
+                        force-start themselves. If no member restores its data successfully, cluster start fails.
+                        PARTIAL_RECOVERY_MOST_COMPLETE : Starts the cluster with the largest group of members which have the
+                        same partition table version and successfully restored their data. All other members will leave the
+                        cluster and force-start themselves. If no member restores its data successfully, cluster start fails.
                     </xs:documentation>
                 </xs:annotation>
             </xs:element>

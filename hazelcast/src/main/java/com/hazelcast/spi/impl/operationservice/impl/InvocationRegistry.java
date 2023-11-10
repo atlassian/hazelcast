@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,35 +22,40 @@ import com.hazelcast.core.MemberLeftException;
 import com.hazelcast.internal.metrics.MetricsProvider;
 import com.hazelcast.internal.metrics.MetricsRegistry;
 import com.hazelcast.internal.metrics.Probe;
+import com.hazelcast.internal.util.RuntimeAvailableProcessors;
 import com.hazelcast.logging.ILogger;
+import com.hazelcast.spi.impl.sequence.CallIdSequence;
 
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.TimeoutException;
 
 import static com.hazelcast.internal.metrics.ProbeLevel.MANDATORY;
 import static com.hazelcast.spi.OperationAccessor.deactivate;
 import static com.hazelcast.spi.OperationAccessor.setCallId;
 
 /**
- * The InvocationsRegistry is responsible for the registration of all pending invocations. Using the InvocationRegistry the
- * Invocation and its response(s) can be linked to each other.
- * <p/>
- * When an invocation is registered, a callId is determined. Based on this call-id, when a
+ * Responsible for the registration of all pending invocations.
+ * <p>
+ * Using the InvocationRegistry the Invocation and its response(s) can be linked to each other.
+ * <p>
+ * When an invocation is registered, a callId is determined. Based on this call ID, when a
  * {@link com.hazelcast.spi.impl.operationservice.impl.responses.Response} comes in, the
  * appropriate invocation can be looked up.
- * <p/>
- * Some idea's:
- * - use an ringbuffer to store all invocations instead of a CHM. The call-id can be used as sequence-id for this
+ * <p>
+ * Some ideas:
+ * <ul>
+ * <li>Use a ringbuffer to store all invocations instead of a CHM. The call ID can be used as sequence ID for this
  * ringbuffer. It can be that you run in slots that have not been released; if that happens, just keep increasing
- * the sequence (although you now get sequence-gaps).
- * - pre-allocate all invocations. Because the ringbuffer has a fixed capacity, pre-allocation should be easy. Also
- * the PartitionInvocation and TargetInvocation can be folded into Invocation.
+ * the sequence (although you now get sequence-gaps).</li>
+ * <li>Pre-allocate all invocations. Because the ringbuffer has a fixed capacity, pre-allocation should be easy. Also
+ * the PartitionInvocation and TargetInvocation can be folded into Invocation.</li>
+ * </ul>
  */
 public class InvocationRegistry implements Iterable<Invocation>, MetricsProvider {
+
     private static final int CORE_SIZE_CHECK = 8;
     private static final int CORE_SIZE_FACTOR = 4;
     private static final int CONCURRENCY_LEVEL = 16;
@@ -70,7 +75,7 @@ public class InvocationRegistry implements Iterable<Invocation>, MetricsProvider
         this.logger = logger;
         this.callIdSequence = callIdSequence;
 
-        int coreSize = Runtime.getRuntime().availableProcessors();
+        int coreSize = RuntimeAvailableProcessors.get();
         boolean reallyMultiCore = coreSize >= CORE_SIZE_CHECK;
         int concurrencyLevel = reallyMultiCore ? coreSize * CORE_SIZE_FACTOR : CONCURRENCY_LEVEL;
 
@@ -101,17 +106,18 @@ public class InvocationRegistry implements Iterable<Invocation>, MetricsProvider
      * Registers an invocation.
      *
      * @param invocation The invocation to register.
-     * @return false when InvocationRegistry is not alive and registration is not successful, true otherwise
+     * @return {@code false} when InvocationRegistry is not alive and registration is not successful, {@code true} otherwise
      */
     public boolean register(Invocation invocation) {
         final long callId;
+        boolean force = invocation.op.isUrgent() || invocation.isRetryCandidate();
         try {
-            callId = callIdSequence.next(invocation.op.isUrgent());
-        } catch (TimeoutException e) {
+            callId = force ? callIdSequence.forceNext() : callIdSequence.next();
+        } catch (HazelcastOverloadException e) {
             throw new HazelcastOverloadException("Failed to start invocation due to overload: " + invocation, e);
         }
         try {
-            // Fails with IllegalStateException if the operation is already active
+            // fails with IllegalStateException if the operation is already active
             setCallId(invocation.op, callId);
         } catch (IllegalStateException e) {
             callIdSequence.complete();
@@ -127,7 +133,8 @@ public class InvocationRegistry implements Iterable<Invocation>, MetricsProvider
 
     /**
      * Deregisters an invocation. If the associated operation is inactive, takes no action and returns {@code false}.
-     * This ensures the idempotence of deregistration.
+     * This ensures the idempotency of deregistration.
+     *
      * @param invocation The Invocation to deregister.
      * @return {@code true} if this call deregistered the invocation; {@code false} if the invocation wasn't registered
      */
@@ -143,7 +150,7 @@ public class InvocationRegistry implements Iterable<Invocation>, MetricsProvider
     /**
      * Returns the number of pending invocations.
      *
-     * @return the number of pending invocations.
+     * @return the number of pending invocations
      */
     public int size() {
         return invocations.size();
@@ -164,19 +171,19 @@ public class InvocationRegistry implements Iterable<Invocation>, MetricsProvider
     }
 
     /**
-     * Gets the invocation for the given call id.
+     * Gets the invocation for the given call ID.
      *
-     * @param callId the callId.
-     * @return the Invocation for the given callId, or null if no invocation was found.
+     * @param callId the call ID
+     * @return the Invocation for the given call ID, or {@code null} if no invocation was found.
      */
     public Invocation get(long callId) {
         return invocations.get(callId);
     }
 
-    public void reset() {
+    public void reset(Throwable cause) {
         for (Invocation invocation : this) {
             try {
-                invocation.notifyError(new MemberLeftException());
+                invocation.notifyError(new MemberLeftException(cause));
             } catch (Throwable e) {
                 logger.warning(invocation + " could not be notified with reset message -> " + e.getMessage());
             }

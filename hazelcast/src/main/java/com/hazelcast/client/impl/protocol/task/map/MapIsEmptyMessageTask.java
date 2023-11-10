@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import com.hazelcast.client.impl.protocol.codec.MapIsEmptyCodec;
 import com.hazelcast.client.impl.protocol.task.AbstractAllPartitionsMessageTask;
 import com.hazelcast.instance.Node;
 import com.hazelcast.map.impl.MapService;
+import com.hazelcast.map.impl.MapServiceContext;
 import com.hazelcast.map.impl.operation.IsEmptyOperationFactory;
 import com.hazelcast.nio.Connection;
 import com.hazelcast.security.permission.ActionConstants;
@@ -29,6 +30,8 @@ import com.hazelcast.spi.OperationFactory;
 
 import java.security.Permission;
 import java.util.Map;
+
+import static com.hazelcast.map.impl.LocalMapStatsUtil.incrementOtherOperationsCount;
 
 public class MapIsEmptyMessageTask
         extends AbstractAllPartitionsMessageTask<MapIsEmptyCodec.RequestParameters> {
@@ -45,14 +48,15 @@ public class MapIsEmptyMessageTask
     @Override
     protected Object reduce(Map<Integer, Object> map) {
         MapService mapService = getService(MapService.SERVICE_NAME);
+        MapServiceContext mapServiceContext = mapService.getMapServiceContext();
         boolean response = true;
         for (Object result : map.values()) {
-            boolean isEmpty = (Boolean) mapService.getMapServiceContext().toObject(result);
+            boolean isEmpty = (Boolean) mapServiceContext.toObject(result);
             if (!isEmpty) {
                 response = false;
             }
         }
-
+        incrementOtherOperationsCount(mapService, parameters.name);
         return response;
     }
 

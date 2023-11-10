@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,8 @@ import com.hazelcast.concurrent.atomicreference.operations.GetAndAlterOperation;
 import com.hazelcast.concurrent.atomicreference.operations.GetAndSetOperation;
 import com.hazelcast.concurrent.atomicreference.operations.GetOperation;
 import com.hazelcast.concurrent.atomicreference.operations.IsNullOperation;
+import com.hazelcast.concurrent.atomicreference.operations.MergeBackupOperation;
+import com.hazelcast.concurrent.atomicreference.operations.MergeOperation;
 import com.hazelcast.concurrent.atomicreference.operations.SetAndGetOperation;
 import com.hazelcast.concurrent.atomicreference.operations.SetBackupOperation;
 import com.hazelcast.concurrent.atomicreference.operations.SetOperation;
@@ -54,6 +56,8 @@ public final class AtomicReferenceDataSerializerHook implements DataSerializerHo
     public static final int SET_BACKUP = 10;
     public static final int SET = 11;
     public static final int REPLICATION = 12;
+    public static final int MERGE = 13;
+    public static final int MERGE_BACKUP = 14;
 
     @Override
     public int getFactoryId() {
@@ -92,6 +96,10 @@ public final class AtomicReferenceDataSerializerHook implements DataSerializerHo
                         return new SetOperation();
                     case REPLICATION:
                         return new AtomicReferenceReplicationOperation();
+                    case MERGE:
+                        return new MergeOperation();
+                    case MERGE_BACKUP:
+                        return new MergeBackupOperation();
                     default:
                         return null;
                 }

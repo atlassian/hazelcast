@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,45 +22,104 @@ import com.hazelcast.internal.partition.MigrationCycleOperation;
 import com.hazelcast.internal.partition.PartitionRuntimeState;
 import com.hazelcast.internal.partition.impl.InternalPartitionServiceImpl;
 import com.hazelcast.internal.partition.impl.PartitionDataSerializerHook;
+import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Address;
+import com.hazelcast.spi.CallStatus;
 import com.hazelcast.spi.ExceptionAction;
+import com.hazelcast.spi.NodeEngine;
+import com.hazelcast.spi.Offload;
+import com.hazelcast.spi.UrgentSystemOperation;
+import com.hazelcast.spi.exception.CallerNotMemberException;
 import com.hazelcast.spi.exception.RetryableHazelcastException;
 import com.hazelcast.spi.exception.TargetNotMemberException;
+import com.hazelcast.spi.impl.operationexecutor.OperationExecutor;
+import com.hazelcast.spi.impl.operationservice.impl.OperationServiceImpl;
 
+import java.util.concurrent.atomic.AtomicInteger;
+
+/**
+ * Operation sent by the master to the cluster members to fetch their partition state.
+ */
 public final class FetchPartitionStateOperation extends AbstractPartitionOperation
         implements MigrationCycleOperation {
-
-    private PartitionRuntimeState partitionState;
 
     public FetchPartitionStateOperation() {
     }
 
     @Override
-    public void run() {
-        final Address caller = getCallerAddress();
-        final Address master = getNodeEngine().getMasterAddress();
-        if (!caller.equals(master)) {
-            final String msg =
-                    caller + " requested our partition table but it's not our known master. " + "Master: " + master;
-            getLogger().warning(msg);
+    public void beforeRun() {
+        Address caller = getCallerAddress();
+        Address masterAddress = getNodeEngine().getMasterAddress();
+        ILogger logger = getLogger();
+        if (!caller.equals(masterAddress)) {
+            String msg = caller + " requested our partition table but it's not our known master. " + "Master: " + masterAddress;
+            logger.warning(msg);
+            // Master address should be already updated after mastership claim.
+            throw new IllegalStateException(msg);
+        }
+
+        InternalPartitionServiceImpl service = getService();
+        if (!service.isMemberMaster(caller)) {
+            String msg = caller + " requested our partition table but it's not the master known by migration system.";
+            logger.warning(msg);
+            // PartitionService has not received result of mastership claim process yet.
+            // It will learn eventually.
             throw new RetryableHazelcastException(msg);
         }
-        InternalPartitionServiceImpl service = getService();
-        partitionState = service.createPartitionStateInternal();
+    }
+
+    @Override
+    public CallStatus call() {
+        return new OffloadImpl();
+    }
+
+    private final class OffloadImpl extends Offload {
+        private OffloadImpl() {
+            super(FetchPartitionStateOperation.this);
+        }
+
+        @Override
+        public void start() {
+            NodeEngine nodeEngine = getNodeEngine();
+            OperationServiceImpl operationService = (OperationServiceImpl) nodeEngine.getOperationService();
+            OperationExecutor executor = operationService.getOperationExecutor();
+
+            int partitionThreadCount = executor.getPartitionThreadCount();
+            SendPartitionStateTask barrierTask = new SendPartitionStateTask(partitionThreadCount);
+            executor.executeOnPartitionThreads(barrierTask);
+        }
+    }
+
+    /**
+     * SendPartitionStateTask is executed on all partition operation threads
+     * and sends local partition state to the caller (the master) after
+     * ensuring all pending/running migration operations are completed.
+     */
+    private final class SendPartitionStateTask implements Runnable, UrgentSystemOperation {
+        private final AtomicInteger remaining = new AtomicInteger();
+
+        private SendPartitionStateTask(int partitionThreadCount) {
+            remaining.set(partitionThreadCount);
+        }
+
+        @Override
+        public void run() {
+            if (remaining.decrementAndGet() == 0) {
+                InternalPartitionServiceImpl service = getService();
+                PartitionRuntimeState partitionState = service.createPartitionStateInternal();
+                sendResponse(partitionState);
+            }
+        }
     }
 
     @Override
     public ExceptionAction onInvocationException(Throwable throwable) {
         if (throwable instanceof MemberLeftException
-                || throwable instanceof TargetNotMemberException) {
+                || throwable instanceof TargetNotMemberException
+                || throwable instanceof CallerNotMemberException) {
             return ExceptionAction.THROW_EXCEPTION;
         }
         return super.onInvocationException(throwable);
-    }
-
-    @Override
-    public Object getResponse() {
-        return partitionState;
     }
 
     @Override

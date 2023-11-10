@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 package com.hazelcast.multimap.impl.txn;
 
 import com.hazelcast.multimap.impl.MultiMapDataSerializerHook;
-import com.hazelcast.multimap.impl.operations.MultiMapBackupAwareOperation;
+import com.hazelcast.multimap.impl.operations.AbstractBackupAwareMultiMapOperation;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
@@ -30,10 +30,11 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-public class TxnCommitOperation extends MultiMapBackupAwareOperation implements Notifier {
+public class TxnCommitOperation extends AbstractBackupAwareMultiMapOperation implements Notifier {
 
     private List<Operation> opList;
-    private boolean notify = true;
+
+    private transient boolean notify = true;
 
     public TxnCommitOperation() {
     }

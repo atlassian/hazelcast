@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,15 +30,16 @@ package com.hazelcast.nio.serialization;
 public interface IdentifiedDataSerializable extends DataSerializable {
 
     /**
-     * Returns DataSerializableFactory factory id for this class.
-     * @return factory id
+     * Returns DataSerializableFactory factory ID for this class.
+     *
+     * @return factory ID
      */
     int getFactoryId();
 
     /**
-     * Returns type identifier for this class. Id should be unique per DataSerializableFactory.
-     * @return type id
+     * Returns type identifier for this class. It should be unique per DataSerializableFactory.
+     *
+     * @return type ID
      */
     int getId();
-
 }

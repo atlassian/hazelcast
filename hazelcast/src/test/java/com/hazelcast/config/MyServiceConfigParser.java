@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,10 @@ import com.hazelcast.spi.ServiceConfigurationParser;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 
+import static com.hazelcast.config.DomConfigHelper.childElements;
+import static com.hazelcast.config.DomConfigHelper.cleanNodeName;
+import static org.ops4j.util.xml.XmlUtils.getTextContent;
+
 public class MyServiceConfigParser extends AbstractXmlConfigHelper implements ServiceConfigurationParser<MyServiceConfig> {
 
     public MyServiceConfig parse(Element element) {
@@ -35,6 +39,15 @@ public class MyServiceConfigParser extends AbstractXmlConfigHelper implements Se
                         config.intProp = Integer.parseInt(value);
                     } else if ("bool-prop".equals(name)) {
                         config.boolProp = Boolean.parseBoolean(getTextContent(node));
+                    } else if ("complex-prop".equals(name)) {
+                        Node attribute = node.getAttributes().getNamedItem("an-attribute");
+                        config.nestedAttribute = attribute.getTextContent();
+                        for (Node nestedNode : childElements(node)) {
+                            final String nestedNodeName = cleanNodeName(nestedNode);
+                            if ("nested-prop".equals(nestedNodeName)) {
+                                config.nestedStringProp = getTextContent(nestedNode);
+                            }
+                        }
                     }
                 }
             }

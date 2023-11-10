@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,6 +36,7 @@ import com.hazelcast.util.UuidUtil;
 
 import javax.transaction.xa.XAException;
 import javax.transaction.xa.Xid;
+import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -99,7 +100,7 @@ public final class XATransaction implements Transaction {
         this.originatedFromClient = originatedFromClient;
     }
 
-    public XATransaction(NodeEngine nodeEngine, List<TransactionLogRecord> logs,
+    public XATransaction(NodeEngine nodeEngine, Collection<TransactionLogRecord> logs,
                          String txnId, SerializableXID xid, String txOwnerUuid, long timeoutMillis, long startTime) {
         this.nodeEngine = nodeEngine;
         this.transactionLog = new TransactionLog(logs);
@@ -145,7 +146,7 @@ public final class XATransaction implements Transaction {
 
     private void putTransactionInfoRemote() throws ExecutionException, InterruptedException {
         PutRemoteTransactionOperation operation = new PutRemoteTransactionOperation(
-                transactionLog.getRecordList(), txnId, xid, txOwnerUuid, timeoutMillis, startTime);
+                transactionLog.getRecords(), txnId, xid, txOwnerUuid, timeoutMillis, startTime);
         OperationService operationService = nodeEngine.getOperationService();
         IPartitionService partitionService = nodeEngine.getPartitionService();
         int partitionId = partitionService.getPartitionId(xid);
@@ -168,22 +169,47 @@ public final class XATransaction implements Transaction {
             waitWithDeadline(futures, COMMIT_TIMEOUT_MINUTES, MINUTES, commitExceptionHandler);
 
             state = COMMITTED;
+            transactionLog.onCommitSuccess();
         } catch (Throwable e) {
             state = COMMIT_FAILED;
+            transactionLog.onCommitFailure();
             throw ExceptionUtil.rethrow(e, TransactionException.class);
         }
     }
 
-    public void commitAsync(ExecutionCallback callback) {
+    public void commitAsync(final ExecutionCallback callback) {
         if (state != PREPARED) {
             throw new IllegalStateException("Transaction is not prepared");
         }
         checkTimeout();
         state = COMMITTING;
-        transactionLog.commitAsync(nodeEngine, callback);
+
+        transactionLog.commitAsync(nodeEngine, wrapExecutionCallback(callback));
         // We should rethrow exception if transaction is not TWO_PHASE
 
         state = COMMITTED;
+    }
+
+    private ExecutionCallback wrapExecutionCallback(final ExecutionCallback callback) {
+        return new ExecutionCallback() {
+            @Override
+            public void onResponse(Object response) {
+                try {
+                    callback.onResponse(response);
+                } finally {
+                    transactionLog.onCommitSuccess();
+                }
+            }
+
+            @Override
+            public void onFailure(Throwable t) {
+                try {
+                    callback.onFailure(t);
+                } finally {
+                    transactionLog.onCommitFailure();
+                }
+            }
+        };
     }
 
     @Override
@@ -221,8 +247,8 @@ public final class XATransaction implements Transaction {
         return startTime;
     }
 
-    public List<TransactionLogRecord> getTransactionRecords() {
-        return transactionLog.getRecordList();
+    public Collection<TransactionLogRecord> getTransactionRecords() {
+        return transactionLog.getRecords();
     }
 
     @Override

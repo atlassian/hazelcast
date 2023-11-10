@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,27 +26,36 @@ import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.query.Predicate;
-import com.hazelcast.query.TruePredicate;
-import com.hazelcast.query.impl.FalsePredicate;
-import com.hazelcast.query.impl.QueryableEntry;
 import com.hazelcast.spi.BackupAwareOperation;
 import com.hazelcast.spi.Operation;
+import com.hazelcast.spi.PartitionAwareOperation;
+import com.hazelcast.spi.impl.MutatingOperation;
 import com.hazelcast.spi.serialization.SerializationService;
+import com.hazelcast.util.Clock;
 
 import java.io.IOException;
 import java.util.Iterator;
-import java.util.Map;
+
+import static com.hazelcast.map.impl.operation.EntryOperator.operator;
 
 /**
- * GOTCHA : This operation does NOT load missing keys from map-store for now.
+ * GOTCHA: This operation does NOT load missing keys from map-store for now.
  */
-public class PartitionWideEntryOperation extends AbstractMultipleEntryOperation implements BackupAwareOperation {
 
-    public PartitionWideEntryOperation(String name, EntryProcessor entryProcessor) {
-        super(name, entryProcessor);
-    }
+public class PartitionWideEntryOperation extends MapOperation
+        implements MutatingOperation, PartitionAwareOperation, BackupAwareOperation {
+
+    protected MapEntries responses;
+    protected EntryProcessor entryProcessor;
+
+    protected transient EntryOperator operator;
 
     public PartitionWideEntryOperation() {
+    }
+
+    public PartitionWideEntryOperation(String name, EntryProcessor entryProcessor) {
+        super(name);
+        this.entryProcessor = entryProcessor;
     }
 
     @Override
@@ -58,37 +67,23 @@ public class PartitionWideEntryOperation extends AbstractMultipleEntryOperation 
         managedContext.initialize(entryProcessor);
     }
 
+    protected Predicate getPredicate() {
+        return null;
+    }
+
     @Override
     public void run() {
-        long now = getNow();
-
         responses = new MapEntries(recordStore.size());
-        Iterator<Record> iterator = recordStore.iterator(now, false);
+        operator = operator(this, entryProcessor, getPredicate());
+        Iterator<Record> iterator = recordStore.iterator(Clock.currentTimeMillis(), false);
         while (iterator.hasNext()) {
             Record record = iterator.next();
             Data dataKey = record.getKey();
-            Object oldValue = record.getValue();
 
-            if (!applyPredicate(dataKey, oldValue)) {
-                continue;
-            }
-
-            Map.Entry entry = createMapEntry(dataKey, oldValue);
-            Data response = process(entry);
+            Data response = operator.operateOnKey(dataKey).doPostOperateOps().getResult();
             if (response != null) {
                 responses.add(dataKey, response);
             }
-
-            // first call noOp, other if checks below depends on it.
-            if (noOp(entry, oldValue, now)) {
-                continue;
-            }
-            if (entryRemoved(entry, dataKey, oldValue, now)) {
-                continue;
-            }
-            entryAddedOrUpdated(entry, dataKey, oldValue, now);
-
-            evict(dataKey);
         }
     }
 
@@ -118,28 +113,16 @@ public class PartitionWideEntryOperation extends AbstractMultipleEntryOperation 
         PartitionWideEntryBackupOperation backupOperation = null;
         if (backupProcessor != null) {
             backupOperation = new PartitionWideEntryBackupOperation(name, backupProcessor);
-            backupOperation.setWanEventList(wanEventList);
         }
         return backupOperation;
     }
 
-    private boolean applyPredicate(Data key, Object value) {
-        Predicate predicate = getPredicate();
 
-        if (predicate == null || TruePredicate.INSTANCE == predicate) {
-            return true;
-        }
+    @Override
+    protected void toString(StringBuilder sb) {
+        super.toString(sb);
 
-        if (FalsePredicate.INSTANCE == predicate) {
-            return false;
-        }
-
-        QueryableEntry queryEntry = mapContainer.newQueryEntry(key, value);
-        return getPredicate().apply(queryEntry);
-    }
-
-    protected Predicate getPredicate() {
-        return null;
+        sb.append(", entryProcessor=").append(entryProcessor);
     }
 
     @Override

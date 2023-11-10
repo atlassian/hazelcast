@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,6 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import java.io.IOException;
 import java.lang.reflect.Constructor;
 
 import static org.junit.Assert.assertEquals;
@@ -52,7 +51,7 @@ public class OperationSerializationTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void test_partitionId() throws IOException {
+    public void test_partitionId() {
         test_partitionId(0, false);
         test_partitionId(100, false);
         test_partitionId(-1, false);
@@ -72,7 +71,7 @@ public class OperationSerializationTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void test_replicaIndex() throws IOException {
+    public void test_replicaIndex() {
         test_replicaIndex(0, false);
         test_replicaIndex(1, true);
         test_replicaIndex(3, true);
@@ -89,7 +88,7 @@ public class OperationSerializationTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void test_callTimeout() throws IOException {
+    public void test_callTimeout() {
         test_callTimeout(0, false);
         test_callTimeout(100, false);
         test_callTimeout(-1, false);
@@ -168,7 +167,7 @@ public class OperationSerializationTest extends HazelcastTestSupport {
 
     private void assertSerializationCloneEquals(Operation expected) {
         Operation actual = copy(expected);
-        assertEquals("caller uuid does not match", expected.getCallerUuid(), actual.getCallerUuid());
+        assertEquals("caller UUID does not match", expected.getCallerUuid(), actual.getCallerUuid());
         assertEquals("call timeout does not match", expected.getCallTimeout(), actual.getCallTimeout());
         assertEquals("validates target does not match", expected.validatesTarget(), actual.validatesTarget());
         assertEquals("callid does not match", expected.getCallId(), actual.getCallId());
@@ -202,6 +201,17 @@ public class OperationSerializationTest extends HazelcastTestSupport {
         Operation copy = copy(op);
         assertCopy(DUMMY_SERVICE_NAME, copy.getServiceName());
         assertCopy(DUMMY_SERVICE_NAME, copy.getRawServiceName());
+        assertTrue("service name should be set", copy.isFlagSet(Operation.BITMASK_SERVICE_NAME_SET));
+    }
+
+    @Test
+    public void test_serviceName_whenOverridesGetServiceNameAndRequiresExplicitServiceName_thenSerialized() {
+        OperationWithExplicitServiceNameAndOverride op = new OperationWithExplicitServiceNameAndOverride();
+        assertNull(op.getRawServiceName());
+        assertFalse("service name should not be set", op.isFlagSet(Operation.BITMASK_SERVICE_NAME_SET));
+
+        Operation copy = copy(op);
+        assertEquals(DUMMY_SERVICE_NAME, copy.getRawServiceName());
         assertTrue("service name should be set", copy.isFlagSet(Operation.BITMASK_SERVICE_NAME_SET));
     }
 
@@ -251,4 +261,26 @@ public class OperationSerializationTest extends HazelcastTestSupport {
             return DUMMY_SERVICE_NAME;
         }
     }
+
+    private static class OperationWithExplicitServiceNameAndOverride extends Operation {
+
+        public OperationWithExplicitServiceNameAndOverride() {
+        }
+
+        @Override
+        public void run() throws Exception {
+        }
+
+        @Override
+        protected boolean requiresExplicitServiceName() {
+            return true;
+        }
+
+        @Override
+        public String getServiceName() {
+            return DUMMY_SERVICE_NAME;
+        }
+
+    }
+
 }

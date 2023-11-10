@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,9 +27,10 @@ import com.hazelcast.core.RingbufferStoreFactory;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.ringbuffer.OverflowPolicy;
 import com.hazelcast.ringbuffer.Ringbuffer;
-import com.hazelcast.test.HazelcastSerialClassRunner;
+import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
+import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
 import com.hazelcast.util.ConcurrencyUtil;
 import com.hazelcast.util.ConstructorFunction;
@@ -60,8 +61,8 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-@RunWith(HazelcastSerialClassRunner.class)
-@Category(QuickTest.class)
+@RunWith(HazelcastParallelClassRunner.class)
+@Category({QuickTest.class, ParallelTest.class})
 public class RingbufferStoreTest extends HazelcastTestSupport {
 
     private static Config getConfig(String ringbufferName,
@@ -123,6 +124,7 @@ public class RingbufferStoreTest extends HazelcastTestSupport {
         final TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(2);
         final HazelcastInstance instance = factory.newHazelcastInstance(config);
         final HazelcastInstance instance2 = factory.newHazelcastInstance(config);
+        warmUpPartitions(instance, instance2);
 
         // add items to both ring buffers (master and backup) and shut down the master
         final Ringbuffer<Object> ringbuffer = instance.getRingbuffer("testRingbufferStore");
@@ -213,6 +215,7 @@ public class RingbufferStoreTest extends HazelcastTestSupport {
         final TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(3);
         final HazelcastInstance instance1 = factory.newHazelcastInstance(config);
         final HazelcastInstance instance2 = factory.newHazelcastInstance(config);
+        warmUpPartitions(instance1, instance2);
 
         final String name = generateKeyOwnedBy(instance1);
         final Ringbuffer<Object> masterRB = instance1.getRingbuffer(name);
@@ -263,8 +266,8 @@ public class RingbufferStoreTest extends HazelcastTestSupport {
         final Ringbuffer<Object> ringbuffer = instance.getRingbuffer(ringbufferName);
         ringbuffer.add(1);
 
-        assertEquals("Expected that the ring buffer store would not be initialized" +
-                " since we disabled it in the ring buffer store config but found initialized ", 0, rbStoreFactory.stores.size());
+        assertEquals("Expected that the RingbufferStore would not be initialized since we disabled it"
+                + " in the RingbufferStoreConfig, but found initialized", 0, rbStoreFactory.stores.size());
     }
 
     @Test
@@ -285,7 +288,7 @@ public class RingbufferStoreTest extends HazelcastTestSupport {
     }
 
     @Test(expected = HazelcastException.class)
-    public void testRingbufferStore_addThrowsException() throws InterruptedException {
+    public void testRingbufferStore_addThrowsException() {
         final String ringbufferName = randomString();
         final RingbufferStoreConfig rbStoreConfig = new RingbufferStoreConfig()
                 .setStoreImplementation(new ExceptionThrowingRingbufferStore())
@@ -311,7 +314,7 @@ public class RingbufferStoreTest extends HazelcastTestSupport {
     }
 
     @Test(expected = HazelcastException.class)
-    public void testRingbufferStore_getLargestSequenceThrowsException() throws Exception {
+    public void testRingbufferStore_getLargestSequenceThrowsException() {
         final String ringbufferName = randomString();
         final RingbufferStoreConfig rbStoreConfig = new RingbufferStoreConfig()
                 .setStoreImplementation(new ExceptionThrowingRingbufferStore(true))

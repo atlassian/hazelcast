@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import com.hazelcast.client.impl.protocol.codec.MapReduceForMapCodec;
 import com.hazelcast.client.impl.protocol.codec.MapReduceForMultiMapCodec;
 import com.hazelcast.client.impl.protocol.codec.MapReduceForSetCodec;
 import com.hazelcast.client.impl.protocol.codec.MapReduceJobProcessInformationCodec;
+import com.hazelcast.client.spi.ClientContext;
 import com.hazelcast.client.spi.ClientProxy;
 import com.hazelcast.client.spi.impl.ClientInvocation;
 import com.hazelcast.client.spi.impl.ClientInvocationFuture;
@@ -52,9 +53,6 @@ import com.hazelcast.mapreduce.impl.task.TransferableJobProcessInformation;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.impl.AbstractCompletableFuture;
-import com.hazelcast.spi.serialization.SerializationService;
-import com.hazelcast.util.CollectionUtil;
-import com.hazelcast.util.EmptyStatement;
 import com.hazelcast.util.UuidUtil;
 
 import java.util.Collection;
@@ -65,6 +63,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutionException;
 
+import static com.hazelcast.util.CollectionUtil.objectToDataCollection;
+import static com.hazelcast.util.EmptyStatement.ignore;
+
 /**
  * Proxy implementation of {@link JobTracker} for a client initiated map reduce job.
  */
@@ -74,8 +75,8 @@ public class ClientMapReduceProxy
 
     private final ConcurrentMap<String, ClientTrackableJob> trackableJobs = new ConcurrentHashMap<String, ClientTrackableJob>();
 
-    public ClientMapReduceProxy(String serviceName, String objectName) {
-        super(serviceName, objectName);
+    public ClientMapReduceProxy(String serviceName, String objectName, ClientContext context) {
+        super(serviceName, objectName, context);
     }
 
     @Override
@@ -105,7 +106,7 @@ public class ClientMapReduceProxy
         if (trackableJob != null) {
             ClientConnection sendConnection = trackableJob.clientInvocation.getSendConnectionOrWait();
             Address runningMember = sendConnection.getEndPoint();
-            final ClientInvocation clientInvocation = new ClientInvocation(getClient(), request, runningMember);
+            final ClientInvocation clientInvocation = new ClientInvocation(getClient(), request, getName(), runningMember);
             ClientInvocationFuture future = clientInvocation.invoke();
             return future.get();
         }
@@ -129,13 +130,13 @@ public class ClientMapReduceProxy
 
                 final ClientCompletableFuture completableFuture = new ClientCompletableFuture(jobId);
 
-                final ClientInvocation clientInvocation = new ClientInvocation(getClient(), request);
+                final ClientInvocation clientInvocation = new ClientInvocation(getClient(), request, getName());
                 final ClientInvocationFuture future = clientInvocation.invoke();
 
-                future.andThen(new ExecutionCallback() {
+                future.andThen(new ExecutionCallback<ClientMessage>() {
                     @Override
-                    public void onResponse(Object res) {
-                        Map map = toObjectMap((ClientMessage) res);
+                    public void onResponse(ClientMessage res) {
+                        Map map = toObjectMap(res);
 
                         Object response = map;
                         try {
@@ -172,12 +173,11 @@ public class ClientMapReduceProxy
     }
 
     private Map toObjectMap(ClientMessage res) {
-        SerializationService serializationService = getContext().getSerializationService();
         Collection<Map.Entry<Data, Data>> entries = MapReduceForCustomCodec.decodeResponse(res).response;
         HashMap hashMap = new HashMap();
         for (Map.Entry<Data, Data> entry : entries) {
-            Object key = serializationService.toObject(entry.getKey());
-            Object value = serializationService.toObject(entry.getValue());
+            Object key = toObject(entry.getKey());
+            Object value = toObject(entry.getValue());
             hashMap.put(key, value);
         }
         return hashMap;
@@ -193,7 +193,7 @@ public class ClientMapReduceProxy
         Data reducerFactoryData = toData(reducerFactory);
         Collection list = null;
         if (keys != null) {
-            list = CollectionUtil.objectToDataCollection(keys, getSerializationService());
+            list = objectToDataCollection(keys, getSerializationService());
         }
 
         String topologyChangedStrategyName = null;
@@ -225,7 +225,6 @@ public class ClientMapReduceProxy
         return MapReduceForCustomCodec
                 .encodeRequest(name, jobId, predicateData, mapperData, combinerFactoryData, reducerFactoryData,
                         toData(keyValueSource), chunkSize, list, topologyChangedStrategyName);
-
     }
 
     private class ClientCompletableFuture<V>
@@ -235,7 +234,7 @@ public class ClientMapReduceProxy
         private final String jobId;
 
         protected ClientCompletableFuture(String jobId) {
-            super(getContext().getExecutionService().getAsyncExecutor(),
+            super(getContext().getExecutionService().getUserExecutor(),
                     getContext().getLoggingService().getLogger(ClientCompletableFuture.class));
             this.jobId = jobId;
         }
@@ -253,16 +252,15 @@ public class ClientMapReduceProxy
                 ClientMessage response = invoke(request, jobId);
                 cancelled = MapReduceCancelCodec.decodeResponse(response).response;
             } catch (Exception ignore) {
-                EmptyStatement.ignore(ignore);
+                ignore(ignore);
             }
             return cancelled;
         }
 
         @Override
-        protected void setResult(Object result) {
-            super.setResult(result);
+        protected boolean setResult(Object result) {
+            return super.setResult(result);
         }
-
     }
 
     private final class ClientTrackableJob<V>
@@ -309,11 +307,9 @@ public class ClientMapReduceProxy
                 JobPartitionState[] partitionStates = responseParameters.jobPartitionStates.toArray(new JobPartitionState[0]);
                 return new TransferableJobProcessInformation(partitionStates, responseParameters.processRecords);
             } catch (Exception ignore) {
-                EmptyStatement.ignore(ignore);
+                ignore(ignore);
             }
             return null;
         }
-
     }
-
 }

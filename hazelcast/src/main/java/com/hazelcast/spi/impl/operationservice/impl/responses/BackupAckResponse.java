@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,9 @@ import static com.hazelcast.spi.impl.SpiDataSerializerHook.BACKUP_ACK_RESPONSE;
  * is written to the expected number of backups.
  */
 public final class BackupAckResponse extends Response {
+
+    // the length of a backup-ack response in bytes.
+    public static final int BACKUP_RESPONSE_SIZE_IN_BYTES = RESPONSE_SIZE_IN_BYTES;
 
     public BackupAckResponse() {
     }

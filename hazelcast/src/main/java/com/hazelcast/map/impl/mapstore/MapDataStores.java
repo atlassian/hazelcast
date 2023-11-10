@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package com.hazelcast.map.impl.mapstore;
 
 import com.hazelcast.config.MapStoreConfig;
+import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.map.impl.MapServiceContext;
 import com.hazelcast.map.impl.MapStoreWrapper;
 import com.hazelcast.map.impl.mapstore.writebehind.WriteBehindProcessor;
@@ -26,7 +27,6 @@ import com.hazelcast.map.impl.mapstore.writethrough.WriteThroughStore;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.spi.properties.HazelcastProperties;
-import com.hazelcast.spi.serialization.SerializationService;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -48,19 +48,21 @@ public final class MapDataStores {
     /**
      * Creates a write behind data store.
      *
-     * @param mapStoreContext      context for map store operations.
-     * @param partitionId          partition id of partition.
+     * @param mapStoreContext      context for map store operations
+     * @param partitionId          partition ID of partition
      * @param writeBehindProcessor the {@link WriteBehindProcessor}
-     * @param <K>                  type of key to store.
-     * @param <V>                  type of value to store.
-     * @return new write behind store manager.
+     * @param <K>                  type of key to store
+     * @param <V>                  type of value to store
+     * @return new write behind store manager
      */
     public static <K, V> MapDataStore<K, V> createWriteBehindStore(MapStoreContext mapStoreContext, int partitionId,
                                                                    WriteBehindProcessor writeBehindProcessor) {
         MapServiceContext mapServiceContext = mapStoreContext.getMapServiceContext();
+        NodeEngine nodeEngine = mapServiceContext.getNodeEngine();
         MapStoreConfig mapStoreConfig = mapStoreContext.getMapStoreConfig();
-
-        WriteBehindStore mapDataStore = new WriteBehindStore(mapStoreContext, partitionId);
+        InternalSerializationService serializationService
+                = ((InternalSerializationService) nodeEngine.getSerializationService());
+        WriteBehindStore mapDataStore = new WriteBehindStore(mapStoreContext, partitionId, serializationService);
         mapDataStore.setWriteBehindQueue(newWriteBehindQueue(mapServiceContext, mapStoreConfig.isWriteCoalescing()));
         mapDataStore.setWriteBehindProcessor(writeBehindProcessor);
         return (MapDataStore<K, V>) mapDataStore;
@@ -76,16 +78,17 @@ public final class MapDataStores {
     /**
      * Creates a write through data store.
      *
-     * @param mapStoreContext context for map store operations.
-     * @param <K>             type of key to store.
-     * @param <V>             type of value to store.
-     * @return new write through store manager.
+     * @param mapStoreContext context for map store operations
+     * @param <K>             type of key to store
+     * @param <V>             type of value to store
+     * @return new write through store manager
      */
     public static <K, V> MapDataStore<K, V> createWriteThroughStore(MapStoreContext mapStoreContext) {
         final MapStoreWrapper store = mapStoreContext.getMapStoreWrapper();
         final MapServiceContext mapServiceContext = mapStoreContext.getMapServiceContext();
         final NodeEngine nodeEngine = mapServiceContext.getNodeEngine();
-        final SerializationService serializationService = nodeEngine.getSerializationService();
+        final InternalSerializationService serializationService
+                = ((InternalSerializationService) nodeEngine.getSerializationService());
 
         return (MapDataStore<K, V>) new WriteThroughStore(store, serializationService);
 
@@ -94,9 +97,9 @@ public final class MapDataStores {
     /**
      * Used for providing neutral null behaviour.
      *
-     * @param <K> type of key to store.
-     * @param <V> type of value to store.
-     * @return empty store manager.
+     * @param <K> type of key to store
+     * @param <V> type of value to store
+     * @return empty store manager
      */
     public static <K, V> MapDataStore<K, V> emptyStore() {
         return (MapDataStore<K, V>) EMPTY_MAP_DATA_STORE;

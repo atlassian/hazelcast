@@ -1,9 +1,26 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.topic.impl.reliable;
 
 import com.hazelcast.config.Config;
 import com.hazelcast.config.ReliableTopicConfig;
 import com.hazelcast.config.RingbufferConfig;
 import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.core.ITopic;
 import com.hazelcast.core.Member;
 import com.hazelcast.core.Message;
 import com.hazelcast.monitor.LocalTopicStats;
@@ -16,6 +33,7 @@ import org.junit.Test;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static java.util.Arrays.asList;
@@ -26,7 +44,7 @@ import static org.junit.Assert.assertTrue;
 
 public abstract class ReliableTopicAbstractTest extends HazelcastTestSupport {
 
-    public static final int CAPACITY = 10;
+    private static final int CAPACITY = 10;
 
     private ReliableTopicProxy<String> topic;
     private HazelcastInstance local;
@@ -82,7 +100,7 @@ public abstract class ReliableTopicAbstractTest extends HazelcastTestSupport {
         assertTrue(removed);
         topic.publish("1");
 
-        // it should not receive any events.
+        // it should not receive any events
         assertTrueDelayed5sec(new AssertTask() {
             @Override
             public void run() throws Exception {
@@ -109,7 +127,7 @@ public abstract class ReliableTopicAbstractTest extends HazelcastTestSupport {
 
         topic.publish("1");
 
-        // it should not receive any events.
+        // it should not receive any events
         assertTrueDelayed5sec(new AssertTask() {
             @Override
             public void run() throws Exception {
@@ -130,7 +148,7 @@ public abstract class ReliableTopicAbstractTest extends HazelcastTestSupport {
         assertTrueEventually(new AssertTask() {
             @Override
             public void run() throws Exception {
-                assertTrue(listener.objects.contains(msg));
+                assertContains(listener.objects, msg);
             }
         });
     }
@@ -144,8 +162,7 @@ public abstract class ReliableTopicAbstractTest extends HazelcastTestSupport {
         assertTrueEventually(new AssertTask() {
             @Override
             public void run() throws Exception {
-                //System.out.println("tail sequence:"+ringbuffer.tailSequence());
-                assertTrue(listener.objects.contains(null));
+                assertContains(listener.objects, null);
             }
         });
     }
@@ -227,24 +244,53 @@ public abstract class ReliableTopicAbstractTest extends HazelcastTestSupport {
         });
     }
 
-
     @Test
     public void statistics() {
         final ReliableMessageListenerMock listener = new ReliableMessageListenerMock();
 
         topic.addMessageListener(listener);
+        final ITopic<Object> anotherTopic = local.getReliableTopic("anotherTopic");
 
         final int messageCount = 10;
         final LocalTopicStats localTopicStats = topic.getLocalTopicStats();
         for (int k = 0; k < messageCount; k++) {
             topic.publish("foo");
+            anotherTopic.publish("foo");
         }
+
 
         assertEquals(messageCount, localTopicStats.getPublishOperationCount());
         assertTrueEventually(new AssertTask() {
             @Override
             public void run() throws Exception {
                 assertEquals(messageCount, localTopicStats.getReceiveOperationCount());
+            }
+        });
+
+        final ReliableTopicService reliableTopicService = getNode(local).nodeEngine.getService(ReliableTopicService.SERVICE_NAME);
+        final Map<String, LocalTopicStats> stats = reliableTopicService.getStats();
+        assertEquals(2, stats.size());
+        assertEquals(messageCount, stats.get(topic.getName()).getPublishOperationCount());
+        assertEquals(messageCount, stats.get(topic.getName()).getReceiveOperationCount());
+        assertEquals(messageCount, stats.get(anotherTopic.getName()).getPublishOperationCount());
+        assertEquals(0, stats.get(anotherTopic.getName()).getReceiveOperationCount());
+    }
+
+    @Test
+    public void testDestroyTopicRemovesStatistics() {
+        topic.publish("foobar");
+
+        final ReliableTopicService reliableTopicService = getNode(local).nodeEngine.getService(ReliableTopicService.SERVICE_NAME);
+        final Map<String, LocalTopicStats> stats = reliableTopicService.getStats();
+        assertEquals(1, stats.size());
+        assertEquals(1, stats.get(topic.getName()).getPublishOperationCount());
+
+        topic.destroy();
+
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run() {
+                assertFalse(reliableTopicService.getStats().containsKey(topic.getName()));
             }
         });
     }

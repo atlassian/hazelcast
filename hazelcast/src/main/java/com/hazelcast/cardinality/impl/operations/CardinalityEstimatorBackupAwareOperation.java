@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,12 +38,11 @@ public abstract class CardinalityEstimatorBackupAwareOperation
 
     @Override
     public int getSyncBackupCount() {
-        return 1;
+        return getCardinalityEstimatorContainer().getBackupCount();
     }
 
     @Override
     public int getAsyncBackupCount() {
-        return 0;
+        return getCardinalityEstimatorContainer().getAsyncBackupCount();
     }
-
 }

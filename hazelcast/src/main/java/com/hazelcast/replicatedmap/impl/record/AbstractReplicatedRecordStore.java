@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,8 @@ import com.hazelcast.replicatedmap.impl.operation.ReplicateUpdateOperation;
 import com.hazelcast.replicatedmap.impl.operation.VersionResponsePair;
 import com.hazelcast.replicatedmap.merge.ReplicatedMapMergePolicy;
 import com.hazelcast.spi.OperationService;
+import com.hazelcast.spi.merge.SplitBrainMergePolicy;
+import com.hazelcast.spi.merge.SplitBrainMergeTypes.ReplicatedMapMergeTypes;
 import com.hazelcast.util.Clock;
 
 import java.util.ArrayList;
@@ -40,6 +42,7 @@ import java.util.concurrent.TimeUnit;
 
 import static com.hazelcast.core.EntryEventType.EVICTED;
 import static com.hazelcast.replicatedmap.impl.ReplicatedMapService.SERVICE_NAME;
+import static com.hazelcast.spi.impl.merge.MergingValueFactory.createMergingEntry;
 import static com.hazelcast.util.Preconditions.isNotNull;
 
 /**
@@ -51,46 +54,47 @@ import static com.hazelcast.util.Preconditions.isNotNull;
 public abstract class AbstractReplicatedRecordStore<K, V> extends AbstractBaseReplicatedRecordStore<K, V> {
 
     public AbstractReplicatedRecordStore(String name, ReplicatedMapService replicatedMapService, int partitionId) {
-
         super(name, replicatedMapService, partitionId);
     }
 
     @Override
     public Object remove(Object key) {
-        final InternalReplicatedMapStorage<K, V> storage = getStorage();
-        final Object old = remove(storage, key);
+        InternalReplicatedMapStorage<K, V> storage = getStorage();
+        Object old = remove(storage, key);
         storage.incrementVersion();
         return old;
     }
 
     @Override
     public Object removeWithVersion(Object key, long version) {
-        final InternalReplicatedMapStorage<K, V> storage = getStorage();
-        final Object old = remove(storage, key);
+        InternalReplicatedMapStorage<K, V> storage = getStorage();
+        Object old = remove(storage, key);
         storage.setVersion(version);
         return old;
     }
 
+    @SuppressWarnings("unchecked")
     private Object remove(InternalReplicatedMapStorage<K, V> storage, Object key) {
         isNotNull(key, "key");
         long time = Clock.currentTimeMillis();
         V oldValue;
         K marshalledKey = (K) marshall(key);
-        final ReplicatedRecord current = storage.get(marshalledKey);
+        ReplicatedRecord current = storage.get(marshalledKey);
         if (current == null) {
             oldValue = null;
         } else {
             oldValue = (V) current.getValueInternal();
             storage.remove(marshalledKey, current);
         }
-        Object unmarshalledOldValue = unmarshall(oldValue);
         if (replicatedMapConfig.isStatisticsEnabled()) {
             getStats().incrementRemoves(Clock.currentTimeMillis() - time);
         }
-        return unmarshalledOldValue;
+        cancelTtlEntry(marshalledKey);
+        return oldValue;
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public void evict(Object key) {
         isNotNull(key, "key");
         long time = Clock.currentTimeMillis();
@@ -141,20 +145,21 @@ public abstract class AbstractReplicatedRecordStore<K, V> extends AbstractBaseRe
 
     @Override
     public Object put(Object key, Object value, long ttl, TimeUnit timeUnit, boolean incrementHits) {
-        final InternalReplicatedMapStorage<K, V> storage = getStorage();
-        final Object old = put(storage, key, value, ttl, timeUnit, incrementHits);
+        InternalReplicatedMapStorage<K, V> storage = getStorage();
+        Object old = put(storage, key, value, ttl, timeUnit, incrementHits);
         storage.incrementVersion();
         return old;
     }
 
     @Override
     public Object putWithVersion(Object key, Object value, long ttl, TimeUnit timeUnit, boolean incrementHits, long version) {
-        final InternalReplicatedMapStorage<K, V> storage = getStorage();
-        final Object old = put(storage, key, value, ttl, timeUnit, incrementHits);
+        InternalReplicatedMapStorage<K, V> storage = getStorage();
+        Object old = put(storage, key, value, ttl, timeUnit, incrementHits);
         storage.setVersion(version);
         return old;
     }
 
+    @SuppressWarnings("unchecked")
     private Object put(InternalReplicatedMapStorage<K, V> storage, Object key, Object value,
                        long ttl, TimeUnit timeUnit, boolean incrementHits) {
         isNotNull(key, "key");
@@ -167,8 +172,8 @@ public abstract class AbstractReplicatedRecordStore<K, V> extends AbstractBaseRe
         V oldValue = null;
         K marshalledKey = (K) marshall(key);
         V marshalledValue = (V) marshall(value);
-        final long ttlMillis = ttl == 0 ? 0 : timeUnit.toMillis(ttl);
-        final ReplicatedRecord<K, V> old = storage.get(marshalledKey);
+        long ttlMillis = ttl == 0 ? 0 : timeUnit.toMillis(ttl);
+        ReplicatedRecord<K, V> old = storage.get(marshalledKey);
         ReplicatedRecord<K, V> record;
         if (old == null) {
             record = buildReplicatedRecord(marshalledKey, marshalledValue, ttlMillis);
@@ -245,7 +250,7 @@ public abstract class AbstractReplicatedRecordStore<K, V> extends AbstractBaseRe
     @Override
     public Collection values(Comparator comparator) {
         InternalReplicatedMapStorage<K, V> storage = getStorage();
-        List values = new ArrayList(storage.size());
+        List<Object> values = new ArrayList<Object>(storage.size());
         for (ReplicatedRecord record : storage.values()) {
             values.add(unmarshall(record.getValue()));
         }
@@ -284,18 +289,12 @@ public abstract class AbstractReplicatedRecordStore<K, V> extends AbstractBaseRe
 
     @Override
     public void clear() {
-        InternalReplicatedMapStorage<K, V> storage = getStorage();
-        storage.clear();
-        storage.incrementVersion();
-        getStats().incrementOtherOperations();
+        clearInternal().incrementVersion();
     }
 
     @Override
     public void clearWithVersion(long version) {
-        InternalReplicatedMapStorage<K, V> storage = getStorage();
-        storage.clear();
-        storage.setVersion(version);
-        getStats().incrementOtherOperations();
+        clearInternal().setVersion(version);
     }
 
     @Override
@@ -309,13 +308,14 @@ public abstract class AbstractReplicatedRecordStore<K, V> extends AbstractBaseRe
     }
 
     public void putRecords(Collection<RecordMigrationInfo> records, long version) {
-        final InternalReplicatedMapStorage<K, V> storage = getStorage();
+        InternalReplicatedMapStorage<K, V> storage = getStorage();
         for (RecordMigrationInfo record : records) {
             putRecord(storage, record);
         }
         storage.syncVersion(version);
     }
 
+    @SuppressWarnings("unchecked")
     private void putRecord(InternalReplicatedMapStorage<K, V> storage, RecordMigrationInfo record) {
         K key = (K) marshall(record.getKey());
         V value = (V) marshall(record.getValue());
@@ -334,56 +334,99 @@ public abstract class AbstractReplicatedRecordStore<K, V> extends AbstractBaseRe
         return new ReplicatedRecord<K, V>(key, value, ttlMillis);
     }
 
-
     @Override
-    public boolean merge(Object key, ReplicatedMapEntryView mergingEntry, ReplicatedMapMergePolicy policy) {
-        Object marshalledKey = marshall(key);
+    @SuppressWarnings("unchecked")
+    public boolean merge(ReplicatedMapMergeTypes mergingEntry,
+                         SplitBrainMergePolicy<Object, ReplicatedMapMergeTypes> mergePolicy) {
+        serializationService.getManagedContext().initialize(mergingEntry);
+        serializationService.getManagedContext().initialize(mergePolicy);
+
+        K marshalledKey = (K) marshall(mergingEntry.getKey());
         InternalReplicatedMapStorage<K, V> storage = getStorage();
         ReplicatedRecord<K, V> record = storage.get(marshalledKey);
-        Object newValue;
         if (record == null) {
-            ReplicatedMapEntryView nullEntryView = new ReplicatedMapEntryView(unmarshall(key), null);
-            newValue = policy.merge(getName(), mergingEntry, nullEntryView);
+            V newValue = (V) mergePolicy.merge(mergingEntry, null);
             if (newValue == null) {
                 return false;
             }
-            record = buildReplicatedRecord((K) marshalledKey, (V) newValue, 0);
-            storage.put((K) marshalledKey, record);
+            record = buildReplicatedRecord(marshalledKey, newValue, 0);
+            storage.put(marshalledKey, record);
             storage.incrementVersion();
             Data dataKey = serializationService.toData(marshalledKey);
             Data dataValue = serializationService.toData(newValue);
             VersionResponsePair responsePair = new VersionResponsePair(mergingEntry.getValue(), getVersion());
-            sendReplicationOperation(false, getName(), dataKey, dataValue, record.getTtlMillis(), responsePair);
+            sendReplicationOperation(false, name, dataKey, dataValue, record.getTtlMillis(), responsePair);
         } else {
-            Object oldValue = record.getValueInternal();
-            ReplicatedMapEntryView existingEntry = new ReplicatedMapEntryView(unmarshall(key), unmarshall(oldValue));
-            existingEntry.setCreationTime(record.getCreationTime());
-            existingEntry.setLastUpdateTime(record.getUpdateTime());
-            existingEntry.setLastAccessTime(record.getLastAccessTime());
-            existingEntry.setHits(record.getHits());
-            existingEntry.setTtl(record.getTtlMillis());
-            newValue = policy.merge(getName(), mergingEntry, existingEntry);
+            ReplicatedMapMergeTypes existingEntry = createMergingEntry(serializationService, record);
+            V newValue = (V) mergePolicy.merge(mergingEntry, existingEntry);
             if (newValue == null) {
-                storage.remove((K) marshalledKey, record);
+                storage.remove(marshalledKey, record);
                 storage.incrementVersion();
                 Data dataKey = serializationService.toData(marshalledKey);
                 VersionResponsePair responsePair = new VersionResponsePair(mergingEntry.getValue(), getVersion());
-                sendReplicationOperation(true, getName(), dataKey, null, record.getTtlMillis(), responsePair);
+                sendReplicationOperation(true, name, dataKey, null, record.getTtlMillis(), responsePair);
                 return false;
             }
-            record.setValueInternal((V) newValue, record.getTtlMillis());
+            record.setValueInternal(newValue, record.getTtlMillis());
             storage.incrementVersion();
             Data dataKey = serializationService.toData(marshalledKey);
             Data dataValue = serializationService.toData(newValue);
             VersionResponsePair responsePair = new VersionResponsePair(mergingEntry.getValue(), getVersion());
-            sendReplicationOperation(false, getName(), dataKey, dataValue, record.getTtlMillis(), responsePair);
-
+            sendReplicationOperation(false, name, dataKey, dataValue, record.getTtlMillis(), responsePair);
         }
         return true;
     }
 
-    protected void sendReplicationOperation(final boolean isRemove, String name, Data key, Data value, long ttl,
-                                            VersionResponsePair response) {
+    @Override
+    @SuppressWarnings("unchecked")
+    public boolean merge(Object key, ReplicatedMapEntryView mergingEntry, ReplicatedMapMergePolicy mergePolicy) {
+        K marshalledKey = (K) marshall(key);
+        InternalReplicatedMapStorage<K, V> storage = getStorage();
+        ReplicatedRecord<K, V> existingRecord = storage.get(marshalledKey);
+        if (existingRecord == null) {
+            ReplicatedMapEntryView nullEntryView
+                    = new ReplicatedMapEntryView<Object, V>(serializationService).setKey(key);
+            V newValue = (V) mergePolicy.merge(name, mergingEntry, nullEntryView);
+            if (newValue == null) {
+                return false;
+            }
+            existingRecord = buildReplicatedRecord(marshalledKey, newValue, 0);
+            storage.put(marshalledKey, existingRecord);
+            storage.incrementVersion();
+            Data dataKey = serializationService.toData(marshalledKey);
+            Data dataValue = serializationService.toData(newValue);
+            VersionResponsePair responsePair = new VersionResponsePair(mergingEntry.getValue(), getVersion());
+            sendReplicationOperation(false, name, dataKey, dataValue, existingRecord.getTtlMillis(), responsePair);
+        } else {
+            ReplicatedMapEntryView existingEntry = new ReplicatedMapEntryView<Object, Object>(serializationService)
+                    .setKey(key)
+                    .setValue(existingRecord.getValueInternal())
+                    .setCreationTime(existingRecord.getCreationTime())
+                    .setLastUpdateTime(existingRecord.getUpdateTime())
+                    .setLastAccessTime(existingRecord.getLastAccessTime())
+                    .setHits(existingRecord.getHits())
+                    .setTtl(existingRecord.getTtlMillis());
+            V newValue = (V) mergePolicy.merge(name, mergingEntry, existingEntry);
+            if (newValue == null) {
+                storage.remove(marshalledKey, existingRecord);
+                storage.incrementVersion();
+                Data dataKey = serializationService.toData(marshalledKey);
+                VersionResponsePair responsePair = new VersionResponsePair(mergingEntry.getValue(), getVersion());
+                sendReplicationOperation(true, name, dataKey, null, existingRecord.getTtlMillis(), responsePair);
+                return false;
+            }
+            existingRecord.setValueInternal(newValue, existingRecord.getTtlMillis());
+            storage.incrementVersion();
+            Data dataKey = serializationService.toData(marshalledKey);
+            Data dataValue = serializationService.toData(newValue);
+            VersionResponsePair responsePair = new VersionResponsePair(mergingEntry.getValue(), getVersion());
+            sendReplicationOperation(false, name, dataKey, dataValue, existingRecord.getTtlMillis(), responsePair);
+        }
+        return true;
+    }
+
+    private void sendReplicationOperation(boolean isRemove, String name, Data key, Data value, long ttl,
+                                          VersionResponsePair response) {
         Collection<Member> members = nodeEngine.getClusterService().getMembers(MemberSelectors.DATA_MEMBER_SELECTOR);
         for (Member member : members) {
             invoke(isRemove, member.getAddress(), name, key, value, ttl, response);
@@ -462,6 +505,4 @@ public abstract class AbstractReplicatedRecordStore<K, V> extends AbstractBaseRe
             return entry;
         }
     }
-
-
 }

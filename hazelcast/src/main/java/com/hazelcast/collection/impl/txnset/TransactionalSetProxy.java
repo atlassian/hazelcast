@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,7 +32,10 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.concurrent.Future;
 
-public class TransactionalSetProxy<E> extends AbstractTransactionalCollectionProxy<SetService, E>
+import static com.hazelcast.collection.impl.collection.CollectionContainer.INVALID_ITEM_ID;
+
+public class TransactionalSetProxy<E>
+        extends AbstractTransactionalCollectionProxy<SetService, E>
         implements TransactionalSet<E> {
 
     private final HashSet<CollectionItem> set = new HashSet<CollectionItem>();
@@ -46,16 +49,15 @@ public class TransactionalSetProxy<E> extends AbstractTransactionalCollectionPro
         checkTransactionActive();
         checkObjectNotNull(e);
 
-        final NodeEngine nodeEngine = getNodeEngine();
-        final Data value = nodeEngine.toData(e);
-        if (!getCollection().add(new CollectionItem(-1, value))) {
+        Data value = getNodeEngine().toData(e);
+        if (!getCollection().add(new CollectionItem(INVALID_ITEM_ID, value))) {
             return false;
         }
 
         CollectionReserveAddOperation operation = new CollectionReserveAddOperation(name, tx.getTxnId(), value);
         try {
-            Future<Long> f = nodeEngine.getOperationService().invokeOnPartition(getServiceName(), operation, partitionId);
-            Long itemId = f.get();
+            Future<Long> future = operationService.invokeOnPartition(getServiceName(), operation, partitionId);
+            Long itemId = future.get();
             if (itemId != null) {
                 if (!itemIdSet.add(itemId)) {
                     throw new TransactionException("Duplicate itemId: " + itemId);

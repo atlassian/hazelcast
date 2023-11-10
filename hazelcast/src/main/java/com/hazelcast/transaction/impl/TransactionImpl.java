@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -67,6 +67,7 @@ import static com.hazelcast.util.UuidUtil.newUnsecureUuidString;
 import static java.lang.Boolean.TRUE;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 
+@SuppressWarnings("checkstyle:methodcount")
 public class TransactionImpl implements Transaction {
 
     private static final Address[] EMPTY_ADDRESSES = new Address[0];
@@ -259,11 +260,7 @@ public class TransactionImpl implements Transaction {
             return false;
         }
 
-        if (transactionLog.size() <= 1) {
-            return false;
-        }
-
-        return true;
+        return transactionLog.size() > 1;
     }
 
     @Override
@@ -291,9 +288,11 @@ public class TransactionImpl implements Transaction {
                 List<Future> futures = transactionLog.commit(nodeEngine);
                 waitWithDeadline(futures, Long.MAX_VALUE, MILLISECONDS, RETHROW_TRANSACTION_EXCEPTION);
                 state = COMMITTED;
+                transactionLog.onCommitSuccess();
                 transactionManagerService.commitCount.inc();
             } catch (Throwable e) {
                 state = COMMIT_FAILED;
+                transactionLog.onCommitFailure();
                 throw rethrow(e, TransactionException.class);
             } finally {
                 purgeBackupLogs();
@@ -334,7 +333,7 @@ public class TransactionImpl implements Transaction {
         }
     }
 
-    private void replicateTxnLog() throws InterruptedException, ExecutionException, java.util.concurrent.TimeoutException {
+    private void replicateTxnLog() {
         if (skipBackupLogReplication()) {
             return;
         }
@@ -440,7 +439,7 @@ public class TransactionImpl implements Transaction {
 
     protected ReplicateTxBackupLogOperation createReplicateTxBackupLogOperation() {
         return new ReplicateTxBackupLogOperation(
-                transactionLog.getRecordList(), txOwnerUuid, txnId, timeoutMillis, startTime);
+                transactionLog.getRecords(), txOwnerUuid, txnId, timeoutMillis, startTime);
     }
 
     protected RollbackTxBackupLogOperation createRollbackTxBackupLogOperation() {

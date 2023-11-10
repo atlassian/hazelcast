@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,8 @@ package com.hazelcast.client;
 
 import com.hazelcast.client.config.ClientConfig;
 import com.hazelcast.client.connection.ClientConnectionManager;
-import com.hazelcast.client.impl.ClientTestUtil;
-import com.hazelcast.client.impl.HazelcastClientInstanceImpl;
+import com.hazelcast.client.impl.clientside.ClientTestUtil;
+import com.hazelcast.client.impl.clientside.HazelcastClientInstanceImpl;
 import com.hazelcast.client.spi.properties.ClientProperty;
 import com.hazelcast.client.test.TestHazelcastFactory;
 import com.hazelcast.core.Client;
@@ -37,16 +37,12 @@ import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
-import com.hazelcast.util.EmptyStatement;
 import org.junit.After;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import java.io.Serializable;
-import java.net.InetSocketAddress;
 import java.util.Collection;
-import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -81,14 +77,35 @@ public class ClientConnectionTest extends HazelcastTestSupport {
         hazelcastFactory.newHazelcastClient(config);
     }
 
+    @Test(expected = IllegalArgumentException.class)
+    public void testEmptyStringAsAddress() {
+        ClientConfig clientConfig = new ClientConfig();
+        clientConfig.getNetworkConfig().addAddress("");
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testNullAsAddress() {
+        ClientConfig clientConfig = new ClientConfig();
+        clientConfig.getNetworkConfig().addAddress(null);
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testNullAsAddresses() {
+        ClientConfig clientConfig = new ClientConfig();
+        clientConfig.getNetworkConfig().addAddress(null, null);
+    }
+
     @Test
     public void testWithLegalAndIllegalAddressTogether() {
         String illegalAddress = randomString();
 
         HazelcastInstance server = hazelcastFactory.newHazelcastInstance();
+        Address serverAddress = server.getCluster().getLocalMember().getAddress();
         ClientConfig config = new ClientConfig();
         config.setProperty(ClientProperty.SHUFFLE_MEMBER_LIST.getName(), "false");
-        config.getNetworkConfig().addAddress(illegalAddress).addAddress("localhost");
+        config.getNetworkConfig()
+                .addAddress(illegalAddress)
+                .addAddress(serverAddress.getHost() + ":" + serverAddress.getPort());
         HazelcastInstance client = hazelcastFactory.newHazelcastClient(config);
 
         Collection<Client> connectedClients = server.getClientService().getConnectedClients();
@@ -107,12 +124,12 @@ public class ClientConnectionTest extends HazelcastTestSupport {
         config.setProperty(ClientProperty.SHUFFLE_MEMBER_LIST.getName(), "false");
         config.getNetworkConfig().setSmartRouting(false);
 
-        InetSocketAddress socketAddress1 = server1.getCluster().getLocalMember().getSocketAddress();
-        InetSocketAddress socketAddress2 = server2.getCluster().getLocalMember().getSocketAddress();
+        Address address1 = server1.getCluster().getLocalMember().getAddress();
+        Address address2 = server2.getCluster().getLocalMember().getAddress();
 
         config.getNetworkConfig().
-                addAddress(socketAddress1.getHostName() + ":" + socketAddress1.getPort()).
-                addAddress(socketAddress2.getHostName() + ":" + socketAddress2.getPort());
+                addAddress(address1.getHost() + ":" + address1.getPort()).
+                addAddress(address2.getHost() + ":" + address2.getPort());
 
         hazelcastFactory.newHazelcastClient(config);
 
@@ -130,12 +147,12 @@ public class ClientConnectionTest extends HazelcastTestSupport {
         HazelcastClientInstanceImpl clientImpl = ClientTestUtil.getHazelcastClientInstanceImpl(client);
         ClientConnectionManager connectionManager = clientImpl.getConnectionManager();
 
-        final CountingConnectionRemoveListener listener = new CountingConnectionRemoveListener();
+        final CountingConnectionListener listener = new CountingConnectionListener();
 
         connectionManager.addConnectionListener(listener);
 
-        final Address serverAddress = new Address(server.getCluster().getLocalMember().getSocketAddress());
-        final Connection connectionToServer = connectionManager.getConnection(serverAddress);
+        final Address serverAddress = server.getCluster().getLocalMember().getAddress();
+        final Connection connectionToServer = connectionManager.getActiveConnection(serverAddress);
 
         final CountDownLatch isConnected = new CountDownLatch(1);
         clientImpl.getLifecycleService().addLifecycleListener(new LifecycleListener() {
@@ -148,7 +165,6 @@ public class ClientConnectionTest extends HazelcastTestSupport {
         });
 
         connectionToServer.close(null, null);
-
         assertTrueEventually(new AssertTask() {
             @Override
             public void run()
@@ -158,22 +174,22 @@ public class ClientConnectionTest extends HazelcastTestSupport {
         });
 
         connectionToServer.close(null, null);
-
-        assertEquals("connection removed should be called only once", 1, listener.count.get());
+        assertEquals("connection removed should be called only once", 1, listener.connectionRemovedCount.get());
     }
 
-    private class CountingConnectionRemoveListener implements ConnectionListener {
+    private class CountingConnectionListener implements ConnectionListener {
 
-        final AtomicInteger count = new AtomicInteger();
+        final AtomicInteger connectionRemovedCount = new AtomicInteger();
+        final AtomicInteger connectionAddedCount = new AtomicInteger();
 
         @Override
         public void connectionAdded(Connection connection) {
-
+            connectionAddedCount.incrementAndGet();
         }
 
         @Override
         public void connectionRemoved(Connection connection) {
-            count.incrementAndGet();
+            connectionRemovedCount.incrementAndGet();
         }
     }
 
@@ -184,12 +200,20 @@ public class ClientConnectionTest extends HazelcastTestSupport {
         ClientConfig config = new ClientConfig();
         WaitingCredentials credentials = new WaitingCredentials("dev", "dev-pass", countDownLatch);
         config.setCredentials(credentials);
-        HazelcastInstance client = hazelcastFactory.newHazelcastClient(config);
+        final HazelcastInstance client = hazelcastFactory.newHazelcastClient(config);
         final IExecutorService executorService = client.getExecutorService(randomString());
 
         credentials.waitFlag.set(true);
 
         final HazelcastInstance secondInstance = hazelcastFactory.newHazelcastInstance();
+
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run() throws Exception {
+                assertEquals(2, client.getCluster().getMembers().size());
+            }
+        });
+
         final AtomicReference<Future> atomicReference = new AtomicReference<Future>();
         Thread thread = new Thread(new Runnable() {
             @Override
@@ -212,16 +236,14 @@ public class ClientConnectionTest extends HazelcastTestSupport {
             thread.join();
             countDownLatch.countDown();
         }
-
     }
-
 
     static class WaitingCredentials extends UsernamePasswordCredentials {
 
         private final CountDownLatch countDownLatch;
         AtomicBoolean waitFlag = new AtomicBoolean();
 
-        public WaitingCredentials(String username, String password, CountDownLatch countDownLatch) {
+        WaitingCredentials(String username, String password, CountDownLatch countDownLatch) {
             super(username, password);
             this.countDownLatch = countDownLatch;
         }
@@ -237,17 +259,34 @@ public class ClientConnectionTest extends HazelcastTestSupport {
                 try {
                     countDownLatch.await();
                 } catch (InterruptedException e) {
-                    EmptyStatement.ignore(e);
+                    ignore(e);
                 }
             }
             return super.getPassword();
         }
     }
 
-    static class DummySerializableCallable implements Callable, Serializable {
-        @Override
-        public Object call() throws Exception {
-            return null;
-        }
+    @Test
+    public void testAddingConnectionListenerTwice_shouldCauseEventDeliveredTwice() {
+        hazelcastFactory.newHazelcastInstance();
+        HazelcastInstance client = hazelcastFactory.newHazelcastClient();
+
+        HazelcastClientInstanceImpl clientImpl = ClientTestUtil.getHazelcastClientInstanceImpl(client);
+        ClientConnectionManager connectionManager = clientImpl.getConnectionManager();
+
+        final CountingConnectionListener listener = new CountingConnectionListener();
+
+        connectionManager.addConnectionListener(listener);
+        connectionManager.addConnectionListener(listener);
+
+        hazelcastFactory.newHazelcastInstance();
+
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run() {
+                assertEquals(listener.connectionAddedCount.get(), 2);
+            }
+        });
     }
+
 }

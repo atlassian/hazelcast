@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,9 @@
 package com.hazelcast.internal.metrics;
 
 /**
- * A {@link MetricsProvider} that has the ability to discard to provided metrics. This is useful for dynamic metrics; so
- * metrics that get added and removed during the lifecycle of the MetricsRegistry like a connection.
+ * A {@link MetricsProvider} that has the ability to discard to provided metrics.
+ * This is useful for dynamic metrics; so metrics that get added and removed during
+ * the lifecycle of the MetricsRegistry like a connection.
  */
 public interface DiscardableMetricsProvider extends MetricsProvider {
 

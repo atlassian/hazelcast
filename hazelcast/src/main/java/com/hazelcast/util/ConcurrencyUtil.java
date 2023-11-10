@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,8 @@
 package com.hazelcast.util;
 
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 
 /**
@@ -24,6 +26,23 @@ import java.util.concurrent.atomic.AtomicLongFieldUpdater;
  * from a {@link ConcurrentMap} with a {@link ConstructorFunction}.
  */
 public final class ConcurrencyUtil {
+
+    /**
+     * The Caller runs executor is an Executor that executes the task on the calling thread.
+     * This is useful when an Executor is required, but offloading to a different thread
+     * is very costly and it is faster to run on the calling thread.
+     */
+    public static final Executor CALLER_RUNS = new Executor() {
+        @Override
+        public void execute(Runnable command) {
+            command.run();
+        }
+
+        @Override
+        public String toString() {
+            return "CALLER_RUNS";
+        }
+    };
 
     private ConcurrencyUtil() {
     }
@@ -43,6 +62,18 @@ public final class ConcurrencyUtil {
 
             if (updater.compareAndSet(obj, current, value)) {
                 return;
+            }
+        }
+    }
+
+    public static boolean setIfEqualOrGreaterThan(AtomicLong oldValue, long newValue) {
+        while (true) {
+            long local = oldValue.get();
+            if (newValue < local) {
+                return false;
+            }
+            if (oldValue.compareAndSet(local, newValue)) {
+                return true;
             }
         }
     }
@@ -97,4 +128,5 @@ public final class ConcurrencyUtil {
         }
         return value;
     }
+
 }

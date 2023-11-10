@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,12 +23,17 @@ import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.CacheSizeCodec;
 import com.hazelcast.instance.Node;
 import com.hazelcast.nio.Connection;
+import com.hazelcast.security.permission.ActionConstants;
+import com.hazelcast.security.permission.CachePermission;
 import com.hazelcast.spi.OperationFactory;
 
+import java.security.Permission;
 import java.util.Map;
 
+import static com.hazelcast.util.MapUtil.toIntSize;
+
 /**
- * This client request  specifically calls {@link CacheSizeOperationFactory} on the server side.
+ * This client request specifically calls {@link CacheSizeOperationFactory} on the server side.
  *
  * @see CacheSizeOperationFactory
  */
@@ -47,13 +52,13 @@ public class CacheSizeMessageTask
 
     @Override
     protected Object reduce(Map<Integer, Object> map) {
-        int total = 0;
+        long total = 0;
         CacheService service = getService(getServiceName());
         for (Object result : map.values()) {
             Integer size = (Integer) service.toObject(result);
             total += size;
         }
-        return total;
+        return toIntSize(total);
     }
 
     @Override
@@ -64,6 +69,11 @@ public class CacheSizeMessageTask
     @Override
     protected ClientMessage encodeResponse(Object response) {
         return CacheSizeCodec.encodeResponse((Integer) response);
+    }
+
+    @Override
+    public Permission getRequiredPermission() {
+        return new CachePermission(parameters.name, ActionConstants.ACTION_READ);
     }
 
     @Override

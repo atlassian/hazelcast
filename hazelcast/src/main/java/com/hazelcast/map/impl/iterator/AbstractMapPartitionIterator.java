@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 
+/**
+ * Base class for iterating a partition. When iterating you can control:
+ * <ul>
+ * <li>the fetch size</li>
+ * <li>whether values are prefetched or fetched when iterating</li>
+ * </ul>
+ *
+ * @param <K> the key type
+ * @param <V> the value type
+ */
 public abstract class AbstractMapPartitionIterator<K, V> implements Iterator<Map.Entry<K, V>> {
 
     protected IMap<K, V> map;
@@ -55,10 +65,12 @@ public abstract class AbstractMapPartitionIterator<K, V> implements Iterator<Map
         this.prefetchValues = prefetchValues;
     }
 
+    @Override
     public boolean hasNext() {
         return (result != null && index < result.size()) || advance();
     }
 
+    @Override
     public Map.Entry<K, V> next() {
         while (hasNext()) {
             currentIndex = index;
@@ -72,6 +84,7 @@ public abstract class AbstractMapPartitionIterator<K, V> implements Iterator<Map
         throw new NoSuchElementException();
     }
 
+    @Override
     public void remove() {
         if (result == null || currentIndex < 0) {
             throw new IllegalStateException("Iterator.next() must be called before remove()!");

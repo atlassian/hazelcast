@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,6 +37,7 @@ import static com.hazelcast.internal.metrics.impl.ProbeUtils.TYPE_PRIMITIVE_LONG
 import static com.hazelcast.internal.metrics.impl.ProbeUtils.TYPE_SEMAPHORE;
 import static com.hazelcast.internal.metrics.impl.ProbeUtils.getType;
 import static com.hazelcast.internal.metrics.impl.ProbeUtils.isDouble;
+import static com.hazelcast.util.StringUtil.getterIntoProperty;
 import static java.lang.String.format;
 
 /**
@@ -58,17 +59,20 @@ abstract class MethodProbe implements ProbeFunction {
     }
 
     void register(MetricsRegistryImpl metricsRegistry, Object source, String namePrefix) {
-        String name = getName(namePrefix);
+        String name = namePrefix + '.' + getProbeOrMethodName();
         metricsRegistry.registerInternal(source, name, probe.level(), this);
     }
 
-    private String getName(String namePrefix) {
-        String name = method.getName();
-        if (!probe.name().equals("")) {
-            name = probe.name();
-        }
+    void register(ProbeBuilderImpl builder, Object source) {
+        builder
+                .withTag("unit", probe.unit().name().toLowerCase())
+                .register(source, getProbeOrMethodName(), probe.level(), this);
+    }
 
-        return namePrefix + "." + name;
+    private String getProbeOrMethodName() {
+        return probe.name().length() != 0
+                ? probe.name()
+                : getterIntoProperty(method.getName());
     }
 
     static <S> MethodProbe createMethodProbe(Method method, Probe probe) {

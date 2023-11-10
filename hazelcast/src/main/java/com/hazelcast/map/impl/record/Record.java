@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,12 @@
 package com.hazelcast.map.impl.record;
 
 import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.query.Metadata;
 
 /**
  * @param <V> the type of value which is in the Record
  */
+@SuppressWarnings("checkstyle:methodcount")
 public interface Record<V> {
 
     /**
@@ -31,6 +33,8 @@ public interface Record<V> {
     int NOT_AVAILABLE = -1;
 
     Data getKey();
+
+    void setKey(Data key);
 
     V getValue();
 
@@ -78,6 +82,10 @@ public interface Record<V> {
 
     void setTtl(long ttl);
 
+    long getMaxIdle();
+
+    void setMaxIdle(long maxIdle);
+
     long getLastAccessTime();
 
     void setLastAccessTime(long lastAccessTime);
@@ -116,5 +124,8 @@ public interface Record<V> {
      */
     void setSequence(long sequence);
 
+    void setMetadata(Metadata metadata);
+
+    Metadata getMetadata();
 
 }

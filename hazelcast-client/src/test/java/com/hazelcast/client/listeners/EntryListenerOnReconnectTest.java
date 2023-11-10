@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,13 +19,12 @@ package com.hazelcast.client.listeners;
 import com.hazelcast.core.EntryAdapter;
 import com.hazelcast.core.EntryEvent;
 import com.hazelcast.core.IMap;
+import com.hazelcast.map.impl.MapService;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
-
-import java.util.concurrent.atomic.AtomicInteger;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
@@ -34,20 +33,25 @@ public class EntryListenerOnReconnectTest extends AbstractListenersOnReconnectTe
     private IMap<String, String> iMap;
 
     @Override
-    protected String addListener(final AtomicInteger eventCount) {
+    String getServiceName() {
+        return MapService.SERVICE_NAME;
+    }
+
+    @Override
+    protected String addListener() {
         iMap = client.getMap(randomString());
 
-        final EntryAdapter<Object, Object> listener = new EntryAdapter<Object, Object>() {
-            public void onEntryEvent(EntryEvent<Object, Object> event) {
-                eventCount.incrementAndGet();
+        final EntryAdapter<String, String> listener = new EntryAdapter<String, String>() {
+            public void onEntryEvent(EntryEvent<String, String> event) {
+                onEvent(event.getKey());
             }
         };
         return iMap.addEntryListener(listener, true);
     }
 
     @Override
-    public void produceEvent() {
-        iMap.put(randomString(), randomString());
+    public void produceEvent(String event) {
+        iMap.put(event, randomString());
     }
 
     @Override

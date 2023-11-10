@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package com.hazelcast.collection.impl.queue;
 
 import com.hazelcast.collection.impl.common.DataAwareItemEvent;
+import com.hazelcast.collection.impl.queue.operations.QueueMergeOperation;
 import com.hazelcast.collection.impl.queue.operations.QueueReplicationOperation;
 import com.hazelcast.collection.impl.txnqueue.TransactionalQueueProxy;
 import com.hazelcast.collection.impl.txnqueue.operations.QueueTransactionRollbackOperation;
@@ -43,9 +44,13 @@ import com.hazelcast.spi.PartitionMigrationEvent;
 import com.hazelcast.spi.PartitionReplicationEvent;
 import com.hazelcast.spi.QuorumAwareService;
 import com.hazelcast.spi.RemoteService;
+import com.hazelcast.spi.SplitBrainHandlerService;
 import com.hazelcast.spi.StatisticsAwareService;
 import com.hazelcast.spi.TaskScheduler;
 import com.hazelcast.spi.TransactionalService;
+import com.hazelcast.spi.impl.merge.AbstractContainerMerger;
+import com.hazelcast.spi.merge.SplitBrainMergePolicy;
+import com.hazelcast.spi.merge.SplitBrainMergeTypes.QueueMergeTypes;
 import com.hazelcast.spi.partition.IPartition;
 import com.hazelcast.spi.partition.IPartitionService;
 import com.hazelcast.spi.partition.MigrationEndpoint;
@@ -53,32 +58,40 @@ import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.transaction.impl.Transaction;
 import com.hazelcast.util.ConcurrencyUtil;
 import com.hazelcast.util.ConstructorFunction;
-import com.hazelcast.util.MapUtil;
+import com.hazelcast.util.ContextMutexFactory;
 import com.hazelcast.util.scheduler.EntryTaskScheduler;
 import com.hazelcast.util.scheduler.EntryTaskSchedulerFactory;
-import com.hazelcast.util.scheduler.ScheduleType;
 
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Properties;
+import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.logging.Level;
+
+import static com.hazelcast.internal.config.ConfigValidator.checkQueueConfig;
+import static com.hazelcast.spi.impl.merge.MergingValueFactory.createMergingValue;
+import static com.hazelcast.util.ConcurrencyUtil.getOrPutSynchronized;
+import static com.hazelcast.util.MapUtil.createHashMap;
+import static com.hazelcast.util.scheduler.ScheduleType.POSTPONE;
 
 /**
  * Provides important services via methods for the the Queue
  * such as {@link com.hazelcast.collection.impl.queue.QueueEvictionProcessor }
  */
-public class QueueService implements ManagedService, MigrationAwareService, TransactionalService,
-        RemoteService, EventPublishingService<QueueEvent, ItemListener>, StatisticsAwareService, QuorumAwareService {
+@SuppressWarnings({"checkstyle:classfanoutcomplexity", "checkstyle:methodcount"})
+public class QueueService implements ManagedService, MigrationAwareService, TransactionalService, RemoteService,
+        EventPublishingService<QueueEvent, ItemListener>, StatisticsAwareService<LocalQueueStats>, QuorumAwareService,
+        SplitBrainHandlerService {
 
     public static final String SERVICE_NAME = "hz:impl:queueService";
 
-    private final EntryTaskScheduler<String, Void> queueEvictionScheduler;
-    private final NodeEngine nodeEngine;
+    private static final Object NULL_OBJECT = new Object();
+
     private final ConcurrentMap<String, QueueContainer> containerMap
             = new ConcurrentHashMap<String, QueueContainer>();
     private final ConcurrentMap<String, LocalQueueStatsImpl> statsMap
@@ -91,15 +104,31 @@ public class QueueService implements ManagedService, MigrationAwareService, Tran
         }
     };
 
+    private final ConcurrentMap<String, Object> quorumConfigCache = new ConcurrentHashMap<String, Object>();
+    private final ContextMutexFactory quorumConfigCacheMutexFactory = new ContextMutexFactory();
+    private final ConstructorFunction<String, Object> quorumConfigConstructor = new ConstructorFunction<String, Object>() {
+        @Override
+        public Object createNew(String name) {
+            QueueConfig queueConfig = nodeEngine.getConfig().findQueueConfig(name);
+            String quorumName = queueConfig.getQuorumName();
+            return quorumName == null ? NULL_OBJECT : quorumName;
+        }
+    };
+
+    private final NodeEngine nodeEngine;
+    private final SerializationService serializationService;
+    private final IPartitionService partitionService;
     private final ILogger logger;
+    private final EntryTaskScheduler<String, Void> queueEvictionScheduler;
 
     public QueueService(NodeEngine nodeEngine) {
         this.nodeEngine = nodeEngine;
+        this.serializationService = nodeEngine.getSerializationService();
+        this.partitionService = nodeEngine.getPartitionService();
+        this.logger = nodeEngine.getLogger(QueueService.class);
         TaskScheduler globalScheduler = nodeEngine.getExecutionService().getGlobalTaskScheduler();
         QueueEvictionProcessor entryProcessor = new QueueEvictionProcessor(nodeEngine);
-        this.queueEvictionScheduler = EntryTaskSchedulerFactory.newScheduler(
-                globalScheduler, entryProcessor, ScheduleType.POSTPONE);
-        this.logger = nodeEngine.getLogger(QueueService.class);
+        this.queueEvictionScheduler = EntryTaskSchedulerFactory.newScheduler(globalScheduler, entryProcessor, POSTPONE);
     }
 
     public void scheduleEviction(String name, long delay) {
@@ -124,7 +153,7 @@ public class QueueService implements ManagedService, MigrationAwareService, Tran
         reset();
     }
 
-    public QueueContainer getOrCreateContainer(final String name, boolean fromBackup) throws Exception {
+    public QueueContainer getOrCreateContainer(final String name, boolean fromBackup) {
         QueueContainer container = containerMap.get(name);
         if (container != null) {
             return container;
@@ -157,14 +186,12 @@ public class QueueService implements ManagedService, MigrationAwareService, Tran
     @Override
     public Operation prepareReplicationOperation(PartitionReplicationEvent event) {
         Map<String, QueueContainer> migrationData = new HashMap<String, QueueContainer>();
-        IPartitionService partitionService = nodeEngine.getPartitionService();
         for (Entry<String, QueueContainer> entry : containerMap.entrySet()) {
             String name = entry.getKey();
             int partitionId = partitionService.getPartitionId(StringPartitioningStrategy.getPartitionKey(name));
             QueueContainer container = entry.getValue();
 
-            if (partitionId == event.getPartitionId()
-                    && container.getConfig().getTotalBackupCount() >= event.getReplicaIndex()) {
+            if (partitionId == event.getPartitionId() && container.getConfig().getTotalBackupCount() >= event.getReplicaIndex()) {
                 migrationData.put(name, container);
             }
         }
@@ -192,11 +219,10 @@ public class QueueService implements ManagedService, MigrationAwareService, Tran
 
     private void clearQueuesHavingLesserBackupCountThan(int partitionId, int thresholdReplicaIndex) {
         Iterator<Entry<String, QueueContainer>> iterator = containerMap.entrySet().iterator();
-        IPartitionService partitionService = nodeEngine.getPartitionService();
         while (iterator.hasNext()) {
-            final Entry<String, QueueContainer> entry = iterator.next();
-            final String name = entry.getKey();
-            final QueueContainer container = entry.getValue();
+            Entry<String, QueueContainer> entry = iterator.next();
+            String name = entry.getKey();
+            QueueContainer container = entry.getValue();
             int containerPartitionId = partitionService.getPartitionId(StringPartitioningStrategy.getPartitionKey(name));
             if (containerPartitionId != partitionId) {
                 continue;
@@ -212,10 +238,9 @@ public class QueueService implements ManagedService, MigrationAwareService, Tran
     @Override
     public void dispatchEvent(QueueEvent event, ItemListener listener) {
         final MemberImpl member = nodeEngine.getClusterService().getMember(event.caller);
-        ItemEvent itemEvent = new DataAwareItemEvent(event.name, event.eventType, event.data,
-                member, nodeEngine.getSerializationService());
+        ItemEvent itemEvent = new DataAwareItemEvent(event.name, event.eventType, event.data, member, serializationService);
         if (member == null) {
-            if (logger.isLoggable(Level.INFO)) {
+            if (logger.isInfoEnabled()) {
                 logger.info("Dropping event " + itemEvent + " from unknown address:" + event.caller);
             }
             return;
@@ -231,13 +256,20 @@ public class QueueService implements ManagedService, MigrationAwareService, Tran
 
     @Override
     public QueueProxyImpl createDistributedObject(String objectId) {
-        return new QueueProxyImpl(objectId, this, nodeEngine);
+        QueueConfig queueConfig = nodeEngine.getConfig().findQueueConfig(objectId);
+        checkQueueConfig(queueConfig, nodeEngine.getSplitBrainMergePolicyProvider());
+
+        return new QueueProxyImpl(objectId, this, nodeEngine, queueConfig);
     }
 
     @Override
     public void destroyDistributedObject(String name) {
-        containerMap.remove(name);
+        QueueContainer container = containerMap.remove(name);
+        if (container != null) {
+            container.destroy();
+        }
         nodeEngine.getEventService().deregisterAllListeners(SERVICE_NAME, name);
+        quorumConfigCache.remove(name);
     }
 
     public String addItemListener(String name, ItemListener listener, boolean includeValue, boolean isLocal) {
@@ -266,9 +298,10 @@ public class QueueService implements ManagedService, MigrationAwareService, Tran
     }
 
     /**
-     * Returns the local queue statistics for the given name and partition ID. If this node is the owner for the partition,
-     * returned stats contain {@link LocalQueueStats#getOwnedItemCount()}, otherwise it contains
-     * {@link LocalQueueStats#getBackupItemCount()}.
+     * Returns the local queue statistics for the given name and
+     * partition ID. If this node is the owner for the partition,
+     * returned stats contain {@link LocalQueueStats#getOwnedItemCount()},
+     * otherwise it contains {@link LocalQueueStats#getBackupItemCount()}.
      *
      * @param name        the name of the queue for which the statistics are returned
      * @param partitionId the partition ID for which the statistics are returned
@@ -284,7 +317,7 @@ public class QueueService implements ManagedService, MigrationAwareService, Tran
         }
 
         Address thisAddress = nodeEngine.getClusterService().getThisAddress();
-        IPartition partition = nodeEngine.getPartitionService().getPartition(partitionId);
+        IPartition partition = partitionService.getPartition(partitionId, false);
 
         Address owner = partition.getOwnerOrNull();
         if (thisAddress.equals(owner)) {
@@ -305,11 +338,7 @@ public class QueueService implements ManagedService, MigrationAwareService, Tran
      * @return the statistics
      */
     public LocalQueueStats createLocalQueueStats(String name) {
-        SerializationService serializationService = nodeEngine.getSerializationService();
-        IPartitionService partitionService = nodeEngine.getPartitionService();
-        Data keyData = serializationService.toData(name, StringPartitioningStrategy.INSTANCE);
-        int partitionId = partitionService.getPartitionId(keyData);
-        return createLocalQueueStats(name, partitionId);
+        return createLocalQueueStats(name, getPartitionId(name));
     }
 
     public LocalQueueStatsImpl getLocalQueueStatsImpl(String name) {
@@ -324,7 +353,6 @@ public class QueueService implements ManagedService, MigrationAwareService, Tran
     @Override
     public void rollbackTransaction(String transactionId) {
         final Set<String> queueNames = containerMap.keySet();
-        IPartitionService partitionService = nodeEngine.getPartitionService();
         OperationService operationService = nodeEngine.getOperationService();
         for (String name : queueNames) {
             int partitionId = partitionService.getPartitionId(StringPartitioningStrategy.getPartitionKey(name));
@@ -332,13 +360,13 @@ public class QueueService implements ManagedService, MigrationAwareService, Tran
                     .setPartitionId(partitionId)
                     .setService(this)
                     .setNodeEngine(nodeEngine);
-            operationService.execute(operation);
+            operationService.invokeOnPartition(operation);
         }
     }
 
     @Override
     public Map<String, LocalQueueStats> getStats() {
-        Map<String, LocalQueueStats> queueStats = MapUtil.createHashMap(containerMap.size());
+        Map<String, LocalQueueStats> queueStats = createHashMap(containerMap.size());
         for (Entry<String, QueueContainer> entry : containerMap.entrySet()) {
             String name = entry.getKey();
             LocalQueueStats queueStat = createLocalQueueStats(name);
@@ -349,7 +377,58 @@ public class QueueService implements ManagedService, MigrationAwareService, Tran
 
     @Override
     public String getQuorumName(String name) {
-        final QueueConfig queueConfig = nodeEngine.getConfig().findQueueConfig(name);
-        return queueConfig.getQuorumName();
+        Object quorumName = getOrPutSynchronized(quorumConfigCache, name, quorumConfigCacheMutexFactory,
+                quorumConfigConstructor);
+        return quorumName == NULL_OBJECT ? null : (String) quorumName;
+    }
+
+    @Override
+    public Runnable prepareMergeRunnable() {
+        QueueContainerCollector collector = new QueueContainerCollector(nodeEngine, containerMap);
+        collector.run();
+        return new Merger(collector);
+    }
+
+    private int getPartitionId(String name) {
+        Data keyData = serializationService.toData(name, StringPartitioningStrategy.INSTANCE);
+        return partitionService.getPartitionId(keyData);
+    }
+
+    private class Merger extends AbstractContainerMerger<QueueContainer, Collection<Object>, QueueMergeTypes> {
+
+        Merger(QueueContainerCollector collector) {
+            super(collector, nodeEngine);
+        }
+
+        @Override
+        protected String getLabel() {
+            return "queue";
+        }
+
+        @Override
+        public void runInternal() {
+            for (Entry<Integer, Collection<QueueContainer>> entry : collector.getCollectedContainers().entrySet()) {
+                int partitionId = entry.getKey();
+                Collection<QueueContainer> containerList = entry.getValue();
+                for (QueueContainer container : containerList) {
+                    // TODO: add batching (which is a bit complex, since collections don't have a multi-name operation yet
+                    Queue<QueueItem> items = container.getItemQueue();
+
+                    String name = container.getName();
+                    SplitBrainMergePolicy<Collection<Object>, QueueMergeTypes> mergePolicy
+                            = getMergePolicy(container.getConfig().getMergePolicyConfig());
+
+                    QueueMergeTypes mergingValue = createMergingValue(serializationService, items);
+                    sendBatch(partitionId, name, mergePolicy, mergingValue);
+                }
+            }
+        }
+
+        private void sendBatch(int partitionId, String name,
+                               SplitBrainMergePolicy<Collection<Object>, QueueMergeTypes> mergePolicy,
+                               QueueMergeTypes mergingValue) {
+            QueueMergeOperation operation = new QueueMergeOperation(name, mergePolicy, mergingValue);
+            invoke(SERVICE_NAME, operation, partitionId);
+        }
     }
 }

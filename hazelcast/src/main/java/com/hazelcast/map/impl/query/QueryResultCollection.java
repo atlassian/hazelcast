@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.util.IterationType;
 
 import java.util.AbstractSet;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -33,24 +32,18 @@ public class QueryResultCollection<E> extends AbstractSet<E> {
     private final boolean binary;
 
     public QueryResultCollection(SerializationService serializationService, IterationType iterationType, boolean binary,
-                                 boolean unique) {
+                                 boolean distinct, QueryResult queryResult) {
         this.serializationService = serializationService;
         this.iterationType = iterationType;
         this.binary = binary;
-        if (unique) {
-            rows = new HashSet<QueryResultRow>();
+        if (distinct) {
+            // convert to a set
+            this.rows = new HashSet<QueryResultRow>(queryResult.getRows());
         } else {
-            rows = new ArrayList<QueryResultRow>();
+            // reuse the existing underlying list
+            this.rows = queryResult.getRows();
         }
     }
-
-    public QueryResultCollection(SerializationService serializationService, IterationType iterationType, boolean binary,
-                                 boolean unique, QueryResult queryResult) {
-
-        this(serializationService, iterationType, binary, unique);
-        addAllRows(queryResult.getRows());
-    }
-
 
     // just for testing
     Collection<QueryResultRow> getRows() {
@@ -59,10 +52,6 @@ public class QueryResultCollection<E> extends AbstractSet<E> {
 
     public IterationType getIterationType() {
         return iterationType;
-    }
-
-    public void addAllRows(Collection<QueryResultRow> collection) {
-        rows.addAll(collection);
     }
 
     @Override

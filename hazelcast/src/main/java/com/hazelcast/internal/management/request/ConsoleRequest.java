@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,21 +16,16 @@
 
 package com.hazelcast.internal.management.request;
 
-import com.eclipsesource.json.JsonObject;
-import com.hazelcast.internal.management.JsonSerializable;
 import com.hazelcast.internal.management.ManagementCenterService;
-
-import java.io.IOException;
+import com.hazelcast.internal.json.JsonObject;
 
 /**
  *  Represents request sent from Management Center.
  */
-public interface ConsoleRequest extends JsonSerializable {
-
+public interface ConsoleRequest {
     int getType();
-
-    Object readResponse(JsonObject in) throws IOException;
 
     void writeResponse(ManagementCenterService mcs, JsonObject out) throws Exception;
 
+    void fromJson(JsonObject json);
 }

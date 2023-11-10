@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.query.impl.predicates;
 
 import com.hazelcast.config.Config;
@@ -13,7 +29,6 @@ import com.hazelcast.query.PredicateBuilder;
 import com.hazelcast.query.SqlPredicate;
 import com.hazelcast.query.extractor.ValueCollector;
 import com.hazelcast.query.extractor.ValueExtractor;
-import com.hazelcast.query.impl.QueryableEntry;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.QuickTest;
@@ -67,7 +82,7 @@ public class NestedPredicateWithExtractorTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void singleAttributeQuery_predicates() throws Exception {
+    public void singleAttributeQuery_predicates() {
         // GIVEN
         map.put(1, new Body("body1", new Limb("hand")));
         map.put(2, new Body("body2", new Limb("leg")));
@@ -79,13 +94,13 @@ public class NestedPredicateWithExtractorTest extends HazelcastTestSupport {
 
         // THEN
         assertEquals(1, values.size());
-        assertEquals("body1", values.toArray(new Body[values.size()])[0].getName());
-        assertEquals(2 + 1, bodyExtractorExecutions);
+        assertEquals("body1", values.toArray(new Body[0])[0].getName());
+        assertEquals(2, bodyExtractorExecutions);
         assertEquals(0, limbExtractorExecutions);
     }
 
     @Test
-    public void singleAttributeQuery_distributedSql() throws Exception {
+    public void singleAttributeQuery_distributedSql() {
         // GIVEN
         map.put(1, new Body("body1", new Limb("hand")));
         map.put(2, new Body("body2", new Limb("leg")));
@@ -95,13 +110,13 @@ public class NestedPredicateWithExtractorTest extends HazelcastTestSupport {
 
         // THEN
         assertEquals(1, values.size());
-        assertEquals("body1", values.toArray(new Body[values.size()])[0].getName());
-        assertEquals(2 + 1, bodyExtractorExecutions);
+        assertEquals("body1", values.toArray(new Body[0])[0].getName());
+        assertEquals(2, bodyExtractorExecutions);
         assertEquals(0, limbExtractorExecutions);
     }
 
     @Test
-    public void nestedAttributeQuery_predicates() throws Exception {
+    public void nestedAttributeQuery_predicates() {
         // GIVEN
         map.put(1, new Body("body1", new Limb("hand")));
         map.put(2, new Body("body2", new Limb("leg")));
@@ -113,13 +128,13 @@ public class NestedPredicateWithExtractorTest extends HazelcastTestSupport {
 
         // THEN
         assertEquals(1, values.size());
-        assertEquals("body2", values.toArray(new Body[values.size()])[0].getName());
+        assertEquals("body2", values.toArray(new Body[0])[0].getName());
         assertEquals(0, bodyExtractorExecutions);
-        assertEquals(2 + 1, limbExtractorExecutions);
+        assertEquals(2, limbExtractorExecutions);
     }
 
     @Test
-    public void nestedAttributeQuery_customPredicates_entryProcessor() throws Exception {
+    public void nestedAttributeQuery_customPredicates_entryProcessor() {
         // GIVEN
         map.put(1, new Body("body1", new Limb("hand")));
         map.put(2, new Body("body2", new Limb("leg")));
@@ -152,10 +167,8 @@ public class NestedPredicateWithExtractorTest extends HazelcastTestSupport {
         }
 
         @Override
-        protected boolean applyForSingleAttributeValue(Map.Entry mapEntry, Comparable attributeValue) {
-            QueryableEntry queryableEntry = (QueryableEntry) mapEntry;
-            Object val = queryableEntry.getAttributeValue(attributeName);
-            return val.equals("hand");
+        protected boolean applyForSingleAttributeValue(Comparable attributeValue) {
+            return attributeValue.equals("hand");
         }
 
         @Override
@@ -165,7 +178,7 @@ public class NestedPredicateWithExtractorTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void nestedAttributeQuery_distributedSql() throws Exception {
+    public void nestedAttributeQuery_distributedSql() {
         // GIVEN
         map.put(1, new Body("body1", new Limb("hand")));
         map.put(2, new Body("body2", new Limb("leg")));
@@ -175,9 +188,9 @@ public class NestedPredicateWithExtractorTest extends HazelcastTestSupport {
 
         // THEN
         assertEquals(1, values.size());
-        assertEquals("body2", values.toArray(new Body[values.size()])[0].getName());
+        assertEquals("body2", values.toArray(new Body[0])[0].getName());
         assertEquals(0, bodyExtractorExecutions);
-        assertEquals(2 + 1, limbExtractorExecutions);
+        assertEquals(2, limbExtractorExecutions);
     }
 
     public static class BodyNameExtractor extends ValueExtractor<Body, Object> {
@@ -226,7 +239,6 @@ public class NestedPredicateWithExtractorTest extends HazelcastTestSupport {
             }
 
             Body body = (Body) o;
-
             if (name != null ? !name.equals(body.name) : body.name != null) {
                 return false;
             }
@@ -243,10 +255,10 @@ public class NestedPredicateWithExtractorTest extends HazelcastTestSupport {
 
         @Override
         public String toString() {
-            return "Body{" +
-                    "name='" + name + '\'' +
-                    ", limb=" + limb +
-                    '}';
+            return "Body{"
+                    + "name='" + name + '\''
+                    + ", limb=" + limb
+                    + '}';
         }
     }
 
@@ -281,9 +293,9 @@ public class NestedPredicateWithExtractorTest extends HazelcastTestSupport {
 
         @Override
         public String toString() {
-            return "Limb{" +
-                    "name='" + name + '\'' +
-                    '}';
+            return "Limb{"
+                    + "name='" + name + '\''
+                    + '}';
         }
     }
 }

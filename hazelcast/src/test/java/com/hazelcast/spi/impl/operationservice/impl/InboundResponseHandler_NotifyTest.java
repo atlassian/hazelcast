@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.spi.impl.operationservice.impl;
 
 import com.hazelcast.config.Config;
@@ -31,7 +47,6 @@ public class InboundResponseHandler_NotifyTest extends HazelcastTestSupport {
 
     private InvocationRegistry invocationRegistry;
     private OperationServiceImpl operationService;
-    private HazelcastInstance local;
     private InboundResponseHandler inboundResponseHandler;
 
     @Before
@@ -39,12 +54,12 @@ public class InboundResponseHandler_NotifyTest extends HazelcastTestSupport {
         Config config = new Config();
         config.setProperty(BACKPRESSURE_ENABLED.getName(), "false");
         config.setProperty(OPERATION_CALL_TIMEOUT_MILLIS.getName(), "20000");
-        local = createHazelcastInstance(config);
+        HazelcastInstance local = createHazelcastInstance(config);
         warmUpPartitions(local);
 
         operationService = getOperationServiceImpl(local);
         invocationRegistry = operationService.invocationRegistry;
-        inboundResponseHandler = operationService.getInboundResponseHandler();
+        inboundResponseHandler = operationService.getBackupHandler();
     }
 
     private Invocation newInvocation() {
@@ -53,8 +68,12 @@ public class InboundResponseHandler_NotifyTest extends HazelcastTestSupport {
 
     private Invocation newInvocation(Operation op) {
         Invocation.Context context = operationService.invocationContext;
-        Invocation invocation = new PartitionInvocation(context, op , 0, 0, 0, false);
-        invocation.invTarget = getAddress(local);
+        Invocation invocation = new PartitionInvocation(context, op, 0, 0, 0, false, false);
+        try {
+            invocation.initInvocationTarget();
+        } catch (Exception e) {
+            fail(e.toString());
+        }
         return invocation;
     }
 

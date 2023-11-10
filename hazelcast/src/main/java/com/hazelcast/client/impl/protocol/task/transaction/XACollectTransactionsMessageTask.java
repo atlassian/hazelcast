@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,24 +16,24 @@
 
 package com.hazelcast.client.impl.protocol.task.transaction;
 
+import com.hazelcast.client.impl.CollectRemoteTransactionsOperationSupplier;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.XATransactionCollectTransactionsCodec;
 import com.hazelcast.client.impl.protocol.task.AbstractMultiTargetMessageTask;
 import com.hazelcast.core.Member;
+import com.hazelcast.core.MemberLeftException;
 import com.hazelcast.instance.Node;
-import com.hazelcast.nio.Address;
 import com.hazelcast.nio.Connection;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.security.permission.TransactionPermission;
-import com.hazelcast.spi.OperationFactory;
+import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.impl.SerializableList;
 import com.hazelcast.transaction.impl.xa.XAService;
-import com.hazelcast.transaction.impl.xa.operations.CollectRemoteTransactionsOperationFactory;
+import com.hazelcast.util.function.Supplier;
 
 import java.security.Permission;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -55,14 +55,20 @@ public class XACollectTransactionsMessageTask
     }
 
     @Override
-    protected OperationFactory createOperationFactory() {
-        return new CollectRemoteTransactionsOperationFactory();
+    protected Supplier<Operation> createOperationSupplier() {
+        return new CollectRemoteTransactionsOperationSupplier();
     }
 
     @Override
-    protected Object reduce(Map<Address, Object> map) throws Throwable {
+    protected Object reduce(Map<Member, Object> map) throws Throwable {
         List<Data> list = new ArrayList<Data>();
         for (Object o : map.values()) {
+            if (o instanceof Throwable) {
+                if (o instanceof MemberLeftException) {
+                    continue;
+                }
+                throw (Throwable) o;
+            }
             SerializableList xidSet = (SerializableList) o;
             list.addAll(xidSet.getCollection());
         }
@@ -70,13 +76,8 @@ public class XACollectTransactionsMessageTask
     }
 
     @Override
-    public Collection<Address> getTargets() {
-        Collection<Member> memberList = clientEngine.getClusterService().getMembers();
-        Collection<Address> addresses = new HashSet<Address>();
-        for (Member member : memberList) {
-            addresses.add(member.getAddress());
-        }
-        return addresses;
+    public Collection<Member> getTargets() {
+        return clientEngine.getClusterService().getMembers();
     }
 
     @Override

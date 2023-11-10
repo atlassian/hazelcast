@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.hazelcast.internal.cluster.impl;
 
+import com.hazelcast.instance.EndpointQualifier;
 import com.hazelcast.internal.cluster.MemberInfo;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.ObjectDataInput;
@@ -25,11 +26,15 @@ import com.hazelcast.version.MemberVersion;
 
 import java.io.IOException;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
+import static com.hazelcast.internal.cluster.Versions.V3_12;
+import static com.hazelcast.internal.serialization.impl.SerializationUtil.readMap;
+import static com.hazelcast.internal.serialization.impl.SerializationUtil.writeMap;
+import static com.hazelcast.util.MapUtil.createHashMap;
+import static com.hazelcast.util.SetUtil.createHashSet;
 import static java.util.Collections.unmodifiableSet;
 
 public class JoinRequest extends JoinMessage {
@@ -38,19 +43,23 @@ public class JoinRequest extends JoinMessage {
     private int tryCount;
     private Map<String, Object> attributes;
     private Set<String> excludedMemberUuids = Collections.emptySet();
+    // see Member.getAddressMap
+    private Map<EndpointQualifier, Address> addresses;
 
     public JoinRequest() {
     }
 
+    @SuppressWarnings("checkstyle:parameternumber")
     public JoinRequest(byte packetVersion, int buildNumber, MemberVersion version, Address address, String uuid,
                        boolean liteMember, ConfigCheck config, Credentials credentials, Map<String, Object> attributes,
-                       Set<String> excludedMemberUuids) {
+                       Set<String> excludedMemberUuids, Map<EndpointQualifier, Address> addresses) {
         super(packetVersion, buildNumber, version, address, uuid, liteMember, config);
         this.credentials = credentials;
         this.attributes = attributes;
         if (excludedMemberUuids != null) {
             this.excludedMemberUuids = unmodifiableSet(new HashSet<String>(excludedMemberUuids));
         }
+        this.addresses = addresses;
     }
 
     public Credentials getCredentials() {
@@ -74,7 +83,7 @@ public class JoinRequest extends JoinMessage {
     }
 
     public MemberInfo toMemberInfo() {
-        return new MemberInfo(address, uuid, attributes, liteMember, version);
+        return new MemberInfo(address, uuid, attributes, liteMember, memberVersion, addresses);
     }
 
     @Override
@@ -86,19 +95,24 @@ public class JoinRequest extends JoinMessage {
         }
         tryCount = in.readInt();
         int size = in.readInt();
-        attributes = new HashMap<String, Object>();
+        attributes = createHashMap(size);
         for (int i = 0; i < size; i++) {
             String key = in.readUTF();
             Object value = in.readObject();
             attributes.put(key, value);
         }
         size = in.readInt();
-        Set<String> excludedMemberUuids = new HashSet<String>();
+        Set<String> excludedMemberUuids = createHashSet(size);
         for (int i = 0; i < size; i++) {
             excludedMemberUuids.add(in.readUTF());
         }
 
         this.excludedMemberUuids = unmodifiableSet(excludedMemberUuids);
+
+        // starting with 3.12 member version, address map is part of the serialized form of JoinRequest
+        if (memberVersion.asVersion().isGreaterOrEqual(V3_12)) {
+            this.addresses = readMap(in);
+        }
     }
 
     @Override
@@ -115,6 +129,7 @@ public class JoinRequest extends JoinMessage {
         for (String uuid : excludedMemberUuids) {
             out.writeUTF(uuid);
         }
+        writeMap(addresses, out);
     }
 
     @Override
@@ -122,7 +137,7 @@ public class JoinRequest extends JoinMessage {
         return "JoinRequest{"
                 + "packetVersion=" + packetVersion
                 + ", buildNumber=" + buildNumber
-                + ", version=" + version
+                + ", memberVersion=" + memberVersion
                 + ", address=" + address
                 + ", uuid='" + uuid + "'"
                 + ", liteMember=" + liteMember

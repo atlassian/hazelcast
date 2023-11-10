@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,17 +19,17 @@ package com.hazelcast.query.impl;
 import com.hazelcast.nio.serialization.Data;
 
 import java.util.AbstractSet;
-import java.util.HashSet;
+import java.util.Collections;
 import java.util.Iterator;
-import java.util.concurrent.ConcurrentMap;
+import java.util.Map;
 
 /**
- *  Multiple result set for Predicates.
+ * Multiple result set for Predicates.
  */
 public class SingleResultSet extends AbstractSet<QueryableEntry> {
-    private final ConcurrentMap<Data, QueryableEntry> records;
+    private final Map<Data, QueryableEntry> records;
 
-    public SingleResultSet(ConcurrentMap<Data, QueryableEntry> records) {
+    public SingleResultSet(Map<Data, QueryableEntry> records) {
         this.records = records;
     }
 
@@ -44,10 +44,10 @@ public class SingleResultSet extends AbstractSet<QueryableEntry> {
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public Iterator<QueryableEntry> iterator() {
         if (records == null) {
-            //todo: why are we not returning Collections.EMPTY_SET.iterator?
-            return new HashSet<QueryableEntry>().iterator();
+            return Collections.EMPTY_SET.iterator();
         } else {
             return records.values().iterator();
         }

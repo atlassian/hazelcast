@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,12 +22,15 @@ import com.hazelcast.internal.metrics.DoubleProbeFunction;
 import com.hazelcast.internal.metrics.LongProbeFunction;
 import com.hazelcast.internal.metrics.MetricsProvider;
 import com.hazelcast.internal.metrics.MetricsRegistry;
+import com.hazelcast.internal.metrics.ProbeBuilder;
 import com.hazelcast.internal.metrics.ProbeFunction;
 import com.hazelcast.internal.metrics.ProbeLevel;
 import com.hazelcast.internal.metrics.renderers.ProbeRenderer;
 import com.hazelcast.internal.util.concurrent.ThreadFactoryImpl;
 import com.hazelcast.logging.ILogger;
+import com.hazelcast.util.ConcurrentReferenceHashMap;
 
+import javax.annotation.Nonnull;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -40,9 +43,11 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static com.hazelcast.util.Preconditions.checkNotNull;
+import static com.hazelcast.util.ThreadUtil.createThreadPoolName;
 import static java.lang.String.format;
 
 /**
@@ -58,19 +63,19 @@ public class MetricsRegistryImpl implements MetricsRegistry {
     };
 
     final ILogger logger;
-    final ProbeLevel minimumLevel;
+    private final ProbeLevel minimumLevel;
 
-    private final ScheduledExecutorService scheduledExecutorService
-            = new ScheduledThreadPoolExecutor(2, new ThreadFactoryImpl("MetricsRegistry-thread-"));
-
+    private final ScheduledExecutorService scheduler;
     private final ConcurrentMap<String, ProbeInstance> probeInstances = new ConcurrentHashMap<String, ProbeInstance>();
-    private final ConcurrentMap<Class<?>, SourceMetadata> metadataMap
-            = new ConcurrentHashMap<Class<?>, SourceMetadata>();
+
+    // use ConcurrentReferenceHashMap to allow unreferenced Class instances to be garbage collected
+    private final ConcurrentMap<Class<?>, SourceMetadata> metadataMap =
+            new ConcurrentReferenceHashMap<Class<?>, SourceMetadata>();
     private final LockStripe lockStripe = new LockStripe();
 
-    private final AtomicReference<SortedProbeInstances> sortedProbeInstancesRef
-            = new AtomicReference<SortedProbeInstances>(new SortedProbeInstances(0));
-
+    private final AtomicLong modCount = new AtomicLong();
+    private final AtomicReference<SortedProbeInstances> sortedProbeInstances =
+            new AtomicReference<SortedProbeInstances>(new SortedProbeInstances(0, Collections.<ProbeInstance>emptyList()));
 
     /**
      * Creates a MetricsRegistryImpl instance.
@@ -81,16 +86,36 @@ public class MetricsRegistryImpl implements MetricsRegistry {
      * @throws NullPointerException if logger or minimumLevel is null
      */
     public MetricsRegistryImpl(ILogger logger, ProbeLevel minimumLevel) {
+        this("default", logger, minimumLevel);
+    }
+
+    /**
+     * Creates a MetricsRegistryImpl instance.
+     *
+     * @param name Name of the registry
+     * @param logger       the ILogger used
+     * @param minimumLevel the minimum ProbeLevel. If a probe is registered with a ProbeLevel lower than the minimum ProbeLevel,
+     *                     then the registration is skipped.
+     * @throws NullPointerException if logger or minimumLevel is null
+     */
+    public MetricsRegistryImpl(String name, ILogger logger, ProbeLevel minimumLevel) {
         this.logger = checkNotNull(logger, "logger can't be null");
         this.minimumLevel = checkNotNull(minimumLevel, "minimumLevel can't be null");
+        this.scheduler = new ScheduledThreadPoolExecutor(2,
+                new ThreadFactoryImpl(createThreadPoolName(name, "MetricsRegistry")));
 
         if (logger.isFinestEnabled()) {
             logger.finest("MetricsRegistry minimumLevel:" + minimumLevel);
         }
     }
 
+    @Override
+    public ProbeLevel minimumLevel() {
+        return minimumLevel;
+    }
+
     long modCount() {
-        return sortedProbeInstancesRef.get().mod;
+        return modCount.get();
     }
 
     @Override
@@ -105,7 +130,7 @@ public class MetricsRegistryImpl implements MetricsRegistry {
      * @param clazz the Class to be analyzed.
      * @return the loaded SourceMetadata.
      */
-    private SourceMetadata loadSourceMetadata(Class<?> clazz) {
+    SourceMetadata loadSourceMetadata(Class<?> clazz) {
         SourceMetadata metadata = metadataMap.get(clazz);
         if (metadata == null) {
             metadata = new SourceMetadata(clazz);
@@ -156,34 +181,20 @@ public class MetricsRegistryImpl implements MetricsRegistry {
             return;
         }
 
-        synchronized (lockStripe.getLock(source)) {
-            ProbeInstance probeInstance = probeInstances.get(name);
-            if (probeInstance == null) {
-                probeInstance = new ProbeInstance<S>(name, source, function);
-                probeInstances.put(name, probeInstance);
-            } else {
-                logOverwrite(probeInstance);
-            }
-
-            if (logger.isFinestEnabled()) {
-                logger.finest("Registered probeInstance " + name);
-            }
-
-            probeInstance.source = source;
-            probeInstance.function = function;
-        }
-
-        incrementMod();
-    }
-
-    private void incrementMod() {
-        for (; ; ) {
-            SortedProbeInstances current = sortedProbeInstancesRef.get();
-            SortedProbeInstances update = new SortedProbeInstances(current.mod + 1);
-            if (sortedProbeInstancesRef.compareAndSet(current, update)) {
-                break;
+        ProbeInstance probeInstance = probeInstances.putIfAbsent(name, new ProbeInstance<S>(name, source, function));
+        if (probeInstance != null) {
+            logOverwrite(probeInstance);
+            synchronized (lockStripe.getLock(source)) {
+                probeInstance.source = source;
+                probeInstance.function = function;
             }
         }
+
+        if (logger.isFinestEnabled()) {
+            logger.finest("Registered probeInstance " + name);
+        }
+
+        modCount.incrementAndGet();
     }
 
     private void logOverwrite(ProbeInstance probeInstance) {
@@ -239,7 +250,7 @@ public class MetricsRegistryImpl implements MetricsRegistry {
         }
 
         if (changed) {
-            incrementMod();
+            modCount.incrementAndGet();
         }
     }
 
@@ -271,20 +282,20 @@ public class MetricsRegistryImpl implements MetricsRegistry {
     }
 
     List<ProbeInstance> getSortedProbeInstances() {
-        for (; ; ) {
-            SortedProbeInstances current = sortedProbeInstancesRef.get();
-            if (current.probeInstances != null) {
-                return current.probeInstances;
-            }
-
-            List<ProbeInstance> probeInstanceList = new ArrayList<ProbeInstance>(probeInstances.values());
-            Collections.sort(probeInstanceList, COMPARATOR);
-
-            SortedProbeInstances update = new SortedProbeInstances(current.mod, probeInstanceList);
-            if (sortedProbeInstancesRef.compareAndSet(current, update)) {
-                return update.probeInstances;
-            }
+        long modCountLocal = modCount.get();
+        final SortedProbeInstances sortedInstancesOld = this.sortedProbeInstances.get();
+        final SortedProbeInstances sortedInstances;
+        if (sortedInstancesOld.mod < modCountLocal) {
+            List<ProbeInstance> sorted = new ArrayList<ProbeInstance>(probeInstances.values());
+            Collections.sort(sorted, COMPARATOR);
+            sortedInstances = new SortedProbeInstances(modCountLocal, sorted);
+            // if some other thread sorted in the meantime, ignore our sorting
+            this.sortedProbeInstances.compareAndSet(sortedInstancesOld, sortedInstances);
+        } else {
+            sortedInstances = sortedInstancesOld;
         }
+        // let's use whatever sorted version we have, it's non-null
+        return sortedInstances.probeInstances;
     }
 
     private void render(ProbeRenderer renderer, ProbeInstance probeInstance) {
@@ -311,26 +322,30 @@ public class MetricsRegistryImpl implements MetricsRegistry {
     }
 
     @Override
-    public void scheduleAtFixedRate(final Runnable publisher, long period, TimeUnit timeUnit) {
-        scheduledExecutorService.scheduleAtFixedRate(publisher, 0, period, timeUnit);
+    public void scheduleAtFixedRate(Runnable publisher, long period, TimeUnit timeUnit, ProbeLevel probeLevel) {
+        if (!probeLevel.isEnabled(minimumLevel)) {
+            return;
+        }
+        scheduler.scheduleAtFixedRate(publisher, 0, period, timeUnit);
     }
 
     public void shutdown() {
-        scheduledExecutorService.shutdown();
+        // we want to immediately terminate; we don't want to wait till pending tasks have completed.
+        scheduler.shutdownNow();
     }
 
     private static class SortedProbeInstances {
         private final long mod;
         private final List<ProbeInstance> probeInstances;
 
-        private SortedProbeInstances(long mod) {
-            this.mod = mod;
-            this.probeInstances = null;
-        }
-
-        public SortedProbeInstances(long mod, List<ProbeInstance> probeInstances) {
+        SortedProbeInstances(long mod, @Nonnull List<ProbeInstance> probeInstances) {
             this.mod = mod;
             this.probeInstances = probeInstances;
         }
+    }
+
+    @Override
+    public ProbeBuilder newProbeBuilder() {
+        return new ProbeBuilderImpl(this);
     }
 }

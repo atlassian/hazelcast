@@ -1,5 +1,5 @@
 <!--
-  ~ Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+  ~ Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
   ~ you may not use this file except in compliance with the License.
@@ -26,12 +26,12 @@
     <parent>
         <groupId>com.hazelcast</groupId>
         <artifactId>hazelcast-root</artifactId>
-        <version>3.8-SNAPSHOT</version>
+        <version>3.12.14-atlassian-1-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
     <properties>
-        <!-- needed for checkstyle/findbugs -->
+        <!-- needed for CheckStyle -->
         <main.basedir>${project.parent.basedir}</main.basedir>
 
         <jsp.api.version>2.2.1</jsp.api.version>
@@ -71,10 +71,13 @@
                 <artifactId>animal-sniffer-maven-plugin</artifactId>
                 <version>${maven.animal.sniffer.plugin.version}</version>
                 <configuration>
+                    <annotations>
+                        <annotation>com.hazelcast.internal.RequiresJdk8</annotation>
+                    </annotations>
                     <signature>
                         <groupId>org.codehaus.mojo.signature</groupId>
                         <artifactId>java16</artifactId>
-                        <version>1.0</version>
+                        <version>${maven.animal.sniffer.signature16.version}</version>
                     </signature>
                     <ignores>
                         <ignore>sun.misc.Unsafe</ignore>
@@ -125,18 +128,21 @@
                                 <Import-Package>
                                     !org.junit,
                                     !com.hazelcast.*,
-                                    !com.eclipsesource.json,
+                                    !com.fasterxml.jackson.*,
+                                    !org.snakeyaml.*,
                                     sun.misc;resolution:=optional,
                                     javax.cache;resolution:=optional,
                                     javax.cache.*;resolution:=optional,
                                     org.apache.log4j;resolution:=optional,
+                                    org.apache.log4j.spi;resolution:=optional,
                                     org.apache.logging.log4j;resolution:=optional,
-                                    org.apache.logging.log4j.*;resolution:=optional,
+                                    org.apache.logging.log4j.spi;resolution:=optional,
                                     org.slf4j;resolution:=optional,
                                     org.codehaus.groovy.jsr223;resolution:=optional,
                                     org.jruby.embed.jsr223;resolution:=optional,
                                     *
                                 </Import-Package>
+                                <Bundle-Name>Hazelcast(Core)</Bundle-Name>
                             </instructions>
                         </configuration>
                     </execution>
@@ -152,12 +158,15 @@
                         <index>true</index>
                         <compress>true</compress>
                         <manifest>
-                            <mainClass>com.hazelcast.core.server.StartServer</mainClass>
+                            <mainClass>${hazelcast.serverMainClass}</mainClass>
                             <!--<addClasspath>true</addClasspath>-->
                             <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
                             <addDefaultSpecificationEntries>true</addDefaultSpecificationEntries>
                         </manifest>
                         <manifestFile>${project.build.outputDirectory}/META-INF/MANIFEST.MF</manifestFile>
+                        <manifestEntries>
+                            <Automatic-Module-Name>com.hazelcast.core</Automatic-Module-Name>
+                        </manifestEntries>
                     </archive>
                     <excludes>
                         <exclude>**/*.html</exclude>
@@ -191,8 +200,12 @@
                             <target>
                                 <copy file="${basedir}/src/main/resources/hazelcast-default.xml"
                                       tofile="${basedir}/target/hazelcast.xml"/>
+                                <copy file="${basedir}/src/main/resources/hazelcast-default.yaml"
+                                      tofile="${basedir}/target/hazelcast.yaml"/>
                                 <copy file="${basedir}/src/main/resources/hazelcast-full-example.xml"
                                       tofile="${basedir}/target/hazelcast-full-example.xml"/>
+                                <copy file="${basedir}/src/main/resources/hazelcast-full-example.yaml"
+                                      tofile="${basedir}/target/hazelcast-full-example.yaml"/>
                             </target>
                         </configuration>
                     </execution>
@@ -201,7 +214,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
-                <version>2.3</version>
+                <version>${maven.shade.plugin.version}</version>
                 <executions>
                     <execution>
                         <phase>package</phase>
@@ -215,16 +228,77 @@
                             <shadeTestJar>true</shadeTestJar>
                             <artifactSet>
                                 <includes>
-                                    <include>com.eclipsesource.minimal-json:minimal-json</include>
+                                    <include>com.fasterxml.jackson.core:jackson-core</include>
+                                    <include>org.snakeyaml:snakeyaml-engine</include>
                                     <include>com.hazelcast:hazelcast-client-protocol</include>
                                 </includes>
                             </artifactSet>
+                            <!-- ATLASSIAN - CONFSRVDEV-28686 removing shading
                             <relocations>
                                 <relocation>
-                                    <pattern>com.eclipsesource.json</pattern>
-                                    <shadedPattern>com.hazelcast.com.eclipsesource.json</shadedPattern>
+                                    <pattern>com.fasterxml.jackson</pattern>
+                                    <shadedPattern>com.hazelcast.com.fasterxml.jackson</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>org.snakeyaml</pattern>
+                                    <shadedPattern>com.hazelcast.org.snakeyaml</shadedPattern>
                                 </relocation>
                             </relocations>
+                            -->
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            </transformers>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>3.0.2</version>
+                <executions>
+                    <execution>
+                        <phase>process-sources</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <resources>
+                                <resource>
+                                    <directory>src/main/template</directory>
+                                    <includes>
+                                        <include>**/*.java</include>
+                                    </includes>
+                                    <filtering>true</filtering>
+                                </resource>
+                            </resources>
+                            <outputDirectory>src/main/java</outputDirectory>
+                            <overwrite>true</overwrite>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-clean-plugin</artifactId>
+                <version>3.0.0</version>
+                <executions>
+                    <execution>
+                        <phase>clean</phase>
+                        <goals>
+                            <goal>clean</goal>
+                        </goals>
+                        <configuration>
+                            <filesets>
+                                <fileset>
+                                    <directory>src/main/java</directory>
+                                    <includes>
+                                        <include>**/Generated*</include>
+                                    </includes>
+                                </fileset>
+                            </filesets>
                         </configuration>
                     </execution>
                 </executions>
@@ -233,6 +307,18 @@
     </build>
 
     <dependencies>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-core</artifactId>
+            <version>${jackson.version}</version>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.snakeyaml</groupId>
+            <artifactId>snakeyaml-engine</artifactId>
+            <version>${snakeyaml.engine.version}</version>
+            <scope>compile</scope>
+        </dependency>
         <dependency>
             <groupId>org.hamcrest</groupId>
             <artifactId>hamcrest-library</artifactId>
@@ -243,20 +329,14 @@
             <groupId>javax.cache</groupId>
             <artifactId>cache-tests</artifactId>
             <classifier>tests</classifier>
-            <version>1.0.0</version>
+            <version>${jsr107.tck.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>javax.cache</groupId>
             <artifactId>cache-tests</artifactId>
-            <version>1.0.0</version>
+            <version>${jsr107.tck.version}</version>
             <scope>test</scope>
-            <exclusions>
-                <exclusion>
-                    <artifactId>test-domain</artifactId>
-                    <groupId>javax.cache</groupId>
-                </exclusion>
-            </exclusions>
         </dependency>
         <dependency>
             <groupId>log4j</groupId>
@@ -292,7 +372,7 @@
         <dependency>
             <groupId>net.spy</groupId>
             <artifactId>spymemcached</artifactId>
-            <version>2.10.2</version>
+            <version>2.12.2</version>
             <scope>test</scope>
         </dependency>
 
@@ -311,13 +391,6 @@
         </dependency>
 
         <dependency>
-            <groupId>com.eclipsesource.minimal-json</groupId>
-            <artifactId>minimal-json</artifactId>
-            <version>0.9.4</version>
-            <scope>compile</scope>
-        </dependency>
-
-        <dependency>
             <groupId>com.hazelcast</groupId>
             <artifactId>hazelcast-client-protocol</artifactId>
             <version>${client.protocol.version}</version>
@@ -325,33 +398,16 @@
         </dependency>
 
         <dependency>
-            <groupId>javax.servlet.jsp</groupId>
-            <artifactId>javax.servlet.jsp-api</artifactId>
-            <version>${jsp.api.version}</version>
+            <groupId>org.nanohttpd</groupId>
+            <artifactId>nanohttpd</artifactId>
+            <version>2.3.1</version>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>javax.servlet</groupId>
-            <artifactId>javax.servlet-api</artifactId>
-            <version>${servlet.api.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.eclipse.jetty</groupId>
-            <artifactId>jetty-server</artifactId>
-            <version>8.1.16.v20140903</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.eclipse.jetty</groupId>
-            <artifactId>jetty-webapp</artifactId>
-            <version>8.1.16.v20140903</version>
-            <scope>test</scope>
-        </dependency>
+
         <dependency>
             <groupId>org.apache.httpcomponents</groupId>
             <artifactId>httpclient</artifactId>
-            <version>4.3.1</version>
+            <version>${http.components.version}</version>
             <scope>test</scope>
         </dependency>
 
@@ -409,27 +465,18 @@
             <version>${javax.inject.version}</version>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>org.reflections</groupId>
-            <artifactId>reflections</artifactId>
-            <version>0.9.10</version>
-            <scope>test</scope>
-            <exclusions>
-                <exclusion>
-                    <groupId>org.slf4j</groupId>
-                    <artifactId>slf4j-api</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>org.slf4j</groupId>
-                    <artifactId>slf4j-simple</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
         <!-- HyperLogLog testing -->
         <dependency>
             <groupId>org.hdrhistogram</groupId>
             <artifactId>HdrHistogram</artifactId>
             <version>2.1.4</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Bitmap index benchmarking -->
+        <dependency>
+            <groupId>org.roaringbitmap</groupId>
+            <artifactId>RoaringBitmap</artifactId>
+            <version>0.8.11</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

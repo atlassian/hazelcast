@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,6 @@ import com.hazelcast.spi.serialization.SerializationService;
 
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -32,12 +31,12 @@ import static com.hazelcast.util.ExceptionUtil.rethrow;
 public final class CompletedFuture<V> implements InternalCompletableFuture<V> {
 
     private final SerializationService serializationService;
-    private final ExecutorService asyncExecutor;
+    private final Executor userExecutor;
     private final Object value;
 
-    public CompletedFuture(SerializationService serializationService, Object value, ExecutorService asyncExecutor) {
+    public CompletedFuture(SerializationService serializationService, Object value, Executor userExecutor) {
         this.serializationService = serializationService;
-        this.asyncExecutor = asyncExecutor;
+        this.userExecutor = userExecutor;
         this.value = value;
     }
 
@@ -97,7 +96,7 @@ public final class CompletedFuture<V> implements InternalCompletableFuture<V> {
 
     @Override
     public void andThen(ExecutionCallback<V> callback) {
-        andThen(callback, asyncExecutor);
+        andThen(callback, userExecutor);
     }
 
     @Override

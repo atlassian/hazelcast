@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,37 +28,54 @@ import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+import com.hazelcast.nio.serialization.impl.Versioned;
 import com.hazelcast.spi.Operation;
-import com.hazelcast.spi.impl.MutatingOperation;
+import com.hazelcast.spi.ServiceNamespace;
+import com.hazelcast.spi.serialization.SerializationService;
 
 import java.io.IOException;
+import java.util.Collection;
 
 import static com.hazelcast.map.impl.record.Records.buildRecordInfo;
 
 /**
  * Replicates all IMap-states of this partition to a replica partition.
  */
-public class MapReplicationOperation extends Operation implements MutatingOperation, IdentifiedDataSerializable {
+public class MapReplicationOperation
+        extends Operation
+        implements IdentifiedDataSerializable, Versioned {
 
     // keep these fields `protected`, extended in another context.
     protected final MapReplicationStateHolder mapReplicationStateHolder = new MapReplicationStateHolder(this);
     protected final WriteBehindStateHolder writeBehindStateHolder = new WriteBehindStateHolder(this);
+    protected final MapNearCacheStateHolder mapNearCacheStateHolder = new MapNearCacheStateHolder(this);
 
     public MapReplicationOperation() {
     }
 
     public MapReplicationOperation(PartitionContainer container, int partitionId, int replicaIndex) {
         setPartitionId(partitionId).setReplicaIndex(replicaIndex);
-
-        mapReplicationStateHolder.prepare(container, replicaIndex);
-        writeBehindStateHolder.prepare(container, replicaIndex);
+        Collection<ServiceNamespace> namespaces = container.getAllNamespaces(replicaIndex);
+        this.mapReplicationStateHolder.prepare(container, namespaces, replicaIndex);
+        this.writeBehindStateHolder.prepare(container, namespaces, replicaIndex);
+        this.mapNearCacheStateHolder.prepare(container, namespaces, replicaIndex);
     }
 
+    public MapReplicationOperation(PartitionContainer container, Collection<ServiceNamespace> namespaces,
+                                   int partitionId, int replicaIndex) {
+        setPartitionId(partitionId).setReplicaIndex(replicaIndex);
+        this.mapReplicationStateHolder.prepare(container, namespaces, replicaIndex);
+        this.writeBehindStateHolder.prepare(container, namespaces, replicaIndex);
+        this.mapNearCacheStateHolder.prepare(container, namespaces, replicaIndex);
+    }
 
     @Override
     public void run() {
         mapReplicationStateHolder.applyState();
         writeBehindStateHolder.applyState();
+        if (getReplicaIndex() == 0) {
+            mapNearCacheStateHolder.applyState();
+        }
     }
 
     @Override
@@ -67,20 +84,23 @@ public class MapReplicationOperation extends Operation implements MutatingOperat
     }
 
     @Override
-    protected void readInternal(final ObjectDataInput in) throws IOException {
-        mapReplicationStateHolder.readData(in);
-        writeBehindStateHolder.readData(in);
-    }
-
-    @Override
     protected void writeInternal(final ObjectDataOutput out) throws IOException {
         mapReplicationStateHolder.writeData(out);
         writeBehindStateHolder.writeData(out);
+        mapNearCacheStateHolder.writeData(out);
     }
 
-    RecordReplicationInfo createRecordReplicationInfo(Data key, Record record, MapServiceContext mapServiceContext) {
+    @Override
+    protected void readInternal(final ObjectDataInput in) throws IOException {
+        mapReplicationStateHolder.readData(in);
+        writeBehindStateHolder.readData(in);
+        mapNearCacheStateHolder.readData(in);
+    }
+
+    RecordReplicationInfo toReplicationInfo(Record record, SerializationService ss) {
         RecordInfo info = buildRecordInfo(record);
-        return new RecordReplicationInfo(key, mapServiceContext.toData(record.getValue()), info);
+        Data dataValue = ss.toData(record.getValue());
+        return new RecordReplicationInfo(record.getKey(), dataValue, info);
     }
 
     RecordStore getRecordStore(String mapName) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,9 +22,9 @@ import java.util.Arrays;
 
 /**
  *
- * Control caching of de-serialized values. Caching makes query evaluation faster but it cost memory.
+ * Control caching of de-serialized values. Caching makes query evaluation faster but it costs memory.
  *
- * To maintain reusability cached values are used by read-only operations only and they are never
+ * To maintain reusability, cached values are used by read-only operations only and they are never
  * passed to user-code where they could be accidentally mutated. Users will always get a fresh object,
  * which they are free to mutate.
  *
@@ -42,7 +42,7 @@ public enum CacheDeserializedValues {
     NEVER,
 
     /**
-     * Cache values only when using search indexes.
+     * Cache values only when using search indexes
      *
      */
     INDEX_ONLY,
@@ -69,8 +69,8 @@ public enum CacheDeserializedValues {
         } else if ("ALWAYS".equals(upperCase)) {
             return ALWAYS;
         } else {
-            throw new IllegalArgumentException("Unknown CacheDeserializedValues option '" + string + ". "
-                    + "Possible options: " + Arrays.toString(CacheDeserializedValues.values()) + " .");
+            throw new IllegalArgumentException("Unknown CacheDeserializedValues option '" + string + "'. "
+                    + "Possible options: " + Arrays.toString(CacheDeserializedValues.values()));
         }
     }
 }

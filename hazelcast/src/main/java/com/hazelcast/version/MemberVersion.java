@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ package com.hazelcast.version;
 import com.hazelcast.internal.cluster.impl.ClusterDataSerializerHook;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.Version;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.util.StringUtil;
 
@@ -29,6 +28,8 @@ import java.util.Comparator;
 
 /**
  * Determines the Hazelcast codebase version in terms of major.minor.patch version.
+ *
+ * @since 3.8
  */
 @SuppressWarnings("checkstyle:magicnumber")
 public final class MemberVersion
@@ -87,7 +88,7 @@ public final class MemberVersion
     }
 
     public boolean isUnknown() {
-        return this.equals(UNKNOWN);
+        return this.major == 0 && this.minor == 0 && this.patch == 0;
     }
 
     @Override
@@ -159,7 +160,7 @@ public final class MemberVersion
 
     @Override
     public int getId() {
-        return ClusterDataSerializerHook.NODE_VERSION;
+        return ClusterDataSerializerHook.MEMBER_VERSION;
     }
 
     @Override
@@ -178,16 +179,9 @@ public final class MemberVersion
     }
 
     /**
-     * @return a {@link ClusterVersion} initialized with this {@code MemberVersion}'s major.minor version.
+     * @return a {@link Version} initialized with this {@code MemberVersion}'s major.minor version.
      */
-    public ClusterVersion asClusterVersion() {
-        return new ClusterVersion(major, minor);
-    }
-
-    /**
-     * @return the minor version of this {@code MemberVersion} as a {@link Version} object.
-     */
-    public Version asSerializationVersion() {
-        return new Version(minor);
+    public Version asVersion() {
+        return Version.of(major, minor);
     }
 }

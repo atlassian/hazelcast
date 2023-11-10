@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,8 +24,7 @@ import com.hazelcast.internal.eviction.EvictableEntryView;
  * @param <K> the type of the key
  * @param <V> the type of the value
  */
-public interface CacheEntryView<K, V>
-        extends EvictableEntryView<K, V> {
+public interface CacheEntryView<K, V> extends EvictableEntryView<K, V> {
 
     /**
      * Gets the key of the cache entry.
@@ -62,4 +61,10 @@ public interface CacheEntryView<K, V>
      */
     long getAccessHit();
 
+    /**
+     * Gets the expiry policy associated with this entry if there is one.
+     *
+     * @return the expiry policy associated with this entry or {@code null} if there is none
+     */
+    Object getExpiryPolicy();
 }

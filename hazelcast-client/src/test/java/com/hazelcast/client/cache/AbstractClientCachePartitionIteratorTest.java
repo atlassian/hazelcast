@@ -1,6 +1,22 @@
+/*
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.client.cache;
 
-import com.hazelcast.client.cache.impl.ClientCacheProxy;
+import com.hazelcast.cache.impl.ICacheInternal;
 import com.hazelcast.client.test.TestHazelcastFactory;
 import com.hazelcast.config.CacheConfig;
 import com.hazelcast.config.EvictionConfig;
@@ -41,14 +57,14 @@ public abstract class AbstractClientCachePartitionIteratorTest extends Hazelcast
 
     @Test
     public void test_HasNext_Returns_False_On_EmptyPartition() throws Exception {
-        ClientCacheProxy<Integer, Integer> cache = getCacheProxy();
+        ICacheInternal<Integer, Integer> cache = getCacheProxy();
         Iterator<Cache.Entry<Integer, Integer>> iterator = cache.iterator(10, 1, prefetchValues);
         assertFalse(iterator.hasNext());
     }
 
     @Test
     public void test_HasNext_Returns_True_On_NonEmptyPartition() throws Exception {
-        ClientCacheProxy<String, String> cache = getCacheProxy();
+        ICacheInternal<String, String> cache = getCacheProxy();
 
         String key = generateKeyForPartition(server, 1);
         String value = randomString();
@@ -60,7 +76,7 @@ public abstract class AbstractClientCachePartitionIteratorTest extends Hazelcast
 
     @Test
     public void test_Next_Returns_Value_On_NonEmptyPartition() throws Exception {
-        ClientCacheProxy<String, String> cache = getCacheProxy();
+        ICacheInternal<String, String> cache = getCacheProxy();
 
         String key = generateKeyForPartition(server, 1);
         String value = randomString();
@@ -73,7 +89,7 @@ public abstract class AbstractClientCachePartitionIteratorTest extends Hazelcast
 
     @Test
     public void test_Next_Returns_Value_On_NonEmptyPartition_and_HasNext_Returns_False_when_Item_Consumed() throws Exception {
-        ClientCacheProxy<String, String> cache = getCacheProxy();
+        ICacheInternal<String, String> cache = getCacheProxy();
 
         String key = generateKeyForPartition(server, 1);
         String value = randomString();
@@ -88,7 +104,7 @@ public abstract class AbstractClientCachePartitionIteratorTest extends Hazelcast
 
     @Test
     public void test_Next_Returns_Values_When_FetchSizeExceeds_On_NonEmptyPartition() throws Exception {
-        ClientCacheProxy<String, String> cache = getCacheProxy();
+        ICacheInternal<String, String> cache = getCacheProxy();
         String value = randomString();
         int count = 1000;
         for (int i = 0; i < count; i++) {
@@ -102,11 +118,11 @@ public abstract class AbstractClientCachePartitionIteratorTest extends Hazelcast
         }
     }
 
-    private <K, V> ClientCacheProxy<K, V> getCacheProxy() {
+    private <K, V> ICacheInternal<K, V> getCacheProxy() {
         String cacheName = randomString();
         CacheManager cacheManager = cachingProvider.getCacheManager();
         CacheConfig<K, V> config = new CacheConfig<K, V>();
         config.getEvictionConfig().setMaximumSizePolicy(EvictionConfig.MaxSizePolicy.ENTRY_COUNT).setSize(10000000);
-        return (ClientCacheProxy<K, V>) cacheManager.createCache(cacheName, config);
+        return (ICacheInternal<K, V>) cacheManager.createCache(cacheName, config);
     }
 }

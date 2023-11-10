@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -61,22 +61,24 @@ public class IssuesTest extends HazelcastTestSupport {
         int n = 1;
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(n);
 
-        final IMap<Integer, Integer> imap = factory.newHazelcastInstance(getConfig()).getMap("testIssue321_1");
-        final BlockingQueue<com.hazelcast.core.EntryEvent<Integer, Integer>> events1 = new LinkedBlockingQueue<com.hazelcast.core.EntryEvent<Integer, Integer>>();
-        final BlockingQueue<com.hazelcast.core.EntryEvent<Integer, Integer>> events2 = new LinkedBlockingQueue<com.hazelcast.core.EntryEvent<Integer, Integer>>();
-        imap.addEntryListener(new EntryAdapter<Integer, Integer>() {
+        final IMap<Integer, Integer> map = factory.newHazelcastInstance(getConfig()).getMap("testIssue321_1");
+        final BlockingQueue<com.hazelcast.core.EntryEvent<Integer, Integer>> events1
+                = new LinkedBlockingQueue<com.hazelcast.core.EntryEvent<Integer, Integer>>();
+        final BlockingQueue<com.hazelcast.core.EntryEvent<Integer, Integer>> events2
+                = new LinkedBlockingQueue<com.hazelcast.core.EntryEvent<Integer, Integer>>();
+        map.addEntryListener(new EntryAdapter<Integer, Integer>() {
             @Override
             public void entryAdded(com.hazelcast.core.EntryEvent<Integer, Integer> event) {
                 events2.add(event);
             }
         }, false);
-        imap.addEntryListener(new EntryAdapter<Integer, Integer>() {
+        map.addEntryListener(new EntryAdapter<Integer, Integer>() {
             @Override
             public void entryAdded(com.hazelcast.core.EntryEvent<Integer, Integer> event) {
                 events1.add(event);
             }
         }, true);
-        imap.put(1, 1);
+        map.put(1, 1);
         final com.hazelcast.core.EntryEvent<Integer, Integer> event1 = events1.poll(10, TimeUnit.SECONDS);
         final com.hazelcast.core.EntryEvent<Integer, Integer> event2 = events2.poll(10, TimeUnit.SECONDS);
         assertNotNull(event1);
@@ -91,8 +93,10 @@ public class IssuesTest extends HazelcastTestSupport {
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(n);
 
         final IMap<Integer, Integer> imap = factory.newHazelcastInstance(getConfig()).getMap("testIssue321_2");
-        final BlockingQueue<com.hazelcast.core.EntryEvent<Integer, Integer>> events1 = new LinkedBlockingQueue<com.hazelcast.core.EntryEvent<Integer, Integer>>();
-        final BlockingQueue<com.hazelcast.core.EntryEvent<Integer, Integer>> events2 = new LinkedBlockingQueue<com.hazelcast.core.EntryEvent<Integer, Integer>>();
+        final BlockingQueue<com.hazelcast.core.EntryEvent<Integer, Integer>> events1
+                = new LinkedBlockingQueue<com.hazelcast.core.EntryEvent<Integer, Integer>>();
+        final BlockingQueue<com.hazelcast.core.EntryEvent<Integer, Integer>> events2
+                = new LinkedBlockingQueue<com.hazelcast.core.EntryEvent<Integer, Integer>>();
         imap.addEntryListener(new EntryAdapter<Integer, Integer>() {
             @Override
             public void entryAdded(com.hazelcast.core.EntryEvent<Integer, Integer> event) {
@@ -115,7 +119,7 @@ public class IssuesTest extends HazelcastTestSupport {
         assertNull(event2.getValue());
     }
 
-    // Verify an event including values and an event excluding values are received, in any order.
+    // verify an event including values and an event excluding values are received, in any order
     @Test
     public void testIssue321_3() throws Exception {
         int n = 1;
@@ -171,9 +175,6 @@ public class IssuesTest extends HazelcastTestSupport {
         assertEquals(0, map.entrySet().size());
     }
 
-    /*
-       github issue 174
-    */
     @Test
     public void testIssue174NearCacheContainsKeySingleNode() {
         int n = 1;
@@ -273,7 +274,6 @@ public class IssuesTest extends HazelcastTestSupport {
 
         @Override
         public void afterGet(Object value) {
-
         }
 
         @Override
@@ -286,7 +286,6 @@ public class IssuesTest extends HazelcastTestSupport {
 
         @Override
         public void afterPut(Object value) {
-
         }
 
         @Override
@@ -296,7 +295,6 @@ public class IssuesTest extends HazelcastTestSupport {
 
         @Override
         public void afterRemove(Object value) {
-
         }
     }
 
@@ -305,7 +303,7 @@ public class IssuesTest extends HazelcastTestSupport {
         int n = 1;
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(n);
         final HazelcastInstance instance = factory.newHazelcastInstance(getConfig());
-        final IMap map = instance.getMap(randomString());
+        final IMap<CompositeKey, String> map = instance.getMap(randomString());
         final CompositeKey key = new CompositeKey();
         map.put(key, "value");
         map.clear();
@@ -314,6 +312,7 @@ public class IssuesTest extends HazelcastTestSupport {
     }
 
     public static class CompositeKey implements Serializable {
+
         static boolean hashCodeCalled = false;
         static boolean equalsCalled = false;
 

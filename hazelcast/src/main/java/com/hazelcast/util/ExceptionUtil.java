@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,8 +19,10 @@ package com.hazelcast.util;
 import com.hazelcast.core.HazelcastException;
 import com.hazelcast.instance.OutOfMemoryErrorDispatcher;
 
+import javax.annotation.Nullable;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.util.concurrent.ExecutionException;
 
@@ -31,6 +33,24 @@ public final class ExceptionUtil {
 
     private static final String EXCEPTION_SEPARATOR = "------ submitted from ------";
     private static final String EXCEPTION_MESSAGE_SEPARATOR = "------ %MSG% ------";
+    private static final ExceptionWrapper<RuntimeException> HAZELCAST_EXCEPTION_WRAPPER =
+            new ExceptionWrapper<RuntimeException>() {
+                @Override
+                public RuntimeException create(Throwable throwable, String message) {
+                    if (message != null) {
+                        return new HazelcastException(message, throwable);
+                    } else {
+                        return new HazelcastException(throwable);
+                    }
+                }
+            };
+
+    /**
+     * Interface used by rethrow/peel to wrap the peeled exception
+     */
+    public interface ExceptionWrapper<T extends Throwable> {
+        T create(Throwable throwable, String message);
+    }
 
     private ExceptionUtil() {
     }
@@ -49,10 +69,46 @@ public final class ExceptionUtil {
     }
 
     public static RuntimeException peel(final Throwable t) {
-        return (RuntimeException) peel(t, null);
+        return (RuntimeException) peel(t, null, null, HAZELCAST_EXCEPTION_WRAPPER);
     }
 
-    public static <T extends Throwable> Throwable peel(final Throwable t, Class<T> allowedType) {
+    /**
+     * Processes {@code Throwable t} so that the returned {@code Throwable}'s type matches {@code allowedType} or
+     * {@code RuntimeException}. Processing may include unwrapping {@code t}'s cause hierarchy, wrapping it in a
+     * {@code HazelcastException} or just returning the same instance {@code t} if it is already an instance of
+     * {@code RuntimeException}.
+     *
+     * @param t           {@code Throwable} to be peeled
+     * @param allowedType the type expected to be returned; when {@code null}, this method returns instances
+     *                    of {@code RuntimeException}
+     * @param message     if not {@code null}, used as the message in the {@code HazelcastException} that
+     *                    may wrap the peeled {@code Throwable}
+     * @param <T>         expected type of {@code Throwable}
+     * @return the peeled {@code Throwable}
+     */
+    public static <T extends Throwable> Throwable peel(final Throwable t, Class<T> allowedType, String message) {
+        return peel(t, allowedType, message, HAZELCAST_EXCEPTION_WRAPPER);
+    }
+
+    /**
+     * Processes {@code Throwable t} so that the returned {@code Throwable}'s type matches {@code allowedType},
+     * {@code RuntimeException} or any {@code Throwable} returned by `exceptionWrapper`
+     * Processing may include unwrapping {@code t}'s cause hierarchy, wrapping it in a exception
+     * created by using exceptionWrapper or just returning the same instance {@code t}
+     * if it is already an instance of {@code RuntimeException}.
+     *
+     * @param t                {@code Throwable} to be peeled
+     * @param allowedType      the type expected to be returned; when {@code null}, this method returns instances
+     *                         of {@code RuntimeException} or <W>
+     * @param message          if not {@code null}, used as the message in {@code RuntimeException} that
+     *                         may wrap the peeled {@code Throwable}
+     * @param exceptionWrapper wraps the peeled code using this exceptionWrapper
+     * @param <W>              Type of the wrapper exception in exceptionWrapper
+     * @param <T>              allowed type of {@code Throwable}
+     * @return the peeled {@code Throwable}
+     */
+    public static <T, W extends Throwable> Throwable peel(final Throwable t, Class<T> allowedType,
+                                                          String message, ExceptionWrapper<W> exceptionWrapper) {
         if (t instanceof RuntimeException) {
             return t;
         }
@@ -60,9 +116,9 @@ public final class ExceptionUtil {
         if (t instanceof ExecutionException || t instanceof InvocationTargetException) {
             final Throwable cause = t.getCause();
             if (cause != null) {
-                return peel(cause, allowedType);
+                return peel(cause, allowedType, message, exceptionWrapper);
             } else {
-                return new HazelcastException(t);
+                return exceptionWrapper.create(t, message);
             }
         }
 
@@ -70,29 +126,22 @@ public final class ExceptionUtil {
             return t;
         }
 
-        return new HazelcastException(t);
+        return exceptionWrapper.create(t, message);
     }
 
     public static RuntimeException rethrow(final Throwable t) {
-        if (t instanceof Error) {
-            if (t instanceof OutOfMemoryError) {
-                OutOfMemoryErrorDispatcher.onOutOfMemory((OutOfMemoryError) t);
-            }
-            throw (Error) t;
-        } else {
-            throw peel(t);
-        }
+        rethrowIfError(t);
+        throw peel(t);
+    }
+
+    public static RuntimeException rethrow(final Throwable t, ExceptionWrapper<RuntimeException> exceptionWrapper) {
+        rethrowIfError(t);
+        throw (RuntimeException) peel(t, null, null, exceptionWrapper);
     }
 
     public static <T extends Throwable> RuntimeException rethrow(final Throwable t, Class<T> allowedType) throws T {
-        if (t instanceof Error) {
-            if (t instanceof OutOfMemoryError) {
-                OutOfMemoryErrorDispatcher.onOutOfMemory((OutOfMemoryError) t);
-            }
-            throw (Error) t;
-        } else {
-            throw (T) peel(t, allowedType);
-        }
+        rethrowIfError(t);
+        throw (T) peel(t, allowedType, null);
     }
 
     /**
@@ -100,15 +149,20 @@ public final class ExceptionUtil {
      */
     public static <T extends Throwable> RuntimeException rethrowAllowedTypeFirst(final Throwable t,
                                                                                  Class<T> allowedType) throws T {
+        rethrowIfError(t);
+        if (allowedType.isAssignableFrom(t.getClass())) {
+            throw (T) t;
+        } else {
+            throw peel(t);
+        }
+    }
+
+    private static void rethrowIfError(final Throwable t) {
         if (t instanceof Error) {
             if (t instanceof OutOfMemoryError) {
                 OutOfMemoryErrorDispatcher.onOutOfMemory((OutOfMemoryError) t);
             }
             throw (Error) t;
-        } else if (allowedType.isAssignableFrom(t.getClass())) {
-            throw (T) t;
-        } else {
-            throw peel(t);
         }
     }
 
@@ -178,5 +232,53 @@ public final class ExceptionUtil {
                 nextElement.getFileName(), nextElement.getLineNumber());
         System.arraycopy(localSideStackTrace, 1, newStackTrace, remoteStackTrace.length + 2, localSideStackTrace.length - 1);
         throwable.setStackTrace(newStackTrace);
+    }
+
+    /**
+     * Tries to create the exception with appropriate constructor in the following order.
+     * In all cases the cause is set (via constructor or via {@code initCause})
+     * new Throwable(String message, Throwable cause)
+     * new Throwable(Throwable cause)
+     * new Throwable(String message)
+     * new Throwable()
+     *
+     * @param exceptionClass class of the exception
+     * @param message        message to be pass to constructor of the exception
+     * @param cause          cause to be set to the exception
+     * @return {@code null} if can not find a constructor as described above, otherwise returns newly constructed exception
+     */
+    public static <T extends Throwable> T tryCreateExceptionWithMessageAndCause(Class<? extends Throwable> exceptionClass,
+                                                                                String message, @Nullable Throwable cause) {
+        try {
+            Constructor<? extends Throwable> constructor = exceptionClass.getConstructor(String.class, Throwable.class);
+            T clone = (T) constructor.newInstance(message, cause);
+            return clone;
+        } catch (Throwable ignored) {
+            EmptyStatement.ignore(ignored);
+        }
+        try {
+            Constructor<? extends Throwable> constructor = exceptionClass.getConstructor(Throwable.class);
+            T clone = (T) constructor.newInstance(cause);
+            return clone;
+        } catch (Throwable ignored) {
+            EmptyStatement.ignore(ignored);
+        }
+        try {
+            Constructor<? extends Throwable> constructor = exceptionClass.getConstructor(String.class);
+            T clone = (T) constructor.newInstance(message);
+            clone.initCause(cause);
+            return clone;
+        } catch (Throwable ignored) {
+            EmptyStatement.ignore(ignored);
+        }
+        try {
+            Constructor<? extends Throwable> constructor = exceptionClass.getConstructor();
+            T clone = (T) constructor.newInstance();
+            clone.initCause(cause);
+            return clone;
+        } catch (Throwable ignored) {
+            EmptyStatement.ignore(ignored);
+        }
+        return null;
     }
 }

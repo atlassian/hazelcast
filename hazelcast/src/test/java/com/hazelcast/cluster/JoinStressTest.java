@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,10 +25,11 @@ import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
 import com.hazelcast.instance.HazelcastInstanceFactory;
-import com.hazelcast.internal.cluster.impl.operations.MemberInfoUpdateOperation;
-import com.hazelcast.nio.ObjectDataInput;
-import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.serialization.StreamSerializer;
+import com.hazelcast.internal.cluster.impl.ClusterServiceImpl;
+import com.hazelcast.internal.util.RuntimeAvailableProcessors;
+import com.hazelcast.logging.ILogger;
+import com.hazelcast.logging.Logger;
+import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
@@ -39,31 +40,35 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.concurrent.locks.LockSupport;
 
+import static com.hazelcast.spi.properties.GroupProperty.MERGE_FIRST_RUN_DELAY_SECONDS;
+import static com.hazelcast.spi.properties.GroupProperty.MERGE_NEXT_RUN_DELAY_SECONDS;
+import static com.hazelcast.spi.properties.GroupProperty.TCP_JOIN_PORT_TRY_COUNT;
+import static com.hazelcast.spi.properties.GroupProperty.WAIT_SECONDS_BEFORE_JOIN;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
-
-/**
- * @author mdogan 6/17/13
- */
 
 @RunWith(HazelcastSerialClassRunner.class)
 @Category(NightlyTest.class)
 public class JoinStressTest extends HazelcastTestSupport {
+
+    private static final long TEN_MINUTES_IN_MILLIS = 10 * 60 * 1000L;
+    private ILogger logger = Logger.getLogger(JoinStressTest.class);
 
     @Before
     @After
@@ -71,18 +76,18 @@ public class JoinStressTest extends HazelcastTestSupport {
         HazelcastInstanceFactory.terminateAll();
     }
 
-    @Test
+    @Test(timeout = TEN_MINUTES_IN_MILLIS)
     public void testTCPIPJoinWithManyNodes() throws InterruptedException {
         testJoinWithManyNodes(false);
     }
 
-    @Test
+    @Test(timeout = TEN_MINUTES_IN_MILLIS)
     public void testMulticastJoinWithManyNodes() throws InterruptedException {
         testJoinWithManyNodes(true);
     }
 
-    @Test
-    public void testJoincompletesCorrectlyWhenMultipleNodesStartedParallel() throws Exception {
+    @Test(timeout = TEN_MINUTES_IN_MILLIS)
+    public void testJoinCompletesCorrectlyWhenMultipleNodesStartedParallel() throws Exception {
         int count = 10;
         final TestHazelcastInstanceFactory factory = new TestHazelcastInstanceFactory(count);
         final HazelcastInstance[] instances = new HazelcastInstance[count];
@@ -93,7 +98,7 @@ public class JoinStressTest extends HazelcastTestSupport {
             new Thread(new Runnable() {
                 @Override
                 public void run() {
-                    instances[index] = factory.newHazelcastInstance();
+                    instances[index] = factory.newHazelcastInstance(createConfig());
                     latch.countDown();
                 }
             }).start();
@@ -101,7 +106,7 @@ public class JoinStressTest extends HazelcastTestSupport {
 
         assertOpenEventually(latch);
         for (int i = 0; i < count; i++) {
-            assertClusterSize(count, instances[i]);
+            assertClusterSizeEventually(count, instances[i]);
         }
     }
 
@@ -111,14 +116,14 @@ public class JoinStressTest extends HazelcastTestSupport {
         final CountDownLatch latch = new CountDownLatch(nodeCount);
         final AtomicReferenceArray<HazelcastInstance> instances = new AtomicReferenceArray<HazelcastInstance>(nodeCount);
 
-        ExecutorService ex = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
+        ExecutorService ex = Executors.newFixedThreadPool(RuntimeAvailableProcessors.get() * 2);
         for (int i = 0; i < nodeCount; i++) {
             final int portSeed = i;
             ex.execute(new Runnable() {
                 public void run() {
                     sleepRandom(1, 1000);
 
-                    Config config = new Config();
+                    Config config = createConfig();
                     initNetworkConfig(config.getNetworkConfig(), basePort, portSeed, multicast, nodeCount);
 
                     HazelcastInstance h = Hazelcast.newHazelcastInstance(config);
@@ -137,8 +142,16 @@ public class JoinStressTest extends HazelcastTestSupport {
         for (int i = 0; i < nodeCount; i++) {
             HazelcastInstance hz = instances.get(i);
             assertNotNull(hz);
-            assertEquals(nodeCount, hz.getCluster().getMembers().size());
+            logEvaluatedMember(hz);
+            assertClusterSizeEventually(nodeCount, hz);
         }
+    }
+
+    private Config createConfig() {
+        Config config = new Config();
+        config.setProperty(MERGE_FIRST_RUN_DELAY_SECONDS.getName(), "3");
+        config.setProperty(MERGE_NEXT_RUN_DELAY_SECONDS.getName(), "3");
+        return config;
     }
 
     private static void sleepRandom(int min, int max) {
@@ -146,12 +159,12 @@ public class JoinStressTest extends HazelcastTestSupport {
         LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(rand));
     }
 
-    @Test
+    @Test(timeout = TEN_MINUTES_IN_MILLIS)
     public void testTCPIPJoinWithManyNodesMultipleGroups() throws InterruptedException {
         testJoinWithManyNodesMultipleGroups(false);
     }
 
-    @Test
+    @Test(timeout = TEN_MINUTES_IN_MILLIS)
     public void testMulticastJoinWithManyNodesMultipleGroups() throws InterruptedException {
         testJoinWithManyNodesMultipleGroups(true);
     }
@@ -168,14 +181,14 @@ public class JoinStressTest extends HazelcastTestSupport {
             groups.put("group-" + i, new AtomicInteger(0));
         }
 
-        ExecutorService ex = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
+        ExecutorService ex = Executors.newFixedThreadPool(RuntimeAvailableProcessors.get() * 2);
         for (int i = 0; i < nodeCount; i++) {
             final int portSeed = i;
             ex.execute(new Runnable() {
                 public void run() {
                     sleepRandom(1, 1000);
 
-                    Config config = new Config();
+                    Config config = createConfig();
                     String name = "group-" + (int) (Math.random() * groupCount);
                     config.getGroupConfig().setName(name);
 
@@ -198,16 +211,28 @@ public class JoinStressTest extends HazelcastTestSupport {
         for (int i = 0; i < nodeCount; i++) {
             HazelcastInstance hz = instances.get(i);
             assertNotNull(hz);
+            logEvaluatedMember(hz);
 
-            int clusterSize = hz.getCluster().getMembers().size();
-            String groupName = hz.getConfig().getGroupConfig().getName();
-            int shouldBeClusterSize = groups.get(groupName).get();
-            assertEquals(groupName + ": ", shouldBeClusterSize, clusterSize);
+            final int clusterSize = hz.getCluster().getMembers().size();
+            final String groupName = hz.getConfig().getGroupConfig().getName();
+            final int shouldBeClusterSize = groups.get(groupName).get();
+            assertTrueEventually(new AssertTask() {
+                @Override
+                public void run()
+                        throws Exception {
+                    assertEquals(groupName + ": ", shouldBeClusterSize, clusterSize);
+                }
+            });
         }
     }
 
-    private void initNetworkConfig(NetworkConfig networkConfig, int basePort, int portSeed, boolean multicast, int nodeCount) {
+    private void logEvaluatedMember(HazelcastInstance hz) {
+        ClusterServiceImpl instanceClusterService = getNode(hz).getClusterService();
+        logger.info("Evaluating member: " + hz + " " + hz.getLocalEndpoint().getSocketAddress() + " with memberList "
+                + instanceClusterService.getMemberListString());
+    }
 
+    private void initNetworkConfig(NetworkConfig networkConfig, int basePort, int portSeed, boolean multicast, int nodeCount) {
         networkConfig.setPortAutoIncrement(false);
         networkConfig.setPort(basePort + portSeed);
 
@@ -227,44 +252,6 @@ public class JoinStressTest extends HazelcastTestSupport {
         }
         Collections.sort(members);
         tcpIpConfig.setMembers(members);
-    }
-
-    public class MemberInfoUpdateOperationSerializer implements StreamSerializer<MemberInfoUpdateOperation> {
-        @Override
-        public void write(ObjectDataOutput out, MemberInfoUpdateOperation object) throws IOException {
-            object.writeData(out);
-        }
-
-        @Override
-        public MemberInfoUpdateOperation read(ObjectDataInput in) throws IOException {
-            final DelayedMemberInfoUpdateOperation operation = new DelayedMemberInfoUpdateOperation();
-            operation.readData(in);
-            return operation;
-        }
-
-        @Override
-        public int getTypeId() {
-            return 9999;
-        }
-
-        @Override
-        public void destroy() {
-
-        }
-    }
-
-    public static class DelayedMemberInfoUpdateOperation extends MemberInfoUpdateOperation {
-
-        public DelayedMemberInfoUpdateOperation() {
-        }
-
-        @Override
-        public void run() throws Exception {
-            if (memberInfos.size() == 3 && getNodeEngine().getThisAddress().getPort() % 3 == 0) {
-                Thread.sleep(500);
-            }
-            super.run();
-        }
     }
 
     @Test(timeout = 300000)
@@ -314,5 +301,58 @@ public class JoinStressTest extends HazelcastTestSupport {
         for (int i = 0; i < numThreads; i++) {
             threads[i].join();
         }
+    }
+
+    @Test
+    public void testTcpJoin_whenInitialMembersTerminated_duringStartup() throws Exception {
+        testJoin_whenInitialMembersTerminated_duringStartup(false);
+    }
+
+    @Test
+    public void testMulticastJoin_whenInitialMembersTerminated_duringStartup() throws Exception {
+        testJoin_whenInitialMembersTerminated_duringStartup(true);
+    }
+
+    private void testJoin_whenInitialMembersTerminated_duringStartup(boolean multicast) throws Exception {
+        int nodeCount = 5;
+
+        final Config config = new Config();
+        config.setProperty(WAIT_SECONDS_BEFORE_JOIN.getName(), WAIT_SECONDS_BEFORE_JOIN.getDefaultValue());
+        config.setProperty(TCP_JOIN_PORT_TRY_COUNT.getName(), String.valueOf(nodeCount));
+        JoinConfig join = config.getNetworkConfig().getJoin();
+        join.getMulticastConfig().setEnabled(multicast);
+        join.getTcpIpConfig().setEnabled(!multicast).clear().addMember("127.0.0.1");
+
+        final HazelcastInstance[] instances = new HazelcastInstance[nodeCount - 1];
+        for (int i = 0; i < instances.length; i++) {
+            instances[i] = Hazelcast.newHazelcastInstance(config);
+        }
+
+        Callable<HazelcastInstance> newInstanceTask = new Callable<HazelcastInstance>() {
+            @Override
+            public HazelcastInstance call() {
+                return Hazelcast.newHazelcastInstance(config);
+            }
+        };
+
+        Future<HazelcastInstance> future1 = spawn(newInstanceTask);
+        Future<HazelcastInstance> future2 = spawn(newInstanceTask);
+
+        spawn(new Runnable() {
+            @Override
+            public void run() {
+                for (HazelcastInstance instance : instances) {
+                    sleepRandom(500, 1000);
+                    instance.getLifecycleService().terminate();
+                }
+            }
+        });
+
+        assertCompletesEventually(future1);
+        assertCompletesEventually(future2);
+
+        HazelcastInstance instance1 = future1.get();
+        HazelcastInstance instance2 = future2.get();
+        assertClusterSizeEventually(2, instance1, instance2);
     }
 }

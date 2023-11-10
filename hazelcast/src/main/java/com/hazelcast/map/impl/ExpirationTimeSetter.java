@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,9 +19,8 @@ package com.hazelcast.map.impl;
 import com.hazelcast.config.MapConfig;
 import com.hazelcast.map.impl.record.Record;
 
-import java.util.concurrent.TimeUnit;
-
 import static com.hazelcast.util.Preconditions.checkNotNegative;
+import static java.util.concurrent.TimeUnit.SECONDS;
 
 /**
  * Utility methods for setting TTL and max idle seconds.
@@ -34,22 +33,21 @@ public final class ExpirationTimeSetter {
     /**
      * Sets expiration time if statistics are enabled.
      */
-    public static void setExpirationTime(Record record, long maxIdleMillis) {
-        final long expirationTime = calculateExpirationTime(record, maxIdleMillis);
+    public static void setExpirationTime(Record record) {
+        long expirationTime = calculateExpirationTime(record);
         record.setExpirationTime(expirationTime);
     }
 
-    private static long calculateExpirationTime(Record record, long maxIdleMillis) {
-        // 1. Calculate TTL expiration time.
-        final long ttl = checkedTime(record.getTtl());
-        final long ttlExpirationTime = sumForExpiration(ttl, getLifeStartTime(record));
+    private static long calculateExpirationTime(Record record) {
+        // calculate TTL expiration time
+        long ttl = checkedTime(record.getTtl());
+        long ttlExpirationTime = sumForExpiration(ttl, getLifeStartTime(record));
 
-        // 2. Calculate idle expiration time.
-        maxIdleMillis = checkedTime(maxIdleMillis);
-        final long idleExpirationTime = sumForExpiration(maxIdleMillis, getIdlenessStartTime(record));
-
-        // 3. Select most nearest expiration time.
-        return Math.min(ttlExpirationTime, idleExpirationTime);
+        // calculate MaxIdle expiration time
+        long maxIdle = checkedTime(record.getMaxIdle());
+        long maxIdleExpirationTime = sumForExpiration(maxIdle, getIdlenessStartTime(record));
+        // select most nearest expiration time
+        return Math.min(ttlExpirationTime, maxIdleExpirationTime);
     }
 
     /**
@@ -60,7 +58,7 @@ public final class ExpirationTimeSetter {
      */
     public static long getIdlenessStartTime(Record record) {
         long lastAccessTime = record.getLastAccessTime();
-        return lastAccessTime == 0L ? record.getCreationTime() : lastAccessTime;
+        return lastAccessTime <= 0 ? record.getCreationTime() : lastAccessTime;
     }
 
     /**
@@ -70,11 +68,11 @@ public final class ExpirationTimeSetter {
      */
     public static long getLifeStartTime(Record record) {
         long lastUpdateTime = record.getLastUpdateTime();
-        return lastUpdateTime == 0L ? record.getCreationTime() : lastUpdateTime;
+        return lastUpdateTime <= 0 ? record.getCreationTime() : lastUpdateTime;
     }
 
     private static long checkedTime(long time) {
-        return time <= 0L ? Long.MAX_VALUE : time;
+        return time <= 0 ? Long.MAX_VALUE : time;
     }
 
     private static long sumForExpiration(long criteriaTime, long now) {
@@ -84,77 +82,95 @@ public final class ExpirationTimeSetter {
         if (criteriaTime == 0) {
             return Long.MAX_VALUE;
         }
-        final long expirationTime = criteriaTime + now;
-        // detect potential overflow.
-        if (expirationTime < 0L) {
+        long expirationTime = criteriaTime + now;
+        // detect potential overflow
+        if (expirationTime < 0) {
             return Long.MAX_VALUE;
         }
         return expirationTime;
     }
 
     /**
-     * Picks right TTL value.
-     * <p/>
-     * Decides which TTL to set;
-     * TTL from config or put operation.
-     */
-    public static long pickTTL(long ttlMillis, long ttlMillisFromConfig) {
-
-        if (ttlMillis < 0L && ttlMillisFromConfig > 0L) {
-            return ttlMillisFromConfig;
-        }
-
-        if (ttlMillis > 0L) {
-            return ttlMillis;
-        }
-
-        return 0L;
-    }
-
-    public static long calculateMaxIdleMillis(MapConfig mapConfig) {
-        final int maxIdleSeconds = mapConfig.getMaxIdleSeconds();
-        if (maxIdleSeconds == 0) {
-            return Long.MAX_VALUE;
-        }
-        return TimeUnit.SECONDS.toMillis(maxIdleSeconds);
-    }
-
-    public static long calculateTTLMillis(MapConfig mapConfig) {
-        final int timeToLiveSeconds = mapConfig.getTimeToLiveSeconds();
-        if (timeToLiveSeconds == 0) {
-            return Long.MAX_VALUE;
-        }
-        return TimeUnit.SECONDS.toMillis(timeToLiveSeconds);
-    }
-
-    /**
      * Updates records TTL and expiration time.
+     *
+     * @param operationTTLMillis user provided TTL during operation call like put with TTL
+     * @param record             record to be updated
+     * @param mapConfig          map config object
+     * @param consultMapConfig   give {@code true} if this update should consult map ttl configuration,
+     *                           otherwise give {@code false} to indicate update
      */
-    public static void updateExpiryTime(Record record, long ttl, MapConfig mapConfig) {
+    public static void setExpirationTimes(long operationTTLMillis, long operationMaxIdleMillis, Record record,
+                                          MapConfig mapConfig, boolean consultMapConfig) {
+        long ttlMillis = pickTTLMillis(operationTTLMillis, record.getTtl(), mapConfig, consultMapConfig);
+        long maxIdleMillis = pickMaxIdleMillis(operationMaxIdleMillis, record.getMaxIdle(), mapConfig, consultMapConfig);
 
-        // Preserve previously set TTL, if TTL < 0.
-        if (ttl < 0) {
-            ttl = record.getTtl();
-        }
-        // If TTL == 0, convert it to Long.MAX_VALUE.
-        ttl = checkedTime(ttl);
-
-        record.setTtl(ttl);
-
-        long maxIdleMillis = calculateMaxIdleMillis(mapConfig);
-        setExpirationTime(record, maxIdleMillis);
+        record.setTtl(ttlMillis);
+        record.setMaxIdle(maxIdleMillis);
+        setExpirationTime(record);
     }
 
     /**
-     * On backup partitions, this method delays key`s expiration.
+     * Decides if TTL millis should to be set on record.
+     *
+     * @param existingTTLMillis  existing TTL on record
+     * @param operationTTLMillis user provided TTL during operation call like put with TTL
+     * @param mapConfig          used to get configured TTL
+     * @param consultMapConfig   give {@code true} if this update should consult map ttl configuration,
+     *                           otherwise give {@code false}
+     * @return TTL value in millis to set to record
+     */
+    private static long pickTTLMillis(long operationTTLMillis, long existingTTLMillis, MapConfig mapConfig,
+                                      boolean consultMapConfig) {
+        // if user set operationTTLMillis when calling operation, use it
+        if (operationTTLMillis > 0) {
+            return checkedTime(operationTTLMillis);
+        }
+
+        // if this is the first creation of entry, try to get TTL from mapConfig
+        if (consultMapConfig && operationTTLMillis < 0 && mapConfig.getTimeToLiveSeconds() > 0) {
+            return checkedTime(SECONDS.toMillis(mapConfig.getTimeToLiveSeconds()));
+        }
+
+        // if operationTTLMillis < 0, keep previously set TTL on record
+        if (operationTTLMillis < 0) {
+            return checkedTime(existingTTLMillis);
+        }
+
+        // if we are here, entry should live forever
+        return Long.MAX_VALUE;
+    }
+
+    private static long pickMaxIdleMillis(long operationMaxIdleMillis, long existingMaxIdleMillis, MapConfig mapConfig,
+                                      boolean entryCreated) {
+        // if user set operationMaxIdleMillis when calling operation, use it
+        if (operationMaxIdleMillis > 0) {
+            return checkedTime(operationMaxIdleMillis);
+        }
+
+        // if this is the first creation of entry, try to get MaxIdle from mapConfig
+        if (entryCreated && operationMaxIdleMillis < 0 && mapConfig.getMaxIdleSeconds() > 0) {
+            return checkedTime(SECONDS.toMillis(mapConfig.getMaxIdleSeconds()));
+        }
+
+        // if operationMaxIdleMillis < 0, keep previously set MaxIdle on record
+        if (operationMaxIdleMillis < 0) {
+            return checkedTime(existingMaxIdleMillis);
+        }
+
+        // if we are here, entry should live forever
+        return Long.MAX_VALUE;
+    }
+
+    /**
+     * On backup partitions, this method delays key's expiration.
      */
     public static long calculateExpirationWithDelay(long timeInMillis, long delayMillis, boolean backup) {
         checkNotNegative(timeInMillis, "timeInMillis can't be negative");
 
         if (backup) {
-            final long delayedTime = timeInMillis + delayMillis;
-            // check for a potential long overflow.
-            if (delayedTime < 0L) {
+            long delayedTime = timeInMillis + delayMillis;
+            // check for a potential long overflow
+            if (delayedTime < 0) {
                 return Long.MAX_VALUE;
             } else {
                 return delayedTime;

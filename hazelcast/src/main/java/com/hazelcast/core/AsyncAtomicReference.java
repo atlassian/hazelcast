@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,18 +16,18 @@
 
 package com.hazelcast.core;
 
-import com.hazelcast.spi.annotation.Beta;
-
 /**
- * A {@link IAtomicReference} that exposes its operations using a {@link ICompletableFuture}
- * so it can be used in the reactive programming model approach.
+ * A {@link IAtomicReference} that exposes its operations using a
+ * {@link ICompletableFuture} so it can be used in the reactive programming
+ * model approach.
+ * <p>
+ * Instead of this interface, use the equivalent async methods in the public
+ * {@link IAtomicReference} interface. This interface has been deprecated
+ * and will be removed in a future version.
  *
- * Instead of this interface, use the equivalent async methods in the public {@link IAtomicReference} interface.
- * This interface has been deprecated and will be removed in a future version.
- *
+ * @param <E> the type of object referred to by this reference
  * @since 3.2
  */
-@Beta
 @Deprecated
 public interface AsyncAtomicReference<E> extends IAtomicReference<E> {
 
@@ -38,7 +38,7 @@ public interface AsyncAtomicReference<E> extends IAtomicReference<E> {
      * @param expect the expected value
      * @param update the new value
      * @return true if successful; or false if the actual value
-     *         was not equal to the expected value.
+     * was not equal to the expected value.
      */
     ICompletableFuture<Boolean> asyncCompareAndSet(E expect, E update);
 
@@ -68,7 +68,7 @@ public interface AsyncAtomicReference<E> extends IAtomicReference<E> {
      * Sets and gets the value.
      *
      * @param update the new value
-     * @return  the new value
+     * @return the new value
      * @deprecated will be removed from Hazelcast 3.4 since it doesn't really serve a purpose.
      */
     ICompletableFuture<E> asyncSetAndGet(E update);
@@ -114,7 +114,7 @@ public interface AsyncAtomicReference<E> extends IAtomicReference<E> {
      * Alters the currently stored reference by applying a function on it on and gets the old value.
      *
      * @param function the function
-     * @return  the old value
+     * @return the old value
      * @throws IllegalArgumentException if function is null.
      */
     ICompletableFuture<E> asyncGetAndAlter(IFunction<E, E> function);
@@ -123,7 +123,7 @@ public interface AsyncAtomicReference<E> extends IAtomicReference<E> {
      * Applies a function on the value, the actual stored value will not change.
      *
      * @param function the function
-     * @return  the result of the function application
+     * @return the result of the function application
      * @throws IllegalArgumentException if function is null.
      */
     <R> ICompletableFuture<R> asyncApply(IFunction<E, R> function);

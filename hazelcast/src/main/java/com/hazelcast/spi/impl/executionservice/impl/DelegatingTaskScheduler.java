@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,16 +18,12 @@ package com.hazelcast.spi.impl.executionservice.impl;
 
 import com.hazelcast.spi.TaskScheduler;
 
-import java.util.Collection;
-import java.util.List;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 import static com.hazelcast.util.Preconditions.checkNotNull;
 
@@ -47,21 +43,6 @@ public final class DelegatingTaskScheduler implements TaskScheduler {
     }
 
     @Override
-    public <T> Future<T> submit(Callable<T> task) {
-        return executor.submit(task);
-    }
-
-    @Override
-    public <T> Future<T> submit(Runnable task, T result) {
-        return executor.submit(task, result);
-    }
-
-    @Override
-    public Future<?> submit(Runnable task) {
-        return executor.submit(task);
-    }
-
-    @Override
     public ScheduledFuture<?> schedule(Runnable command, long delay, TimeUnit unit) {
         checkNotNull(command);
         Runnable decoratedTask = new DelegatingTaskDecorator(command, executor);
@@ -69,59 +50,17 @@ public final class DelegatingTaskScheduler implements TaskScheduler {
     }
 
     @Override
+    public <V> ScheduledFuture<Future<V>> schedule(Callable<V> command, long delay, TimeUnit unit) {
+        checkNotNull(command);
+        Callable<Future<V>> decoratedTask = new DelegatingCallableTaskDecorator<V>(command, executor);
+        return scheduledExecutorService.schedule(decoratedTask, delay, unit);
+    }
+
+    @Override
     public ScheduledFuture<?> scheduleWithRepetition(Runnable command, long initialDelay, long period, TimeUnit unit) {
         checkNotNull(command);
-        Runnable decoratedTask = new DelegatingTaskDecorator(new SkipOnConcurrentExecutionDecorator(command), executor);
+        Runnable decoratedTask = new DelegateAndSkipOnConcurrentExecutionDecorator(command, executor);
         return scheduledExecutorService.scheduleAtFixedRate(decoratedTask, initialDelay, period, unit);
-    }
-
-    @Override
-    public void shutdown() {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public List<Runnable> shutdownNow() {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public boolean isShutdown() {
-        return false;
-    }
-
-    @Override
-    public boolean isTerminated() {
-        return false;
-    }
-
-    @Override
-    public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public <T> List<Future<T>> invokeAll(Collection<? extends Callable<T>> tasks)
-            throws InterruptedException {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public <T> List<Future<T>> invokeAll(Collection<? extends Callable<T>> tasks, long timeout, TimeUnit unit)
-            throws InterruptedException {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public <T> T invokeAny(Collection<? extends Callable<T>> tasks)
-            throws InterruptedException, ExecutionException {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public <T> T invokeAny(Collection<? extends Callable<T>> tasks, long timeout, TimeUnit unit)
-            throws InterruptedException, ExecutionException, TimeoutException {
-        throw new UnsupportedOperationException();
     }
 
 }

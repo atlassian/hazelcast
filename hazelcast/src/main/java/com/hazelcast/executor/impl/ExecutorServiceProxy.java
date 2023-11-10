@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2020, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,11 +26,11 @@ import com.hazelcast.core.PartitionAware;
 import com.hazelcast.executor.impl.operations.CallableTaskOperation;
 import com.hazelcast.executor.impl.operations.MemberCallableTaskOperation;
 import com.hazelcast.executor.impl.operations.ShutdownOperation;
-import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.monitor.LocalExecutorStats;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.quorum.QuorumException;
 import com.hazelcast.spi.AbstractDistributedObject;
 import com.hazelcast.spi.ExecutionService;
 import com.hazelcast.spi.InternalCompletableFuture;
@@ -38,12 +38,12 @@ import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.OperationService;
 import com.hazelcast.util.Clock;
+import com.hazelcast.util.FutureUtil.ExceptionHandler;
 import com.hazelcast.util.executor.CompletedFuture;
 
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -58,12 +58,13 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.logging.Level;
 
-import static com.hazelcast.util.FutureUtil.ExceptionHandler;
-import static com.hazelcast.util.FutureUtil.logAllExceptions;
+import static com.hazelcast.util.ExceptionUtil.sneakyThrow;
 import static com.hazelcast.util.FutureUtil.waitWithDeadline;
+import static com.hazelcast.util.MapUtil.createHashMap;
 import static com.hazelcast.util.Preconditions.checkNotNull;
 import static com.hazelcast.util.UuidUtil.newUnsecureUuidString;
 
+@SuppressWarnings("checkstyle:methodcount")
 public class ExecutorServiceProxy
         extends AbstractDistributedObject<DistributedExecutorService>
         implements IExecutorService {
@@ -74,8 +75,22 @@ public class ExecutorServiceProxy
     private static final AtomicIntegerFieldUpdater<ExecutorServiceProxy> CONSECUTIVE_SUBMITS = AtomicIntegerFieldUpdater
             .newUpdater(ExecutorServiceProxy.class, "consecutiveSubmits");
 
-    private static final ExceptionHandler WHILE_SHUTDOWN_EXCEPTION_HANDLER =
-            logAllExceptions("Exception while ExecutorService shutdown", Level.FINEST);
+    private final ExceptionHandler shutdownExceptionHandler = new ExceptionHandler() {
+        @Override
+        public void handleException(Throwable throwable) {
+            if (throwable != null) {
+                if (throwable instanceof QuorumException) {
+                    sneakyThrow(throwable);
+                }
+                if (throwable.getCause() instanceof QuorumException) {
+                    sneakyThrow(throwable.getCause());
+                }
+            }
+            if (logger.isLoggable(Level.FINEST)) {
+                logger.log(Level.FINEST, "Exception while ExecutorService shutdown", throwable);
+            }
+        }
+    };
 
     private final String name;
     private final Random random = new Random(-System.currentTimeMillis());
@@ -289,10 +304,14 @@ public class ExecutorServiceProxy
         checkNotNull(task, "task can't be null");
         checkNotShutdown();
 
+        Data taskData = getNodeEngine().toData(task);
+        return submitToMember(taskData, member);
+    }
+
+    private  <T> Future<T> submitToMember(Data taskData, Member member) {
         NodeEngine nodeEngine = getNodeEngine();
-        Data taskData = nodeEngine.toData(task);
         String uuid = newUnsecureUuidString();
-        Address target = ((MemberImpl) member).getAddress();
+        Address target = member.getAddress();
 
         boolean sync = checkSync();
         MemberCallableTaskOperation op = new MemberCallableTaskOperation(name, uuid, taskData);
@@ -312,9 +331,13 @@ public class ExecutorServiceProxy
 
     @Override
     public <T> Map<Member, Future<T>> submitToMembers(Callable<T> task, Collection<Member> members) {
-        Map<Member, Future<T>> futures = new HashMap<Member, Future<T>>(members.size());
+        checkNotNull(task, "task can't be null");
+        checkNotShutdown();
+        Data taskData = getNodeEngine().toData(task);
+        Map<Member, Future<T>> futures = createHashMap(members.size());
         for (Member member : members) {
-            futures.put(member, submitToMember(task, member));
+            Future<T> future = submitToMember(taskData, member);
+            futures.put(member, future);
         }
         return futures;
     }
@@ -378,19 +401,25 @@ public class ExecutorServiceProxy
         submitToPartitionOwner(task, callback, nodeEngine.getPartitionService().getPartitionId(key));
     }
 
+    private  <T> void submitToMember(Data taskData, Member member, ExecutionCallback<T> callback) {
+        checkNotShutdown();
+
+        NodeEngine nodeEngine = getNodeEngine();
+        String uuid = newUnsecureUuidString();
+        MemberCallableTaskOperation op = new MemberCallableTaskOperation(name, uuid, taskData);
+        OperationService operationService = nodeEngine.getOperationService();
+        Address address = member.getAddress();
+        operationService
+                .createInvocationBuilder(DistributedExecutorService.SERVICE_NAME, op, address)
+                .setExecutionCallback((ExecutionCallback) callback).invoke();
+    }
+
     @Override
     public <T> void submitToMember(Callable<T> task, Member member, ExecutionCallback<T> callback) {
         checkNotShutdown();
 
-        NodeEngine nodeEngine = getNodeEngine();
-        Data taskData = nodeEngine.toData(task);
-        String uuid = newUnsecureUuidString();
-        MemberCallableTaskOperation op = new MemberCallableTaskOperation(name, uuid, taskData);
-        OperationService operationService = nodeEngine.getOperationService();
-        Address address = ((MemberImpl) member).getAddress();
-        operationService
-                .createInvocationBuilder(DistributedExecutorService.SERVICE_NAME, op, address)
-                .setExecutionCallback((ExecutionCallback) callback).invoke();
+        Data taskData = getNodeEngine().toData(task);
+        submitToMember(taskData, member, callback);
     }
 
     private String getRejectionMessage() {
@@ -404,8 +433,9 @@ public class ExecutorServiceProxy
         ExecutionCallbackAdapterFactory executionCallbackFactory = new ExecutionCallbackAdapterFactory(
                 nodeEngine.getLogger(ExecutionCallbackAdapterFactory.class), members, callback);
 
+        Data taskData = nodeEngine.toData(task);
         for (Member member : members) {
-            submitToMember(task, member, executionCallbackFactory.<T>callbackFor(member));
+            submitToMember(taskData, member, executionCallbackFactory.<T>callbackFor(member));
         }
     }
 
@@ -552,15 +582,10 @@ public class ExecutorServiceProxy
         Collection<Future> calls = new LinkedList<Future>();
 
         for (Member member : members) {
-            if (member.localMember()) {
-                getService().shutdownExecutor(name);
-            } else {
-                Future f = submitShutdownOperation(operationService, member);
-                calls.add(f);
-            }
+            Future f = submitShutdownOperation(operationService, member);
+            calls.add(f);
         }
-
-        waitWithDeadline(calls, 1, TimeUnit.SECONDS, WHILE_SHUTDOWN_EXCEPTION_HANDLER);
+        waitWithDeadline(calls, 3, TimeUnit.SECONDS, shutdownExceptionHandler);
     }
 
     private InternalCompletableFuture submitShutdownOperation(OperationService operationService, Member member) {
