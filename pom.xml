@@ -14,16 +14,13 @@
   ~ limitations under the License.
   -->
 
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
-                      http://maven.apache.org/maven-v4_0_0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0                       http://maven.apache.org/maven-v4_0_0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.hazelcast</groupId>
     <artifactId>hazelcast-root</artifactId>
     <packaging>pom</packaging>
-    <version>3.12.14-atlassian-1-SNAPSHOT</version>
+    <version>3.12.14-atlassian-1-m02</version>
     <name>Hazelcast Root</name>
     <description>Hazelcast In-Memory DataGrid</description>
     <url>http://www.hazelcast.com/</url>
@@ -113,10 +110,10 @@
         <h2.version>1.3.160</h2.version>
         <atomikos.version>3.9.3</atomikos.version>
         <!-- Additional JVM system arguments -->
-        <extraVmArgs/>
+        <extraVmArgs />
         <vmHeapSettings>-Xms512m -Xmx2G -XX:MaxPermSize=1024M</vmHeapSettings>
         <!-- Java 9+ module system args to be appended during surefire/failsafe executions. -->
-        <javaModuleArgs/>
+        <javaModuleArgs />
     </properties>
     <licenses>
         <license>
@@ -129,7 +126,8 @@
         <connection>scm:git:git://github.com/atlassian/hazelcast.git</connection>
         <developerConnection>scm:git:https://github.com/atlassian/hazelcast.git</developerConnection>
         <url>https://github.com/atlassian/hazelcast/</url>
-    </scm>
+      <tag>hazelcast-root-3.12.14-atlassian-1-m02</tag>
+  </scm>
     <developers>
         <developer>
             <id>oztalip</id>
@@ -565,10 +563,10 @@
                         <version>${maven.cobertura.plugin.version}</version>
                         <configuration>
                             <instrumentation>
-                                <ignores/>
-                                <excludes/>
+                                <ignores />
+                                <excludes />
                             </instrumentation>
-                            <check/>
+                            <check />
                         </configuration>
                         <executions>
                             <execution>
