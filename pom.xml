@@ -23,7 +23,7 @@
     <groupId>com.hazelcast</groupId>
     <artifactId>hazelcast-root</artifactId>
     <packaging>pom</packaging>
-    <version>3.12.13</version>
+    <version>3.12.14-atlassian-1-SNAPSHOT</version>
     <name>Hazelcast Root</name>
     <description>Hazelcast In-Memory DataGrid</description>
     <url>http://www.hazelcast.com/</url>
@@ -41,7 +41,7 @@
         <client.protocol.version>1.8.0</client.protocol.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
-        <jdk.version>6</jdk.version>
+        <jdk.version>8</jdk.version>
         <target.dir>target</target.dir>
         <maven.build.timestamp.format>yyyyMMdd</maven.build.timestamp.format>
         <timestamp>${maven.build.timestamp}</timestamp>
@@ -78,7 +78,7 @@
         <maven.enforcer.plugin.version>3.0.0-M2</maven.enforcer.plugin.version>
         <owasp.dependency-check.version>7.1.1</owasp.dependency-check.version>
 
-        <log4j.version>1.2.17.redhat-00008</log4j.version>
+        <log4j.version>1.2.17-atlassian-18</log4j.version>
 
         <!--- This is the last log4j2 version working with Java 6 -->
         <log4j2.version>2.3</log4j2.version>
@@ -126,9 +126,9 @@
         </license>
     </licenses>
     <scm>
-        <connection>scm:git:git://github.com/hazelcast/hazelcast.git</connection>
-        <developerConnection>scm:git:git@github.com:hazelcast/hazelcast.git</developerConnection>
-        <url>https://github.com/hazelcast/hazelcast/</url>
+        <connection>scm:git:git://github.com/atlassian/hazelcast.git</connection>
+        <developerConnection>scm:git:https://github.com/atlassian/hazelcast.git</developerConnection>
+        <url>https://github.com/atlassian/hazelcast/</url>
     </scm>
     <developers>
         <developer>
@@ -1199,13 +1199,13 @@
 
     <distributionManagement>
         <repository>
-            <id>release-repository</id>
-            <url>https://oss.sonatype.org/service/local/staging/deploy/maven2</url>
+            <id>atlassian-3rdparty</id>
+            <url>https://packages.atlassian.com/maven/3rdparty</url>
         </repository>
         <snapshotRepository>
-            <id>snapshot-repository</id>
-            <name>Maven2 Snapshot Repository</name>
-            <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+            <id>atlassian-3rdparty-snapshot</id>
+            <name>Atlassian Snapshot Repository</name>
+            <url>https://packages.atlassian.com/maven/3rdparty-snapshot</url>
             <uniqueVersion>false</uniqueVersion>
         </snapshotRepository>
     </distributionManagement>
