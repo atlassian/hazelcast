@@ -14,8 +14,7 @@
   ~ limitations under the License.
   -->
 
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <name>hazelcast-client</name>
@@ -25,7 +24,7 @@
     <parent>
         <groupId>com.hazelcast</groupId>
         <artifactId>hazelcast-root</artifactId>
-        <version>3.12.14-atlassian-1-SNAPSHOT</version>
+        <version>3.12.14-atlassian-1-m12</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
@@ -148,14 +147,10 @@
                         </goals>
                         <configuration>
                             <target>
-                                <copy file="${basedir}/src/main/resources/hazelcast-client-full-example.xml"
-                                      tofile="${basedir}/target/hazelcast-client-full-example.xml"/>
-                                <copy file="${basedir}/src/main/resources/hazelcast-client-full-example.yaml"
-                                      tofile="${basedir}/target/hazelcast-client-full-example.yaml"/>
-                                <copy file="${basedir}/src/main/resources/hazelcast-client-failover-full-example.xml"
-                                      tofile="${basedir}/target/hazelcast-client-failover-full-example.xml"/>
-                                <copy file="${basedir}/src/main/resources/hazelcast-client-failover-full-example.yaml"
-                                      tofile="${basedir}/target/hazelcast-client-failover-full-example.yaml"/>
+                                <copy file="${basedir}/src/main/resources/hazelcast-client-full-example.xml" tofile="${basedir}/target/hazelcast-client-full-example.xml" />
+                                <copy file="${basedir}/src/main/resources/hazelcast-client-full-example.yaml" tofile="${basedir}/target/hazelcast-client-full-example.yaml" />
+                                <copy file="${basedir}/src/main/resources/hazelcast-client-failover-full-example.xml" tofile="${basedir}/target/hazelcast-client-failover-full-example.xml" />
+                                <copy file="${basedir}/src/main/resources/hazelcast-client-failover-full-example.yaml" tofile="${basedir}/target/hazelcast-client-failover-full-example.yaml" />
                             </target>
                         </configuration>
                     </execution>
