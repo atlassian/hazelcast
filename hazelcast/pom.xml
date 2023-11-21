@@ -233,6 +233,7 @@
                                     <include>com.hazelcast:hazelcast-client-protocol</include>
                                 </includes>
                             </artifactSet>
+                            <!-- ATLASSIAN - CONFSRVDEV-28686 removing shading
                             <relocations>
                                 <relocation>
                                     <pattern>com.fasterxml.jackson</pattern>
@@ -243,6 +244,7 @@
                                     <shadedPattern>com.hazelcast.org.snakeyaml</shadedPattern>
                                 </relocation>
                             </relocations>
+                             -->
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                             </transformers>
