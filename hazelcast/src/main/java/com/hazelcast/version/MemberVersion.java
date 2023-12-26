@@ -67,6 +67,7 @@ public final class MemberVersion
 
     // populate this Version's major, minor, patch from given String
     private void parse(String version) {
+        System.out.println("Inside MemberVersion "+ version);
         String[] tokens = StringUtil.tokenizeVersionString(version);
         this.major = Byte.valueOf(tokens[0]);
         this.minor = Byte.valueOf(tokens[1]);
