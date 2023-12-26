@@ -61,7 +61,7 @@ public final class StringUtil {
      * Pattern used to tokenize version strings.
      */
     public static final Pattern VERSION_PATTERN
-            = Pattern.compile("^(\\d+)\\.(\\d+)(\\.(\\d+))?(-\\w+(?:-\\d+)?)?(-SNAPSHOT)?$");
+            = Pattern.compile("^(\\d+)\\.(\\d+)(\\.(\\d+))?(-\\w+(?:-\\d+)?)?(-\\w+(?:-\\w+)?)?(-SNAPSHOT)?$");
 
     private static final String GETTER_PREFIX = "get";
 
