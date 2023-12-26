@@ -158,8 +158,6 @@ public class HazelcastInstanceImpl implements HazelcastInstance, SerializationSe
     }
 
     protected Node createNode(Config config, NodeContext nodeContext) {
-        System.out.println("Inside HazelcastInstanceImpl config.toString: "+ config.toString());
-        System.out.println("Inside HazelcastInstanceImpl nodeContext.toString: "+ nodeContext.toString());
         return new Node(this, config, nodeContext);
     }
 
