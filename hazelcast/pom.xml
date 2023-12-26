@@ -223,23 +223,18 @@
                             <shadeTestJar>true</shadeTestJar>
                             <artifactSet>
                                 <includes>
-                                    <include>com.fasterxml.jackson.core:jackson-core</include>
                                     <include>org.snakeyaml:snakeyaml-engine</include>
                                     <include>com.hazelcast:hazelcast-client-protocol</include>
                                 </includes>
                             </artifactSet>
-                            <!-- ATLASSIAN - CONFSRVDEV-28686 removing shading
+                            <!-- ATLASSIAN - CONFSRVDEV-28686 removing shading -->
                             <relocations>
-                                <relocation>
-                                    <pattern>com.fasterxml.jackson</pattern>
-                                    <shadedPattern>com.hazelcast.com.fasterxml.jackson</shadedPattern>
-                                </relocation>
                                 <relocation>
                                     <pattern>org.snakeyaml</pattern>
                                     <shadedPattern>com.hazelcast.org.snakeyaml</shadedPattern>
                                 </relocation>
                             </relocations>
-                             -->
+
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
                             </transformers>
