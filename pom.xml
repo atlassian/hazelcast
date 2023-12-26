@@ -20,7 +20,7 @@
     <groupId>com.hazelcast</groupId>
     <artifactId>hazelcast-root</artifactId>
     <packaging>pom</packaging>
-    <version>3.12.14-atlassian-1-m19</version>
+    <version>3.12.14-atlassian-1-SNAPSHOT</version>
     <name>Hazelcast Root</name>
     <description>Hazelcast In-Memory DataGrid</description>
     <url>http://www.hazelcast.com/</url>
@@ -125,7 +125,7 @@
         <connection>scm:git:git://github.com/atlassian/hazelcast.git</connection>
         <developerConnection>scm:git:https://github.com/atlassian/hazelcast.git</developerConnection>
         <url>https://github.com/atlassian/hazelcast/</url>
-      <tag>hazelcast-root-3.12.14-atlassian-1-m19</tag>
+      <tag>HEAD</tag>
   </scm>
     <developers>
         <developer>
