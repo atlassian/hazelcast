@@ -23,6 +23,8 @@ import com.hazelcast.durableexecutor.impl.operations.RetrieveResultOperation;
 import com.hazelcast.instance.Node;
 import com.hazelcast.nio.Connection;
 import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.security.permission.ActionConstants;
+import com.hazelcast.security.permission.DurableExecutorServicePermission;
 import com.hazelcast.spi.Operation;
 
 import java.security.Permission;
@@ -59,7 +61,7 @@ public class DurableExecutorRetrieveResultMessageTask
 
     @Override
     public Permission getRequiredPermission() {
-        return null;
+        return new DurableExecutorServicePermission(parameters.name, ActionConstants.ACTION_READ);
     }
 
     @Override

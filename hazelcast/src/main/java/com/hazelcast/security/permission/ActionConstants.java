@@ -42,6 +42,7 @@ import com.hazelcast.mapreduce.impl.MapReduceService;
 import com.hazelcast.multimap.impl.MultiMapService;
 import com.hazelcast.replicatedmap.impl.ReplicatedMapService;
 import com.hazelcast.ringbuffer.impl.RingbufferService;
+import com.hazelcast.scheduledexecutor.impl.DistributedScheduledExecutorService;
 import com.hazelcast.topic.impl.TopicService;
 import com.hazelcast.topic.impl.reliable.ReliableTopicService;
 
@@ -244,6 +245,12 @@ public final class ActionConstants {
             @Override
             public Permission create(String name, String... actions) {
                 return new ReliableTopicPermission(name, actions);
+            }
+        });
+        PERMISSION_FACTORY_MAP.put(DistributedScheduledExecutorService.SERVICE_NAME, new PermissionFactory() {
+            @Override
+            public Permission create(String name, String... actions) {
+                return new ScheduledExecutorPermission(name, actions);
             }
         });
     }

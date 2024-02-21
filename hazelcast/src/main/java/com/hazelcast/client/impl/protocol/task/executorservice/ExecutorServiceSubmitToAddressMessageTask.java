@@ -26,6 +26,8 @@ import com.hazelcast.instance.Node;
 import com.hazelcast.nio.Connection;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.security.SecurityContext;
+import com.hazelcast.security.permission.ActionConstants;
+import com.hazelcast.security.permission.ExecutorServicePermission;
 import com.hazelcast.spi.InvocationBuilder;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.impl.operationservice.InternalOperationService;
@@ -84,7 +86,7 @@ public class ExecutorServiceSubmitToAddressMessageTask
 
     @Override
     public Permission getRequiredPermission() {
-        return null;
+        return new ExecutorServicePermission(parameters.name, ActionConstants.ACTION_MODIFY);
     }
 
     @Override

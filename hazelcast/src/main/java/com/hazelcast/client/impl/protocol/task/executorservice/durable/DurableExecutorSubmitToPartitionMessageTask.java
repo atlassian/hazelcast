@@ -25,6 +25,8 @@ import com.hazelcast.instance.Node;
 import com.hazelcast.nio.Connection;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.security.SecurityContext;
+import com.hazelcast.security.permission.ActionConstants;
+import com.hazelcast.security.permission.DurableExecutorServicePermission;
 import com.hazelcast.spi.Operation;
 
 import javax.security.auth.Subject;
@@ -72,7 +74,7 @@ public class DurableExecutorSubmitToPartitionMessageTask
 
     @Override
     public Permission getRequiredPermission() {
-        return null;
+        return new DurableExecutorServicePermission(parameters.name, ActionConstants.ACTION_MODIFY);
     }
 
     @Override
