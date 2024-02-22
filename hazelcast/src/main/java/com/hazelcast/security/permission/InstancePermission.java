@@ -28,6 +28,8 @@ public abstract class InstancePermission extends ClusterPermission {
     protected static final int NONE = 0;
     protected static final int CREATE = 1;
     protected static final int DESTROY = 2;
+    protected static final int READ = 4;
+    protected static final int MODIFY = 8;
 
     private static final WildcardConfigPatternMatcher CONFIG_PATTERN_MATCHER = new WildcardConfigPatternMatcher();
 
