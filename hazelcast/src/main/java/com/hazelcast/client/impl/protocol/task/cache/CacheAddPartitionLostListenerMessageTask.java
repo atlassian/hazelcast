@@ -28,6 +28,8 @@ import com.hazelcast.client.impl.protocol.task.AbstractCallableMessageTask;
 import com.hazelcast.client.impl.protocol.task.ListenerMessageTask;
 import com.hazelcast.instance.Node;
 import com.hazelcast.nio.Connection;
+import com.hazelcast.security.permission.ActionConstants;
+import com.hazelcast.security.permission.CachePermission;
 import com.hazelcast.spi.EventFilter;
 import com.hazelcast.spi.EventRegistration;
 import com.hazelcast.spi.EventService;
@@ -103,7 +105,7 @@ public class CacheAddPartitionLostListenerMessageTask
 
     @Override
     public Permission getRequiredPermission() {
-        return null;
+        return new CachePermission(parameters.name, ActionConstants.ACTION_LISTEN);
     }
 
     @Override

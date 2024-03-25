@@ -21,6 +21,8 @@ import com.hazelcast.client.impl.protocol.codec.MapRemovePartitionLostListenerCo
 import com.hazelcast.client.impl.protocol.task.AbstractRemoveListenerMessageTask;
 import com.hazelcast.instance.Node;
 import com.hazelcast.map.impl.MapService;
+import com.hazelcast.security.permission.ActionConstants;
+import com.hazelcast.security.permission.MapPermission;
 import com.hazelcast.nio.Connection;
 
 import java.security.Permission;
@@ -66,7 +68,7 @@ public class MapRemovePartitionLostListenerMessageTask
 
     @Override
     public Permission getRequiredPermission() {
-        return null;
+        return new MapPermission(parameters.name, ActionConstants.ACTION_LISTEN);
     }
 
     @Override

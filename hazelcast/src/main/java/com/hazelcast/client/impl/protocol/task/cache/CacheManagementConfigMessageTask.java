@@ -24,6 +24,7 @@ import com.hazelcast.client.impl.protocol.task.AbstractInvocationMessageTask;
 import com.hazelcast.instance.Node;
 import com.hazelcast.nio.Connection;
 import com.hazelcast.spi.InvocationBuilder;
+import com.hazelcast.security.permission.ConfigPermission;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.impl.operationservice.InternalOperationService;
 
@@ -71,7 +72,7 @@ public class CacheManagementConfigMessageTask
 
     @Override
     public Permission getRequiredPermission() {
-        return null;
+        return new ConfigPermission();
     }
 
     @Override

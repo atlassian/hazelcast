@@ -24,6 +24,8 @@ import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.instance.Node;
 import com.hazelcast.internal.cluster.ClusterService;
 import com.hazelcast.map.impl.querycache.subscriber.operation.DestroyQueryCacheOperation;
+import com.hazelcast.security.permission.ActionConstants;
+import com.hazelcast.security.permission.MapPermission;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.Connection;
 import com.hazelcast.spi.InvocationBuilder;
@@ -94,7 +96,7 @@ public class MapDestroyCacheMessageTask
 
     @Override
     public Permission getRequiredPermission() {
-        return null;
+        return new MapPermission(parameters.mapName, ActionConstants.ACTION_DESTROY);
     }
 
     @Override
