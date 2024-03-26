@@ -48,6 +48,14 @@ Or use Maven snippet:
 </dependency>
 ````
 
+### Publish Final Version
+
+* Checkout respective branch (eg: 3.12.z-atlassian)
+* Run `atlas packages permission grant -u <username>`. Validate using password and duo authentication
+* Run `mvn -DpreparationGoals=clean release:prepare`. Provide custom version (if any) or else press enter for default
+* Run `mvn -Darguments="-Dmaven.test.skip=true -Ddoclint=none" release:perform` to publish.
+* Add license in atlassian-licenses before using final version. [Sample PR](https://stash.atlassian.com/projects/BUILDENG/repos/atlassian-licenses/pull-requests/1990/overview)
+
 ### Snapshot Releases
 
 Maven snippet:
