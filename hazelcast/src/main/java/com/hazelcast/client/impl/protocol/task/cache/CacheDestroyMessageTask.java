@@ -68,12 +68,12 @@ public class CacheDestroyMessageTask
 
     @Override
     public Permission getRequiredPermission() {
-        return new CachePermission(parameters, ActionConstants.ACTION_DESTROY);
+        return new CachePermission(parameters.name, ActionConstants.ACTION_DESTROY);
     }
 
     @Override
     public String getDistributedObjectName() {
-        return parameters;
+        return parameters.name;
     }
 
     @Override

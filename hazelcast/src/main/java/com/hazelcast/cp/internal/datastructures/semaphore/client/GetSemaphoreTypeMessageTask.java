@@ -60,7 +60,7 @@ public class GetSemaphoreTypeMessageTask extends AbstractMessageTask<CPSemaphore
 
     @Override
     public Permission getRequiredPermission() {
-        return new SemaphorePermission(parameters);
+        return new SemaphorePermission(parameters.proxyName);
     }
 
     @Override

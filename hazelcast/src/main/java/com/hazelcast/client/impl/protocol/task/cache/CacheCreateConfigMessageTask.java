@@ -108,7 +108,7 @@ public class CacheCreateConfigMessageTask
 
     @Override
     public Permission getRequiredPermission() {
-        CacheConfig cacheConfig = parameters.cacheConfig.asCacheConfig(serializationService);
+        CacheConfig cacheConfig = (CacheConfig) nodeEngine.toObject(parameters.cacheConfig);
         return new CachePermission(CacheUtil.getDistributedObjectName(cacheConfig.getName()), ActionConstants.ACTION_CREATE);
     }
 
