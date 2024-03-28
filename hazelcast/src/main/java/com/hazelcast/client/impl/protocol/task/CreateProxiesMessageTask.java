@@ -16,12 +16,16 @@
 
 package com.hazelcast.client.impl.protocol.task;
 
+import com.hazelcast.cache.CacheUtil;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.ClientCreateProxiesCodec;
+import com.hazelcast.config.CacheConfig;
 import com.hazelcast.core.Member;
 import com.hazelcast.core.MemberLeftException;
 import com.hazelcast.instance.Node;
 import com.hazelcast.nio.Connection;
+import com.hazelcast.security.permission.ActionConstants;
+import com.hazelcast.security.permission.CachePermission;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.impl.proxyservice.impl.ProxyInfo;
 import com.hazelcast.spi.impl.proxyservice.impl.operations.PostJoinProxyOperation;
@@ -81,7 +85,8 @@ public class CreateProxiesMessageTask extends AbstractMultiTargetMessageTask<Cli
 
     @Override
     public Permission getRequiredPermission() {
-        return null;
+        CacheConfig cacheConfig = (CacheConfig) nodeEngine.toObject(parameters.proxies);
+        return new CachePermission(CacheUtil.getDistributedObjectName(cacheConfig.getName()), ActionConstants.ACTION_CREATE);
     }
 
     @Override
