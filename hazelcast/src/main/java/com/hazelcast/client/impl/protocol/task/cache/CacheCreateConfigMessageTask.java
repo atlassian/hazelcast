@@ -16,6 +16,7 @@
 
 package com.hazelcast.client.impl.protocol.task.cache;
 
+import com.hazelcast.cache.CacheUtil;
 import com.hazelcast.cache.impl.CacheService;
 import com.hazelcast.cache.impl.ICacheService;
 import com.hazelcast.cache.impl.PreJoinCacheConfig;
@@ -30,6 +31,8 @@ import com.hazelcast.core.ICompletableFuture;
 import com.hazelcast.instance.BuildInfo;
 import com.hazelcast.instance.Node;
 import com.hazelcast.nio.Connection;
+import com.hazelcast.security.permission.ActionConstants;
+import com.hazelcast.security.permission.CachePermission;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.properties.GroupProperty;
 
@@ -105,7 +108,8 @@ public class CacheCreateConfigMessageTask
 
     @Override
     public Permission getRequiredPermission() {
-        return null;
+        CacheConfig cacheConfig = (CacheConfig) nodeEngine.toObject(parameters.cacheConfig);
+        return new CachePermission(CacheUtil.getDistributedObjectName(cacheConfig.getName()), ActionConstants.ACTION_CREATE);
     }
 
     @Override

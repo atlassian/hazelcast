@@ -23,6 +23,7 @@ import com.hazelcast.config.cp.CPSemaphoreConfig;
 import com.hazelcast.cp.internal.datastructures.semaphore.RaftSemaphoreService;
 import com.hazelcast.instance.Node;
 import com.hazelcast.nio.Connection;
+import com.hazelcast.security.permission.SemaphorePermission;
 
 import java.security.Permission;
 
@@ -59,7 +60,7 @@ public class GetSemaphoreTypeMessageTask extends AbstractMessageTask<CPSemaphore
 
     @Override
     public Permission getRequiredPermission() {
-        return null;
+        return new SemaphorePermission(parameters.proxyName);
     }
 
     @Override
